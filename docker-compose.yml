@@ -1,0 +1,68 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-zrozumiloai}
+      POSTGRES_USER: ${POSTGRES_USER:-zrozumiloai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zrozumiloai}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zrozumiloai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  backend:
+    build: ./backend
+    env_file:
+      - .env
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-production}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
+      DJANGO_ADMIN_USERNAME: ${DJANGO_ADMIN_USERNAME:-admin}
+      DJANGO_ADMIN_PASSWORD: ${DJANGO_ADMIN_PASSWORD:-}
+      DJANGO_ADMIN_EMAIL: ${DJANGO_ADMIN_EMAIL:-admin@localhost}
+      POSTGRES_DB: ${POSTGRES_DB:-zrozumiloai}
+      POSTGRES_USER: ${POSTGRES_USER:-zrozumiloai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zrozumiloai}
+      POSTGRES_HOST: db
+      USE_SQLITE: "False"
+      OLLAMA_BASE_URL: http://ollama:11434
+      CORS_ALLOWED_ORIGINS: http://localhost,http://localhost:80,http://127.0.0.1
+      BACKUP_DIR: /backup
+      FORCE_DB_RESTORE: ${FORCE_DB_RESTORE:-0}
+    volumes:
+      - ./backup:/backup
+    depends_on:
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  ollama_data:
