@@ -31,3 +31,32 @@ class Chat(models.Model):
 
     def __str__(self):
         return f'{self.title} ({self.user.username})'
+
+
+class WorkspaceChatLog(models.Model):
+    """Recorded prompt/response exchange in a workspace."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='workspace_chat_logs',
+        null=True,
+        blank=True,
+    )
+    sent_by = models.CharField(max_length=150, default='unknown user')
+    workspace = models.ForeignKey(
+        'workspaces.Workspace',
+        on_delete=models.CASCADE,
+        related_name='chat_logs',
+    )
+    prompt = models.TextField()
+    response = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+        verbose_name = 'Workspace chat log'
+        verbose_name_plural = 'Workspace chat logs'
+
+    def __str__(self):
+        return f'{self.sent_by} @ {self.workspace.name}'

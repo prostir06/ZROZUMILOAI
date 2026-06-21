@@ -2,9 +2,34 @@
  * Embed-чат у iframe: отримує конфіг від widget.js, спілкується з API.
  */
 import './embed.css';
+import {
+  buildAuthHeader,
+  EMBED_FAQ_QUESTIONS,
+  EMBED_GREETING,
+  escapeHtml,
+  formatMessageContent,
+  getEmbedStatusText,
+  safeJson,
+} from './utils.js';
 
 const root = document.getElementById('embed-root');
 const CONFIG_TIMEOUT_MS = 15000;
+const ASSISTANT_ICON_URL = '/zrozumilo-assistant.png';
+
+/** Іконка Помічника біля відповіді ШІ. */
+function renderAssistantIcon() {
+  return `<img src="${ASSISTANT_ICON_URL}" alt="" class="embed__assistant-icon" width="28" height="28" />`;
+}
+
+/** Обгортка для повідомлення асистента з іконкою. */
+function wrapAssistantMessage(innerHtml) {
+  return `
+    <div class="embed__assistant">
+      ${renderAssistantIcon()}
+      ${innerHtml}
+    </div>
+  `;
+}
 
 let config = null;
 let workspace = null;
@@ -12,30 +37,83 @@ let model = '';
 let messages = [];
 let isStreaming = false;
 let trustedOrigin = null;
+let typedGreeting = '';
+let typewriterTimer = null;
 
-/** Екранування HTML для безпечного рендеру тексту. */
-function escapeHtml(text) {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+/** Зупинити анімацію «друкування» привітання. */
+function stopGreetingTypewriter() {
+  if (typewriterTimer) {
+    clearInterval(typewriterTimer);
+    typewriterTimer = null;
+  }
 }
 
-/** Підтримка **жирного** тексту в відповідях асистента. */
-function formatBoldTextHtml(text) {
-  if (!text) {
+/** Оновити текст привітання в DOM без повного render. */
+function updateGreetingElement() {
+  const greetingEl = root?.querySelector('#embed-greeting');
+  const cursorEl = root?.querySelector('#embed-greeting-cursor');
+  if (greetingEl) {
+    greetingEl.textContent = typedGreeting;
+  }
+  if (cursorEl) {
+    cursorEl.hidden = typedGreeting.length >= EMBED_GREETING.length;
+  }
+}
+
+/** Ефект друкування привітання при відкритті форми. */
+function startGreetingTypewriter() {
+  if (
+    typewriterTimer
+    || messages.length > 0
+    || !model
+    || typedGreeting.length >= EMBED_GREETING.length
+  ) {
+    return;
+  }
+  typedGreeting = '';
+  let index = 0;
+  typewriterTimer = setInterval(() => {
+    if (index >= EMBED_GREETING.length) {
+      stopGreetingTypewriter();
+      updateGreetingElement();
+      return;
+    }
+    typedGreeting += EMBED_GREETING[index];
+    index += 1;
+    updateGreetingElement();
+  }, 28);
+}
+
+/** HTML хмари частих запитань (над полем вводу). */
+function renderFaqCloud() {
+  if (!model) {
     return '';
   }
-  const escaped = escapeHtml(text);
-  return escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  const chips = EMBED_FAQ_QUESTIONS.map(
+    (question) => `
+      <button
+        type="button"
+        class="embed__faq-chip"
+        data-question="${escapeHtml(question)}"
+        ${isStreaming ? 'disabled' : ''}
+      >${escapeHtml(question)}</button>
+    `,
+  ).join('');
+
+  return `
+    <div class="embed__faq" role="group" aria-label="Часті запитання">
+      ${chips}
+    </div>
+  `;
 }
 
-/** Форматування вмісту повідомлення залежно від ролі. */
-function formatMessageContent(text, role) {
-  if (role === 'assistant') {
-    return formatBoldTextHtml(text);
-  }
-  return escapeHtml(text);
+/** Підключити обробники кліків на часті запитання. */
+function attachFaqHandlers() {
+  root?.querySelectorAll('.embed__faq-chip').forEach((button) => {
+    button.addEventListener('click', () => {
+      handleSend(button.dataset.question || button.textContent || '');
+    });
+  });
 }
 
 /** Повний перерендер UI embed-чату. */
@@ -64,17 +142,20 @@ function render() {
       <div class="embed__messages" id="embed-messages" role="log" aria-live="polite">
         ${renderMessages()}
       </div>
-      <form class="embed__input-row" id="embed-form">
-        <textarea
-          id="embed-input"
-          rows="1"
-          placeholder="Напишіть повідомлення…"
-          ${!model || isStreaming ? 'disabled' : ''}
-        ></textarea>
-        <button type="submit" class="embed__send" ${!model || isStreaming ? 'disabled' : ''}>
-          Надіслати
-        </button>
-      </form>
+      <div class="embed__footer">
+        ${renderFaqCloud()}
+        <form class="embed__input-row" id="embed-form">
+          <textarea
+            id="embed-input"
+            rows="1"
+            placeholder="Напишіть повідомлення…"
+            ${!model || isStreaming ? 'disabled' : ''}
+          ></textarea>
+          <button type="submit" class="embed__send" ${!model || isStreaming ? 'disabled' : ''}>
+            Надіслати
+          </button>
+        </form>
+      </div>
     </div>
   `;
 
@@ -98,45 +179,79 @@ function render() {
     }
   });
 
+  attachFaqHandlers();
+
+  if (messages.length === 0 && model) {
+    updateGreetingElement();
+    if (typedGreeting.length < EMBED_GREETING.length && !typewriterTimer) {
+      startGreetingTypewriter();
+    }
+  }
+
   scrollToBottom();
 }
 
 /** Заголовок Authorization для API-запитів. */
 function getAuthHeader() {
-  if (config.widgetToken) {
-    return `Widget-Token ${config.widgetToken}`;
-  }
-  return `Api-Key ${config.apiKey}`;
+  return buildAuthHeader(config);
 }
 
 /** Текст статусу під заголовком чату. */
 function getStatusText() {
-  if (!workspace) {
-    if (config.widgetToken) {
-      return 'Widget token недійсний або workspace недоступний.';
-    }
-    return `Workspace «${escapeHtml(config.workspaceName)}» не знайдено. Перевірте API-ключ та data-workspace.`;
-  }
-  if (!model) {
-    return 'Модель не налаштована для цього workspace.';
-  }
-  return `Модель: ${model}`;
+  return getEmbedStatusText(config, workspace, model);
+}
+
+/** HTML індикатора «Помічник друкує». */
+function renderTypingIndicator() {
+  return '<div class="embed__typing" aria-label="Помічник друкує"><span></span><span></span><span></span></div>';
 }
 
 /** HTML-розмітка списку повідомлень. */
 function renderMessages() {
   if (messages.length === 0) {
-    return '<div class="embed__empty">Привіт! Чим можемо допомогти?</div>';
+    return `
+      <div class="embed__welcome">
+        ${wrapAssistantMessage(`
+          <div class="embed__message embed__message--assistant">
+            <span id="embed-greeting">${escapeHtml(typedGreeting)}</span><span
+              id="embed-greeting-cursor"
+              class="embed__cursor"
+              aria-hidden="true"
+            >|</span>
+          </div>
+        `)}
+      </div>
+    `;
   }
 
-  const html = messages.map((msg) => `
-    <div class="embed__message embed__message--${msg.role}">
-      ${formatMessageContent(msg.content, msg.role)}
-    </div>
-  `).join('');
+  const html = messages.map((msg, index) => {
+    const isPendingAssistant = (
+      isStreaming
+      && index === messages.length - 1
+      && msg.role === 'assistant'
+      && !msg.content.trim()
+    );
 
-  const typing = isStreaming
-    ? '<div class="embed__typing" aria-label="Помічник друкує"><span></span><span></span><span></span></div>'
+    if (isPendingAssistant) {
+      return wrapAssistantMessage(renderTypingIndicator());
+    }
+
+    const bubble = `
+      <div class="embed__message embed__message--${msg.role}">
+        ${formatMessageContent(msg.content, msg.role)}
+      </div>
+    `;
+    if (msg.role === 'assistant') {
+      return wrapAssistantMessage(bubble);
+    }
+    return bubble;
+  }).join('');
+
+  const lastMessage = messages[messages.length - 1];
+  const showStandaloneTyping = isStreaming && lastMessage?.role !== 'assistant';
+
+  const typing = showStandaloneTyping
+    ? wrapAssistantMessage(renderTypingIndicator())
     : '';
 
   return html + typing;
@@ -156,15 +271,6 @@ function updateMessages() {
   if (container) {
     container.innerHTML = renderMessages();
     scrollToBottom();
-  }
-}
-
-/** Безпечний парсинг JSON з fetch-відповіді. */
-async function safeJson(response, fallback = {}) {
-  try {
-    return await response.json();
-  } catch {
-    return fallback;
   }
 }
 
@@ -278,6 +384,9 @@ async function handleSend(text) {
     return;
   }
 
+  stopGreetingTypewriter();
+  typedGreeting = EMBED_GREETING;
+
   messages = [...messages, { role: 'user', content }];
   isStreaming = true;
   render();
@@ -324,6 +433,9 @@ async function handleSend(text) {
 /** Застосувати конфіг від батьківського віджета. */
 async function applyConfig(nextConfig) {
   config = nextConfig;
+  messages = [];
+  typedGreeting = '';
+  stopGreetingTypewriter();
   document.documentElement.style.setProperty('--color-primary', config.color || '#0D9E96');
   document.documentElement.style.setProperty('--color-user', config.color || '#0D9E96');
 
@@ -352,12 +464,25 @@ window.addEventListener('message', (event) => {
   });
 });
 
-// Повідомляємо батьківську сторінку про готовність iframe.
-window.parent.postMessage({ type: 'zrozumiloai-ready' }, '*');
+function notifyReady() {
+  window.parent.postMessage({ type: 'zrozumiloai-ready' }, '*');
+}
+
+notifyReady();
 render();
+
+// Повторні запити конфігу, поки widget.js не відповість.
+const readyRetry = setInterval(() => {
+  if (config) {
+    clearInterval(readyRetry);
+    return;
+  }
+  notifyReady();
+}, 500);
 
 // Таймаут, якщо конфіг не надійшов від widget.js.
 setTimeout(() => {
+  clearInterval(readyRetry);
   if (!config && root) {
     root.innerHTML = '<div class="embed__status embed__status--error">Не вдалося завантажити конфігурацію чату.</div>';
   }

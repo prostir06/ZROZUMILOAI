@@ -70,6 +70,12 @@ services:
     build: ./frontend
     ports:
       - "80:80"
+      - "443:443"
+    environment:
+      CADDY_SITE_ADDRESS: ${CADDY_SITE_ADDRESS:-:80}
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
     depends_on:
       - backend
 
@@ -77,3 +83,5 @@ volumes:
   postgres_data:
   ollama_data:
   workspace_media:
+  caddy_data:
+  caddy_config:

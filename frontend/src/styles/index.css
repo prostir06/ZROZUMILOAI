@@ -509,6 +509,47 @@ a:hover {
   flex-wrap: wrap;
 }
 
+.page__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown__menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  min-width: 10rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.35rem;
+  z-index: 20;
+}
+
+.dropdown__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font: inherit;
+}
+
+.dropdown__item:hover {
+  background: var(--btn-ghost-hover);
+}
+
 .page-loading,
 .loading-screen {
   display: flex;
@@ -919,6 +960,19 @@ textarea {
   flex-wrap: wrap;
 }
 
+.table__cell--truncate {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table--workspace-chats th {
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+}
+
 /* Chat */
 .page--chat {
   display: flex;
@@ -994,8 +1048,23 @@ textarea {
   box-shadow: 0 4px 16px color-mix(in srgb, var(--color-primary) 22%, transparent);
 }
 
-.chat-message--assistant {
+.chat-message-row--assistant {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
   align-self: flex-start;
+  max-width: 85%;
+}
+
+.chat-message__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.chat-message--assistant {
   background: var(--chat-assistant-bg);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
@@ -1074,6 +1143,22 @@ textarea {
 .model-tags__label {
   font-size: 0.8125rem;
   color: var(--color-text-muted);
+  width: 100%;
+}
+
+.model-tags--required {
+  margin-top: 0.25rem;
+}
+
+.model-tags__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.model-tags__group-label {
+  font-size: 0.8125rem;
+  color: var(--color-text);
 }
 
 .tag {
@@ -1093,6 +1178,18 @@ textarea {
   border-color: color-mix(in srgb, var(--color-primary) 35%, transparent);
   color: var(--color-primary);
   background: rgba(255, 255, 255, 0.8);
+}
+
+.tag--required {
+  background: #ef4444e0;
+  border-color: transparent;
+  color: #fff;
+}
+
+.tag--required:hover:not(:disabled) {
+  background: #ef4444;
+  color: #fff;
+  border-color: transparent;
 }
 
 .progress-bar {

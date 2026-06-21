@@ -405,24 +405,62 @@ function ChatPage() {
               <p>Напишіть повідомлення, щоб почати розмову</p>
             </div>
           )}
-          {messages.map((msg, index) => (
-            <div
-              key={`${msg.role}-${index}`}
-              className={`chat-message chat-message--${msg.role}`}
-            >
-              <div className="chat-message__role">
-                {msg.role === 'user' ? 'Ви' : 'Помічник'}
+          {messages.map((msg, index) => {
+            const isPendingAssistant = (
+              streaming
+              && index === messages.length - 1
+              && msg.role === 'assistant'
+              && !msg.content.trim()
+            );
+
+            if (msg.role === 'assistant') {
+              return (
+                <div key={`${msg.role}-${index}`} className="chat-message-row chat-message-row--assistant">
+                  <img
+                    src="/zrozumilo-assistant.png"
+                    alt=""
+                    className="chat-message__avatar"
+                    width={28}
+                    height={28}
+                  />
+                  {isPendingAssistant ? (
+                    <div className="chat-typing" aria-label="Помічник друкує">
+                      <span /><span /><span />
+                    </div>
+                  ) : (
+                    <div className={`chat-message chat-message--${msg.role}`}>
+                      <div className="chat-message__role">Помічник</div>
+                      <div className="chat-message__content">
+                        {formatBoldText(msg.content)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <div
+                key={`${msg.role}-${index}`}
+                className={`chat-message chat-message--${msg.role}`}
+              >
+                <div className="chat-message__role">Ви</div>
+                <div className="chat-message__content">{msg.content}</div>
               </div>
-              <div className="chat-message__content">
-                {msg.role === 'assistant'
-                  ? formatBoldText(msg.content)
-                  : msg.content}
+            );
+          })}
+          {streaming && messages[messages.length - 1]?.role !== 'assistant' && (
+            <div className="chat-message-row chat-message-row--assistant">
+              <img
+                src="/zrozumilo-assistant.png"
+                alt=""
+                className="chat-message__avatar"
+                width={28}
+                height={28}
+              />
+              <div className="chat-typing" aria-label="Помічник друкує">
+                <span /><span /><span />
               </div>
-            </div>
-          ))}
-          {streaming && (
-            <div className="chat-typing" aria-label="Помічник друкує">
-              <span /><span /><span />
             </div>
           )}
           <div ref={messagesEndRef} />

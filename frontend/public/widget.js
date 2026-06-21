@@ -128,18 +128,17 @@
       class="panel"
       title="${config.title}"
       allow="clipboard-write"
-      sandbox="allow-scripts allow-forms"
+      sandbox="allow-scripts allow-same-origin allow-forms"
     ></iframe>
   `;
 
   const launcher = shadow.querySelector('.launcher');
   const panel = shadow.querySelector('.panel');
   let isOpen = false;
-  let configSent = false;
 
   /** Надіслати конфігурацію в iframe через postMessage. */
   function sendConfig() {
-    if (!panel.contentWindow || configSent) {
+    if (!panel.contentWindow) {
       return;
     }
     try {
@@ -147,16 +146,21 @@
         { type: 'zrozumiloai-config', config },
         scriptOrigin,
       );
-      configSent = true;
     } catch (error) {
       console.error('[ZrozumiloAI] Не вдалося надіслати конфіг:', error);
     }
   }
 
-  panel.addEventListener('load', sendConfig);
   panel.addEventListener('error', () => {
     console.error('[ZrozumiloAI] Помилка завантаження iframe чату');
   });
+
+  /** URL iframe з cache-busting, щоб підхоплювати оновлення embed. */
+  function buildEmbedUrl() {
+    const url = new URL(config.embedUrl, scriptOrigin);
+    url.searchParams.set('v', String(Date.now()));
+    return url.toString();
+  }
 
   /** Відкрити або закрити панель чату. */
   function setOpen(open) {
@@ -166,8 +170,8 @@
     launcher.innerHTML = open
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>'
       : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.2L4 17.2V4h16v12z"/></svg>';
-    if (open && !panel.src) {
-      panel.src = config.embedUrl;
+    if (open) {
+      panel.src = buildEmbedUrl();
     }
   }
 

@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from workspaces.services import validate_user_chat_workspace
 
-from .models import Chat
+from .models import Chat, WorkspaceChatLog
 
 
 class ChatListSerializer(serializers.ModelSerializer):
@@ -58,3 +58,15 @@ class ChatSerializer(serializers.ModelSerializer):
         )
         validate_user_chat_workspace(request.user, workspace, model)
         return attrs
+
+
+class WorkspaceChatLogSerializer(serializers.ModelSerializer):
+    """Recorded workspace chat exchange for admin dashboard."""
+
+    workspace = serializers.CharField(source='workspace.name', read_only=True)
+    sent_at = serializers.DateTimeField(source='created_at', read_only=True)
+
+    class Meta:
+        model = WorkspaceChatLog
+        fields = ('id', 'sent_by', 'workspace', 'prompt', 'response', 'sent_at')
+        read_only_fields = fields

@@ -11,6 +11,13 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.throttling import ClientIPScopedRateThrottle
+from chats.services import (
+    content_from_ollama_chunk,
+    decode_stream_line,
+    extract_prompt_from_messages,
+    extract_response_from_ollama_payload,
+    log_workspace_chat_exchange,
+)
 from config.http_utils import validate_chat_messages
 from ollama_proxy.services import OllamaService
 from workspaces.services import get_ollama_options, prepare_chat_messages
@@ -103,9 +110,11 @@ class WidgetChatView(APIView):
         )
         options = get_ollama_options(workspace)
         service = OllamaService()
+        prompt = extract_prompt_from_messages(messages)
 
         if stream:
             def event_stream():
+                accumulated = []
                 try:
                     response = service.chat(
                         model,
@@ -114,14 +123,27 @@ class WidgetChatView(APIView):
                         options=options,
                     )
                     for line in response.iter_lines():
-                        if line:
-                            yield f'data: {line.decode("utf-8")}\n\n'
+                        if not line:
+                            continue
+                        decoded = decode_stream_line(line)
+                        if not decoded:
+                            continue
+                        yield f'data: {decoded}\n\n'
+                        chunk_content = content_from_ollama_chunk(decoded)
+                        if chunk_content:
+                            accumulated.append(chunk_content)
                 except ValidationError as exc:
                     payload = json.dumps({'error': _validation_message(exc)})
                     yield f'data: {payload}\n\n'
                 except requests.RequestException as exc:
                     payload = json.dumps({'error': str(exc)})
                     yield f'data: {payload}\n\n'
+                else:
+                    log_workspace_chat_exchange(
+                        workspace=workspace,
+                        prompt=prompt,
+                        response=''.join(accumulated),
+                    )
 
             return StreamingHttpResponse(
                 event_stream(),
@@ -135,7 +157,13 @@ class WidgetChatView(APIView):
                 stream=False,
                 options=options,
             )
-            return Response(service.parse_json(response))
+            parsed = service.parse_json(response)
+            log_workspace_chat_exchange(
+                workspace=workspace,
+                prompt=prompt,
+                response=extract_response_from_ollama_payload(parsed),
+            )
+            return Response(parsed)
         except ValidationError as exc:
             return Response(
                 {'error': _validation_message(exc)},

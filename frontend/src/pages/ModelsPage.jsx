@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import {
+  isModelInstalled,
+  REQUIRED_CHAT_MODEL,
+  REQUIRED_RAG_MODEL,
+  shouldShowRequiredModels,
+} from '../utils/models.js';
 
 function formatBytes(bytes) {
   if (!bytes) return '—';
@@ -12,16 +18,6 @@ function formatBytes(bytes) {
   }
   return `${size.toFixed(1)} ${units[i]}`;
 }
-
-const POPULAR_MODELS = [
-  'llama3.2',
-  'llama3.1',
-  'mistral',
-  'gemma2',
-  'phi3',
-  'qwen2.5',
-  'codellama',
-];
 
 function ModelsPage() {
   const [models, setModels] = useState([]);
@@ -90,6 +86,8 @@ function ModelsPage() {
     }
   };
 
+  const showRequiredModels = shouldShowRequiredModels(models);
+
   return (
     <div className="page">
       <header className="page__header">
@@ -124,20 +122,37 @@ function ModelsPage() {
           </div>
         )}
 
-        <div className="model-tags">
-          <span className="model-tags__label">Популярні:</span>
-          {POPULAR_MODELS.map((name) => (
-            <button
-              key={name}
-              type="button"
-              className="tag"
-              onClick={() => handlePull(name)}
-              disabled={pulling}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
+        {showRequiredModels && (
+          <div className="model-tags model-tags--required">
+            <span className="model-tags__label">Необхідні для роботи:</span>
+            {!isModelInstalled(models, REQUIRED_CHAT_MODEL) && (
+              <div className="model-tags__group">
+                <span className="model-tags__group-label">Чату</span>
+                <button
+                  type="button"
+                  className="tag tag--required"
+                  onClick={() => handlePull(REQUIRED_CHAT_MODEL)}
+                  disabled={pulling}
+                >
+                  {REQUIRED_CHAT_MODEL}
+                </button>
+              </div>
+            )}
+            {!isModelInstalled(models, REQUIRED_RAG_MODEL) && (
+              <div className="model-tags__group">
+                <span className="model-tags__group-label">Документи (RAG)</span>
+                <button
+                  type="button"
+                  className="tag tag--required"
+                  onClick={() => handlePull(REQUIRED_RAG_MODEL)}
+                  disabled={pulling}
+                >
+                  {REQUIRED_RAG_MODEL}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       {error && <div className="alert alert--error" role="alert">{error}</div>}

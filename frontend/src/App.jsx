@@ -10,6 +10,7 @@ import UsersPage from './pages/UsersPage';
 import BackupPage from './pages/BackupPage';
 import ModelsPage from './pages/ModelsPage';
 import WorkspacesPage from './pages/WorkspacesPage';
+import WorkspaceChatsPage from './pages/WorkspaceChatsPage';
 import AdminLayout from './components/AdminLayout';
 import ProfileLayout from './components/ProfileLayout';
 import PasswordPage from './pages/PasswordPage';
@@ -104,6 +105,7 @@ function App() {
         >
           <Route index element={<Navigate to="/admin/workspaces" replace />} />
           <Route path="workspaces" element={<WorkspacesPage />} />
+          <Route path="chats" element={<WorkspaceChatsPage />} />
           <Route path="models" element={<ModelsPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="backups" element={<BackupPage />} />

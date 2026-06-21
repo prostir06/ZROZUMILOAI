@@ -552,6 +552,61 @@ class ApiClient {
     link.click();
     window.URL.revokeObjectURL(url);
   }
+
+  async getWorkspaceChatLogs() {
+    const response = await this.request('/chats/logs/');
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.error || error.detail || 'Failed to fetch workspace chats');
+    }
+    return safeJson(response, []);
+  }
+
+  async deleteWorkspaceChatLog(logId) {
+    const response = await this.request(`/chats/logs/${logId}/`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.error || error.detail || 'Failed to delete chat log');
+    }
+    return safeJson(response, {});
+  }
+
+  async clearWorkspaceChatLogs() {
+    const response = await this.request('/chats/logs/clear/', {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.error || error.detail || 'Failed to clear chat logs');
+    }
+    return safeJson(response, {});
+  }
+
+  async exportWorkspaceChatLogs(format) {
+    const token = this.getToken();
+    const response = await fetch(
+      `${this.baseUrl}/chats/logs/export/?export_format=${encodeURIComponent(format)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.error || error.detail || 'Failed to export chat logs');
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    const filename = match?.[1] || `workspace_chats.${format}`;
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  }
 }
 
 export const api = new ApiClient();
