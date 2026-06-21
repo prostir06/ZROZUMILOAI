@@ -1,3 +1,5 @@
+import { safeJson } from '../utils/safeJson.js';
+
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 class ApiClient {
@@ -20,11 +22,15 @@ class ApiClient {
     localStorage.removeItem('user');
   }
 
-  async request(path, options = {}) {
+  async _fetchWithAuth(path, options = {}, isRetry = false) {
     const headers = {
-      'Content-Type': 'application/json',
       ...options.headers,
     };
+
+    const isFormData = options.body instanceof FormData;
+    if (!isFormData && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     const token = this.getToken();
     if (token) {
@@ -36,11 +42,10 @@ class ApiClient {
       headers,
     });
 
-    if (response.status === 401 && !path.includes('/auth/')) {
+    if (response.status === 401 && !path.includes('/auth/') && !isRetry) {
       const refreshed = await this.refreshToken();
       if (refreshed) {
-        headers.Authorization = `Bearer ${this.getToken()}`;
-        return fetch(`${this.baseUrl}${path}`, { ...options, headers });
+        return this._fetchWithAuth(path, options, true);
       }
       this.clearTokens();
       window.location.href = '/login';
@@ -48,6 +53,42 @@ class ApiClient {
     }
 
     return response;
+  }
+
+  async _consumeSSE(response, onChunk) {
+    if (!response.body) {
+      throw new Error('Порожня відповідь сервера');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    let doneReading = false;
+    while (!doneReading) {
+      const { done, value } = await reader.read();
+      doneReading = done;
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            onChunk(data);
+          } catch {
+            /* skip malformed chunks */
+          }
+        }
+      }
+    }
+  }
+
+  async request(path, options = {}) {
+    return this._fetchWithAuth(path, options);
   }
 
   async refreshToken() {
@@ -71,6 +112,14 @@ class ApiClient {
     }
   }
 
+  async getAuthConfig() {
+    const response = await fetch(`${this.baseUrl}/auth/config/`);
+    if (!response.ok) {
+      return { allow_registration: true };
+    }
+    return response.json();
+  }
+
   async login(username, password) {
     const response = await this.request('/auth/login/', {
       method: 'POST',
@@ -78,11 +127,11 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(error.detail || 'Помилка входу');
     }
 
-    const data = await response.json();
+    const data = await safeJson(response);
     this.setTokens(data.access, data.refresh);
     if (data.user) {
       localStorage.setItem('user', JSON.stringify(data.user));
@@ -97,11 +146,13 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(JSON.stringify(error));
+      const error = await safeJson(response, {});
+      throw new Error(
+        error.detail || error.non_field_errors?.[0] || JSON.stringify(error),
+      );
     }
 
-    return response.json();
+    return safeJson(response);
   }
 
   async getCurrentUser() {
@@ -237,6 +288,69 @@ class ApiClient {
     return true;
   }
 
+  async getWidgetTokens(workspaceId) {
+    const response = await this.request(`/workspaces/${workspaceId}/widget-tokens/`);
+    if (!response.ok) throw new Error('Failed to fetch widget tokens');
+    return response.json();
+  }
+
+  async createWidgetToken(workspaceId, label = '') {
+    const response = await this.request(`/workspaces/${workspaceId}/widget-tokens/`, {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || 'Failed to create widget token');
+    }
+    return response.json();
+  }
+
+  async deleteWidgetToken(workspaceId, tokenId) {
+    const response = await this.request(
+      `/workspaces/${workspaceId}/widget-tokens/${tokenId}/`,
+      { method: 'DELETE' },
+    );
+    if (!response.ok) throw new Error('Failed to delete widget token');
+    return true;
+  }
+
+  async getWorkspaceDocuments(workspaceId) {
+    const response = await this.request(`/workspaces/${workspaceId}/documents/`);
+    if (!response.ok) throw new Error('Failed to fetch documents');
+    return response.json();
+  }
+
+  async uploadWorkspaceDocument(workspaceId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await this._fetchWithAuth(
+      `/workspaces/${workspaceId}/documents/`,
+      { method: 'POST', body: formData },
+    );
+
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      const message = error.file?.[0]
+        || error.detail
+        || error.error
+        || 'Failed to upload document';
+      throw new Error(message);
+    }
+
+    return response.json();
+  }
+
+  async deleteWorkspaceDocument(workspaceId, documentId) {
+    const response = await this.request(
+      `/workspaces/${workspaceId}/documents/${documentId}/`,
+      { method: 'DELETE' },
+    );
+    if (!response.ok) throw new Error('Failed to delete document');
+    return true;
+  }
+
   async getMyWorkspaces() {
     const response = await this.request('/workspaces/my/');
     if (!response.ok) throw new Error('Failed to fetch workspaces');
@@ -289,7 +403,10 @@ class ApiClient {
 
   async getOllamaHealth() {
     const response = await this.request('/ollama/health/');
-    return response.json();
+    if (!response.ok) {
+      return { connected: false };
+    }
+    return safeJson(response, { connected: false });
   }
 
   async getModels() {
@@ -306,7 +423,11 @@ class ApiClient {
       method: 'DELETE',
       body: JSON.stringify({ name }),
     });
-    return response.json();
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.error || 'Failed to delete model');
+    }
+    return safeJson(response, {});
   }
 
   async chat(model, messages, stream = false, workspaceId = null) {
@@ -329,13 +450,8 @@ class ApiClient {
   }
 
   async chatStream(model, messages, onChunk, workspaceId = null) {
-    const token = this.getToken();
-    const response = await fetch(`${this.baseUrl}/ollama/chat/`, {
+    const response = await this._fetchWithAuth('/ollama/chat/', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
       body: JSON.stringify({
         model,
         messages,
@@ -355,70 +471,32 @@ class ApiClient {
       throw new Error(message);
     }
 
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    let doneReading = false;
-    while (!doneReading) {
-      const { done, value } = await reader.read();
-      doneReading = done;
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            onChunk(data);
-          } catch {
-            /* skip malformed chunks */
-          }
-        }
-      }
-    }
+    await this._consumeSSE(response, onChunk);
   }
 
   pullModelStream(name, onProgress) {
-    const token = this.getToken();
     const controller = new AbortController();
 
-    fetch(`${this.baseUrl}/ollama/models/pull/`, {
+    this._fetchWithAuth('/ollama/models/pull/', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
       body: JSON.stringify({ name }),
       signal: controller.signal,
     }).then(async (response) => {
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      let doneReading = false;
-      while (!doneReading) {
-        const { done, value } = await reader.read();
-        doneReading = done;
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              onProgress(data);
-            } catch {
-              /* skip malformed chunks */
-            }
-          }
+      if (!response.ok) {
+        let message = 'Failed to pull model';
+        try {
+          const error = await response.json();
+          message = error.error || message;
+        } catch {
+          /* ignore */
         }
+        onProgress({ error: message });
+        return;
+      }
+      await this._consumeSSE(response, onProgress);
+    }).catch((err) => {
+      if (err.message !== 'Unauthorized') {
+        onProgress({ error: err.message || 'Failed to pull model' });
       }
     });
 

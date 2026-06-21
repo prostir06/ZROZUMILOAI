@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="uk">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Demo — ZrozumiloAI Widget</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 720px;
+        margin: 48px auto;
+        padding: 0 24px;
+        line-height: 1.6;
+        color: #1c3d3a;
+      }
+      code, pre {
+        background: #f4fbfa;
+        border: 1px solid rgba(13, 158, 150, 0.14);
+        border-radius: 8px;
+      }
+      code { padding: 2px 6px; }
+      pre {
+        padding: 16px;
+        overflow-x: auto;
+        font-size: 0.875rem;
+      }
+      h1 { color: #0d9e96; }
+    </style>
+  </head>
+  <body>
+    <h1>Демо стороннього сайту</h1>
+    <p>
+      Ця сторінка імітує зовнішній сайт з підключеним віджетом ZrozumiloAI.
+      Кнопка чату зʼявиться в правому нижньому куті.
+    </p>
+
+    <h2>Підключення</h2>
+    <pre>&lt;script
+  src="http://localhost/widget.js"
+  data-widget-token="wt_ВАШ_TOKEN"
+  data-title="Підтримка"
+  data-color="#0D9E96"
+&gt;&lt;/script&gt;</pre>
+
+    <p>
+      Token створюється в адмінці: Workspaces → Редагувати → «Створити token».
+      Token привʼязаний до workspace і не дає доступу до інших API.
+    </p>
+
+    <!-- Віджет: вставте widget token з адмін-панелі -->
+    <script src="http://localhost/widget.js" data-widget-token="REPLACE_WITH_WIDGET_TOKEN" data-title="Підтримка"></script>
+  </body>
+</html>

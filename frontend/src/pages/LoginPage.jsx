@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 function LoginPage() {
-  const { login } = useAuth();
+  const { login, allowRegistration } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -63,9 +63,11 @@ function LoginPage() {
           </button>
         </form>
 
-        <p className="auth-card__footer">
-          Немає облікового запису? <Link to="/register">Зареєструватися</Link>
-        </p>
+        {allowRegistration === true && (
+          <p className="auth-card__footer">
+            Немає облікового запису? <Link to="/register">Зареєструватися</Link>
+          </p>
+        )}
       </div>
     </div>
   );

@@ -1,19 +1,30 @@
-"""Ollama API client service."""
+"""Клієнт HTTP API Ollama."""
 import logging
 
 import requests
 from django.conf import settings
 
+from config.http_utils import safe_response_json
+
+from .ollama_utils import (
+    normalize_model_name,
+    normalize_ollama_options,
+    raise_for_ollama_status,
+    sanitize_messages_for_ollama,
+)
+
 logger = logging.getLogger(__name__)
 
 
 class OllamaService:
-    """Wrapper for Ollama HTTP API."""
+    """Обгортка над HTTP API Ollama."""
 
     def __init__(self, base_url=None):
+        # Базова URL без завершального слеша для коректної конкатенації шляхів.
         self.base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip('/')
 
     def _request(self, method, path, **kwargs):
+        """Виконати HTTP-запит до Ollama з логуванням помилок мережі."""
         url = f'{self.base_url}{path}'
         timeout = kwargs.pop('timeout', 30)
         try:
@@ -23,14 +34,19 @@ class OllamaService:
             logger.error('Ollama request failed: %s', exc)
             raise
 
+    def parse_json(self, response):
+        """Розпарсити JSON-відповідь Ollama з обробкою некоректного тіла."""
+        return safe_response_json(response, service_name='Ollama')
+
     def list_models(self):
-        """Return installed models."""
+        """Повернути список встановлених моделей."""
         response = self._request('GET', '/api/tags')
-        response.raise_for_status()
-        return response.json()
+        raise_for_ollama_status(response)
+        return self.parse_json(response)
 
     def pull_model(self, name):
         """Pull a model from registry (streaming)."""
+        name = normalize_model_name(name)
         response = self._request(
             'POST',
             '/api/pull',
@@ -38,21 +54,26 @@ class OllamaService:
             stream=True,
             timeout=600,
         )
-        response.raise_for_status()
+        raise_for_ollama_status(response)
         return response
 
     def delete_model(self, name):
         """Delete a model."""
+        name = normalize_model_name(name)
         response = self._request(
             'DELETE',
             '/api/delete',
             json={'name': name},
         )
-        response.raise_for_status()
-        return response.json()
+        raise_for_ollama_status(response)
+        return self.parse_json(response)
 
     def chat(self, model, messages, stream=False, options=None):
         """Send chat completion request."""
+        model = normalize_model_name(model)
+        messages = sanitize_messages_for_ollama(messages)
+        options = normalize_ollama_options(options)
+
         payload = {
             'model': model,
             'messages': messages,
@@ -67,11 +88,12 @@ class OllamaService:
             stream=stream,
             timeout=300,
         )
-        response.raise_for_status()
+        raise_for_ollama_status(response)
         return response
 
     def generate(self, model, prompt, stream=False):
         """Send generate request."""
+        model = normalize_model_name(model)
         payload = {
             'model': model,
             'prompt': prompt,
@@ -84,7 +106,7 @@ class OllamaService:
             stream=stream,
             timeout=300,
         )
-        response.raise_for_status()
+        raise_for_ollama_status(response)
         return response
 
     def health(self):
@@ -94,3 +116,19 @@ class OllamaService:
             return response.status_code == 200
         except requests.RequestException:
             return False
+
+    def embed(self, model, text):
+        """Отримати embedding-вектор для тексту."""
+        model = normalize_model_name(model)
+        response = self._request(
+            'POST',
+            '/api/embeddings',
+            json={'model': model, 'prompt': text},
+            timeout=120,
+        )
+        raise_for_ollama_status(response)
+        data = self.parse_json(response)
+        embedding = data.get('embedding')
+        if not isinstance(embedding, list) or not embedding:
+            raise requests.RequestException('Ollama не повернув embedding')
+        return embedding

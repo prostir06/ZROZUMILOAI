@@ -1,11 +1,15 @@
-"""Workspace access helpers."""
+"""Допоміжні функції контролю доступу до workspace та підготовки чату."""
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from .models import Workspace
 
 
 def get_allowed_model_names(user):
-    """Return allowed model names for user, or None if all models are allowed."""
+    """
+    Повернути дозволені імена моделей для користувача.
+
+    Для staff повертає None (доступ до всіх моделей).
+    """
     if user.is_staff:
         return None
 
@@ -18,7 +22,7 @@ def get_allowed_model_names(user):
 
 
 def user_can_use_model(user, model_name):
-    """Check whether the user may use the given model."""
+    """Перевірити, чи може користувач використовувати вказану модель."""
     allowed = get_allowed_model_names(user)
     if allowed is None:
         return True
@@ -79,7 +83,7 @@ def resolve_workspace_for_chat(user, model_name, workspace_id=None):
 
     if workspace_id:
         workspace = get_workspace_for_user(user, workspace_id)
-        if model_name not in (workspace.model_names or []):
+        if not user.is_staff and model_name not in (workspace.model_names or []):
             raise ValidationError(
                 {'model': 'Модель не призначена для цього workspace'},
             )
@@ -101,12 +105,25 @@ def resolve_workspace_for_chat(user, model_name, workspace_id=None):
     return None
 
 
-def prepare_chat_messages(messages, workspace):
-    """Inject workspace system prompt for the Ollama request."""
-    if not workspace or not workspace.system_prompt.strip():
+def prepare_chat_messages(messages, workspace, rag_query=None):
+    """Inject workspace system prompt and optional RAG context for Ollama."""
+    system_parts = []
+
+    if workspace and workspace.system_prompt.strip():
+        system_parts.append(workspace.system_prompt.strip())
+
+    if workspace and rag_query:
+        from workspaces.rag.service import format_rag_context, search_workspace_documents
+
+        chunks = search_workspace_documents(workspace, rag_query)
+        rag_context = format_rag_context(chunks)
+        if rag_context:
+            system_parts.append(rag_context)
+
+    if not system_parts:
         return list(messages)
 
-    prompt = workspace.system_prompt.strip()
+    prompt = '\n\n'.join(system_parts)
     prepared = []
     has_system = False
     for message in messages:
@@ -126,4 +143,8 @@ def get_ollama_options(workspace):
     """Build Ollama options from workspace settings."""
     if not workspace:
         return None
-    return {'temperature': workspace.temperature}
+    try:
+        temperature = float(workspace.temperature)
+    except (TypeError, ValueError):
+        temperature = 0.7
+    return {'temperature': temperature}

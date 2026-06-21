@@ -1,0 +1,68 @@
+"""Unit-тести RAG service helpers."""
+from unittest.mock import MagicMock, patch
+
+from django.test import SimpleTestCase, override_settings
+
+from workspaces.rag.service import (
+    extract_last_user_message,
+    format_rag_context,
+    sanitize_filename,
+    search_workspace_documents,
+)
+
+
+class RagServiceHelperTests(SimpleTestCase):
+    def test_format_rag_context_empty(self):
+        self.assertEqual(format_rag_context([]), '')
+
+    def test_format_rag_context_includes_content(self):
+        chunks = [{
+            'content': 'Текст FAQ',
+            'score': 0.9,
+            'document_name': 'faq.md',
+        }]
+        context = format_rag_context(chunks)
+        self.assertIn('faq.md', context)
+        self.assertIn('Текст FAQ', context)
+
+    def test_extract_last_user_message(self):
+        messages = [
+            {'role': 'user', 'content': 'Перше'},
+            {'role': 'assistant', 'content': 'Відповідь'},
+            {'role': 'user', 'content': '  Друге  '},
+        ]
+        self.assertEqual(extract_last_user_message(messages), 'Друге')
+
+    def test_extract_last_user_message_invalid_input(self):
+        self.assertIsNone(extract_last_user_message(None))
+        self.assertIsNone(extract_last_user_message('text'))
+
+    def test_sanitize_filename(self):
+        self.assertEqual(sanitize_filename('../../evil.pdf'), 'evil.pdf')
+        self.assertTrue(sanitize_filename(''))
+
+    @override_settings(RAG_ENABLED=False)
+    def test_search_disabled_returns_empty(self):
+        result = search_workspace_documents(MagicMock(), 'query')
+        self.assertEqual(result, [])
+
+    @override_settings(RAG_ENABLED=True, RAG_EMBED_MODEL='test', RAG_TOP_K=2)
+    @patch('workspaces.rag.service.search_with_python')
+    @patch('workspaces.rag.service.uses_pgvector', return_value=False)
+    @patch('workspaces.rag.service.OllamaService')
+    def test_search_delegates_to_python(self, mock_ollama, _mock_pg, mock_python):
+        mock_ollama.return_value.embed.return_value = [0.1, 0.2]
+        mock_python.return_value = [{'content': 'x', 'score': 1, 'document_name': 'a.txt'}]
+
+        result = search_workspace_documents(MagicMock(), 'питання')
+
+        mock_python.assert_called_once()
+        self.assertEqual(len(result), 1)
+
+    @override_settings(RAG_ENABLED=True, RAG_EMBED_MODEL='test', RAG_TOP_K=2)
+    @patch('workspaces.rag.service.OllamaService')
+    def test_search_returns_empty_on_embed_error(self, mock_ollama):
+        mock_ollama.return_value.embed.side_effect = RuntimeError('ollama down')
+
+        result = search_workspace_documents(MagicMock(), 'питання')
+        self.assertEqual(result, [])

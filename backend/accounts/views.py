@@ -1,11 +1,13 @@
 """Views for authentication and user management."""
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import generics, permissions, status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from .throttling import ClientIPScopedRateThrottle
 from .serializers import (
     AdminCreateUserSerializer,
     AdminUpdateUserSerializer,
@@ -18,14 +20,28 @@ from .serializers import (
 User = get_user_model()
 
 
+class AuthConfigView(APIView):
+    """Public auth settings for the frontend."""
+
+    permission_classes = (permissions.AllowAny,)
+
+    def get(self, request):
+        return Response({'allow_registration': settings.ALLOW_REGISTRATION})
+
+
 class RegisterView(generics.CreateAPIView):
     """Public user registration."""
 
     queryset = User.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = (permissions.AllowAny,)
+    throttle_classes = (ClientIPScopedRateThrottle,)
+    throttle_scope = 'auth_register'
 
     def create(self, request, *args, **kwargs):
+        if not settings.ALLOW_REGISTRATION:
+            raise PermissionDenied('Реєстрація вимкнена')
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
@@ -121,6 +137,9 @@ class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     """JWT login with user info in response."""
+
+    throttle_classes = (ClientIPScopedRateThrottle,)
+    throttle_scope = 'auth_login'
 
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)

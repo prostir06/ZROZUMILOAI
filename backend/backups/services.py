@@ -104,9 +104,19 @@ class BackupService:
     def list_backups(self):
         """Return sorted list of backup files (newest first)."""
         backups = []
-        for path in self.backup_dir.iterdir():
-            if path.is_file() and path.suffix in ALLOWED_EXTENSIONS:
-                backups.append(self._file_info(path))
+        try:
+            entries = list(self.backup_dir.iterdir())
+        except OSError as exc:
+            logger.error('Cannot read backup directory: %s', exc)
+            raise RuntimeError('Не вдалося прочитати каталог резервних копій') from exc
+
+        for path in entries:
+            try:
+                if path.is_file() and path.suffix in ALLOWED_EXTENSIONS:
+                    backups.append(self._file_info(path))
+            except OSError as exc:
+                logger.warning('Skipping unreadable backup file %s: %s', path, exc)
+
         backups.sort(key=lambda item: item['created_at'], reverse=True)
         return backups
 

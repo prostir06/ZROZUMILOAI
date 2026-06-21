@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-zrozumiloai}
       POSTGRES_USER: ${POSTGRES_USER:-zrozumiloai}
@@ -15,6 +15,9 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    environment:
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-4}
+      OLLAMA_MAX_QUEUE: ${OLLAMA_MAX_QUEUE:-512}
     volumes:
       - ollama_data:/root/.ollama
     ports:
@@ -33,6 +36,7 @@ services:
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-production}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
+      ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-False}
       DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
       DJANGO_ADMIN_USERNAME: ${DJANGO_ADMIN_USERNAME:-admin}
       DJANGO_ADMIN_PASSWORD: ${DJANGO_ADMIN_PASSWORD:-}
@@ -46,8 +50,14 @@ services:
       CORS_ALLOWED_ORIGINS: http://localhost,http://localhost:80,http://127.0.0.1
       BACKUP_DIR: /backup
       FORCE_DB_RESTORE: ${FORCE_DB_RESTORE:-0}
+      GUNICORN_WORKER_CLASS: ${GUNICORN_WORKER_CLASS:-gevent}
+      GUNICORN_WORKERS: ${GUNICORN_WORKERS:-4}
+      GUNICORN_WORKER_CONNECTIONS: ${GUNICORN_WORKER_CONNECTIONS:-1000}
+      GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-300}
+      RAG_EMBED_MODEL: ${RAG_EMBED_MODEL:-nomic-embed-text}
     volumes:
       - ./backup:/backup
+      - workspace_media:/app/media
     depends_on:
       db:
         condition: service_healthy
@@ -66,3 +76,4 @@ services:
 volumes:
   postgres_data:
   ollama_data:
+  workspace_media:

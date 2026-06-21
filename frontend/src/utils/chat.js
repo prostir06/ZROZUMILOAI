@@ -1,12 +1,27 @@
+/**
+ * Утиліти для відображення чатів у sidebar.
+ */
+
+/** Побудувати заголовок чату з першого повідомлення (до 60 символів). */
 export function buildChatTitle(text) {
-  const trimmed = text.trim();
-  if (!trimmed) return 'Новий чат';
+  const trimmed = String(text || '').trim();
+  if (!trimmed) {
+    return 'Новий чат';
+  }
   return trimmed.length > 60 ? `${trimmed.slice(0, 60)}…` : trimmed;
 }
 
+/** Форматувати дату чату українською (сьогодні — час, інакше — дата). */
 export function formatChatDate(iso) {
-  if (!iso) return '';
+  if (!iso) {
+    return '';
+  }
+
   const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
   if (isToday) {

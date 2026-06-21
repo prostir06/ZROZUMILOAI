@@ -34,6 +34,27 @@ function AdminRoute({ children }) {
   if (loading) return null;
   return isAdmin ? children : <Navigate to="/" replace />;
 }
+function RegisterRoute() {
+  const { isAuthenticated, allowRegistration, loading } = useAuth();
+
+  if (loading || allowRegistration === null) {
+    return (
+      <div className="loading-screen">
+        <div className="spinner" aria-label="Завантаження" />
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (!allowRegistration) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <RegisterPage />;
+}
 
 function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -52,10 +73,7 @@ function App() {
         path="/login"
         element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />}
       />
-      <Route
-        path="/register"
-        element={isAuthenticated ? <Navigate to="/" replace /> : <RegisterPage />}
-      />
+      <Route path="/register" element={<RegisterRoute />} />
       <Route
         path="/"
         element={

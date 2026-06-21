@@ -33,8 +33,8 @@ function RegisterPage() {
       } else {
         navigate('/login');
       }
-    } catch {
-      setError('Перевірте правильність введених даних');
+    } catch (err) {
+      setError(err.message || 'Перевірте правильність введених даних');
     } finally {
       setLoading(false);
     }

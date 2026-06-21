@@ -6,6 +6,7 @@
 
 - Чат з AI-помічником (streaming) через Ollama API
 - Workspaces — ізоляція моделей, system prompt і temperature для груп користувачів
+- **RAG** — завантаження документів (TXT, MD, PDF) у workspace; релевантний контекст автоматично додається в чат
 - Збережені чати на сервері (історія діалогів)
 - Перегляд моделей (з фільтрацією за workspace); завантаження та видалення — лише для адміністратора
 - Реєстрація та авторизація (JWT + API-ключі)
@@ -49,7 +50,10 @@ docker compose up --build -d
 
 ```bash
 docker compose exec ollama ollama pull llama3.2
+docker compose exec ollama ollama pull nomic-embed-text
 ```
+
+Модель `nomic-embed-text` потрібна для RAG (embeddings документів).
 
 Або через адмін-панель: http://localhost/admin/models
 
@@ -133,6 +137,19 @@ API-ключ генерується автоматично при реєстра
 | GET | `/api/workspaces/my/` | auth | Workspaces поточного користувача |
 | GET/POST | `/api/workspaces/` | admin | Список / створення |
 | GET/PATCH/DELETE | `/api/workspaces/<id>/` | admin | Перегляд / редагування / видалення |
+| GET/POST | `/api/workspaces/<id>/documents/` | admin | Список / завантаження документів (RAG) |
+| DELETE | `/api/workspaces/<id>/documents/<doc_id>/` | admin | Видалити документ |
+
+### RAG (документи workspace)
+
+1. Адмін завантажує `.txt`, `.md` або `.pdf` у workspace (адмінка → Workspaces → редагування).
+2. Backend індексує текст: chunking + embeddings через Ollama (`RAG_EMBED_MODEL`, за замовчуванням `nomic-embed-text`).
+3. Вектори зберігаються в **PostgreSQL + pgvector** (HNSW-індекс, cosine-пошук).
+4. При кожному повідомленні в чаті (в т.ч. widget) у system prompt додаються найрелевантніші фрагменти.
+
+Docker використовує образ `pgvector/pgvector:pg16`. Локально з `USE_SQLITE=True` пошук працює через Python fallback (без pgvector).
+
+Змінні середовища: `RAG_ENABLED`, `RAG_EMBED_MODEL`, `RAG_EMBED_DIMENSIONS`, `RAG_TOP_K`, `RAG_CHUNK_SIZE`, `RAG_MAX_FILE_SIZE` (див. `.env.example`).
 
 ### Ollama
 

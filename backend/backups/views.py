@@ -15,14 +15,20 @@ class BackupListCreateView(APIView):
 
     def get(self, request):
         service = BackupService()
-        return Response({'backups': service.list_backups()})
+        try:
+            return Response({'backups': service.list_backups()})
+        except RuntimeError as exc:
+            return Response(
+                {'error': str(exc)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     def post(self, request):
         service = BackupService()
         try:
             backup = service.create_backup()
             return Response(backup, status=status.HTTP_201_CREATED)
-        except (RuntimeError, FileNotFoundError) as exc:
+        except (RuntimeError, FileNotFoundError, OSError, PermissionError) as exc:
             return Response(
                 {'error': str(exc)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -48,6 +54,11 @@ class BackupDownloadView(APIView):
                 {'error': str(exc)},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        except OSError as exc:
+            return Response(
+                {'error': str(exc)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class BackupDeleteView(APIView):
@@ -64,4 +75,9 @@ class BackupDeleteView(APIView):
             return Response(
                 {'error': str(exc)},
                 status=status.HTTP_404_NOT_FOUND,
+            )
+        except OSError as exc:
+            return Response(
+                {'error': str(exc)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

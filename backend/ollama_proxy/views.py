@@ -9,6 +9,7 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from config.http_utils import validate_chat_messages
 from workspaces.services import (
     get_allowed_model_names,
     get_ollama_options,
@@ -16,8 +17,21 @@ from workspaces.services import (
     resolve_workspace_for_chat,
     user_can_use_model,
 )
+from workspaces.rag.service import extract_last_user_message
 
 from .services import OllamaService
+
+
+def _validation_message(exc):
+    """Перетворити ValidationError у рядок для API."""
+    detail = exc.detail
+    if isinstance(detail, dict):
+        message = next(iter(detail.values()))
+        if isinstance(message, list):
+            message = message[0]
+    else:
+        message = str(detail)
+    return message
 
 
 class OllamaHealthView(APIView):
@@ -120,7 +134,7 @@ class ChatView(APIView):
     permission_classes = (IsAuthenticated,)
 
     def post(self, request):
-        model = request.data.get('model')
+        model = (request.data.get('model') or '').strip()
         messages = request.data.get('messages', [])
         stream = request.data.get('stream', False)
         workspace_id = request.data.get('workspace_id')
@@ -130,6 +144,18 @@ class ChatView(APIView):
                 {'error': 'Параметр model обов\'язковий'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        try:
+            validate_chat_messages(messages)
+        except ValidationError as exc:
+            detail = exc.detail
+            if isinstance(detail, dict):
+                message = next(iter(detail.values()))
+                if isinstance(message, list):
+                    message = message[0]
+            else:
+                message = str(detail)
+            return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
 
         if not user_can_use_model(request.user, model):
             return Response(
@@ -158,7 +184,11 @@ class ChatView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        ollama_messages = prepare_chat_messages(messages, workspace)
+        ollama_messages = prepare_chat_messages(
+            messages,
+            workspace,
+            rag_query=extract_last_user_message(messages),
+        )
         options = get_ollama_options(workspace)
         service = OllamaService()
 
@@ -174,6 +204,9 @@ class ChatView(APIView):
                     for line in response.iter_lines():
                         if line:
                             yield f'data: {line.decode("utf-8")}\n\n'
+                except ValidationError as exc:
+                    payload = json.dumps({'error': _validation_message(exc)})
+                    yield f'data: {payload}\n\n'
                 except requests.RequestException as exc:
                     payload = json.dumps({'error': str(exc)})
                     yield f'data: {payload}\n\n'
@@ -190,7 +223,12 @@ class ChatView(APIView):
                 stream=False,
                 options=options,
             )
-            return Response(response.json())
+            return Response(service.parse_json(response))
+        except ValidationError as exc:
+            return Response(
+                {'error': _validation_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except requests.RequestException as exc:
             return Response(
                 {'error': str(exc)},

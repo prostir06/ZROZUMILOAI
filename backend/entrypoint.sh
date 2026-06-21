@@ -10,7 +10,20 @@ python manage.py migrate --noinput
 python manage.py ensure_admin
 python manage.py collectstatic --noinput
 
+WORKER_CLASS="${GUNICORN_WORKER_CLASS:-gevent}"
+WORKERS="${GUNICORN_WORKERS:-4}"
+TIMEOUT="${GUNICORN_TIMEOUT:-300}"
+
+if [ "$WORKER_CLASS" = "gevent" ]; then
+  exec gunicorn config.wsgi:application \
+    --bind 0.0.0.0:8000 \
+    --worker-class gevent \
+    --workers "$WORKERS" \
+    --worker-connections "${GUNICORN_WORKER_CONNECTIONS:-1000}" \
+    --timeout "$TIMEOUT"
+fi
+
 exec gunicorn config.wsgi:application \
   --bind 0.0.0.0:8000 \
-  --workers 3 \
-  --timeout 300
+  --workers "$WORKERS" \
+  --timeout "$TIMEOUT"

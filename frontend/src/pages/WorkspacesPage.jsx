@@ -6,7 +6,7 @@ const emptyForm = {
   system_prompt: '',
   temperature: 0.7,
   user_ids: [],
-  model_names: [],
+  model_name: '',
 };
 
 function WorkspacesPage() {
@@ -18,6 +18,11 @@ function WorkspacesPage() {
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState('');
   const [form, setForm] = useState(emptyForm);
+  const [widgetTokens, setWidgetTokens] = useState([]);
+  const [newWidgetToken, setNewWidgetToken] = useState('');
+  const [widgetTokenLabel, setWidgetTokenLabel] = useState('');
+  const [documents, setDocuments] = useState([]);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -45,6 +50,28 @@ function WorkspacesPage() {
     setForm(emptyForm);
     setFormMode(null);
     setEditingId(null);
+    setWidgetTokens([]);
+    setNewWidgetToken('');
+    setWidgetTokenLabel('');
+    setDocuments([]);
+  };
+
+  const loadWidgetTokens = async (workspaceId) => {
+    try {
+      const tokens = await api.getWidgetTokens(workspaceId);
+      setWidgetTokens(tokens);
+    } catch {
+      setWidgetTokens([]);
+    }
+  };
+
+  const loadDocuments = async (workspaceId) => {
+    try {
+      const docs = await api.getWorkspaceDocuments(workspaceId);
+      setDocuments(docs);
+    } catch {
+      setDocuments([]);
+    }
   };
 
   const openCreateForm = () => {
@@ -61,10 +88,12 @@ function WorkspacesPage() {
       system_prompt: workspace.system_prompt || '',
       temperature: workspace.temperature ?? 0.7,
       user_ids: workspace.users.map((user) => user.id),
-      model_names: [...(workspace.model_names || [])],
+      model_name: workspace.model_names?.[0] || '',
     });
     setFormMode('edit');
     setEditingId(workspace.id);
+    loadWidgetTokens(workspace.id);
+    loadDocuments(workspace.id);
   };
 
   const handleNameChange = (event) => {
@@ -88,13 +117,8 @@ function WorkspacesPage() {
     }));
   };
 
-  const toggleModelName = (modelName) => {
-    setForm((prev) => ({
-      ...prev,
-      model_names: prev.model_names.includes(modelName)
-        ? prev.model_names.filter((name) => name !== modelName)
-        : [...prev.model_names, modelName],
-    }));
+  const handleModelChange = (event) => {
+    setForm((prev) => ({ ...prev, model_name: event.target.value }));
   };
 
   const handleSubmit = async (event) => {
@@ -106,7 +130,7 @@ function WorkspacesPage() {
       system_prompt: form.system_prompt.trim(),
       temperature: form.temperature,
       user_ids: form.user_ids,
-      model_names: form.model_names,
+      model_names: form.model_name ? [form.model_name] : [],
     };
 
     try {
@@ -136,6 +160,74 @@ function WorkspacesPage() {
       setError(err.message || 'Помилка видалення workspace');
     }
   };
+
+  const handleCreateWidgetToken = async () => {
+    if (!editingId) return;
+    setError('');
+    setNewWidgetToken('');
+    try {
+      const data = await api.createWidgetToken(editingId, widgetTokenLabel.trim());
+      setNewWidgetToken(data.token);
+      setWidgetTokenLabel('');
+      loadWidgetTokens(editingId);
+    } catch (err) {
+      setError(err.message || 'Помилка створення widget token');
+    }
+  };
+
+  const handleDeleteWidgetToken = async (tokenId) => {
+    if (!editingId || !window.confirm('Видалити widget token? Віджет на сайті перестане працювати.')) {
+      return;
+    }
+    setError('');
+    try {
+      await api.deleteWidgetToken(editingId, tokenId);
+      loadWidgetTokens(editingId);
+    } catch (err) {
+      setError(err.message || 'Помилка видалення token');
+    }
+  };
+
+  const handleDocumentUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !editingId) return;
+
+    setError('');
+    setUploadingDocument(true);
+    try {
+      await api.uploadWorkspaceDocument(editingId, file);
+      await loadDocuments(editingId);
+    } catch (err) {
+      setError(err.message || 'Помилка завантаження документа');
+    } finally {
+      setUploadingDocument(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleDeleteDocument = async (documentId, filename) => {
+    if (!editingId || !window.confirm(`Видалити документ "${filename}"?`)) {
+      return;
+    }
+    setError('');
+    try {
+      await api.deleteWorkspaceDocument(editingId, documentId);
+      loadDocuments(editingId);
+    } catch (err) {
+      setError(err.message || 'Помилка видалення документа');
+    }
+  };
+
+  const documentStatusLabel = (status) => {
+    if (status === 'ready') return 'Готовий';
+    if (status === 'processing') return 'Обробка';
+    if (status === 'failed') return 'Помилка';
+    return status;
+  };
+
+  const widgetEmbedSnippet = newWidgetToken
+    ? `<script src="${window.location.origin}/widget.js" data-widget-token="${newWidgetToken}" data-title="Підтримка"></script>`
+    : '';
 
   return (
     <div className="page">
@@ -221,23 +313,23 @@ function WorkspacesPage() {
               </div>
 
               <div className="form__group">
-                <span className="form__group-label">Моделі</span>
-                <div className="checkbox-list">
-                  {models.length === 0 ? (
-                    <p className="empty-state">Немає встановлених моделей</p>
-                  ) : (
-                    models.map((model) => (
-                      <label key={model.name} className="checkbox">
-                        <input
-                          type="checkbox"
-                          checked={form.model_names.includes(model.name)}
-                          onChange={() => toggleModelName(model.name)}
-                        />
+                <label htmlFor="workspace_model">Модель</label>
+                {models.length === 0 ? (
+                  <p className="empty-state">Немає встановлених моделей</p>
+                ) : (
+                  <select
+                    id="workspace_model"
+                    value={form.model_name}
+                    onChange={handleModelChange}
+                  >
+                    <option value="">— Не обрано —</option>
+                    {models.map((model) => (
+                      <option key={model.name} value={model.name}>
                         {model.name}
-                      </label>
-                    ))
-                  )}
-                </div>
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
             </div>
 
@@ -250,6 +342,154 @@ function WorkspacesPage() {
               </button>
             </div>
           </form>
+
+          {formMode === 'edit' && (
+            <div className="form" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border-subtle)' }}>
+              <h4 className="section__title">Widget token для embed</h4>
+              <p className="auth-card__subtitle" style={{ marginBottom: '1rem' }}>
+                Створіть token для віджета на сторонньому сайті. Повний token показується один раз.
+              </p>
+
+              <div className="form__row">
+                <div className="form__group">
+                  <label htmlFor="widget_token_label">Мітка (опційно)</label>
+                  <input
+                    id="widget_token_label"
+                    value={widgetTokenLabel}
+                    onChange={(e) => setWidgetTokenLabel(e.target.value)}
+                    placeholder="Напр. Сайт zrozumilo.com"
+                  />
+                </div>
+                <div className="form__group" style={{ alignSelf: 'end' }}>
+                  <button
+                    type="button"
+                    className="btn btn--primary"
+                    onClick={handleCreateWidgetToken}
+                  >
+                    Створити token
+                  </button>
+                </div>
+              </div>
+
+              {newWidgetToken && (
+                <div className="form__group">
+                  <label htmlFor="widget_embed_snippet">Код для сайту (збережіть token)</label>
+                  <textarea
+                    id="widget_embed_snippet"
+                    readOnly
+                    rows={3}
+                    value={widgetEmbedSnippet}
+                    className="input"
+                  />
+                </div>
+              )}
+
+              {widgetTokens.length > 0 ? (
+                <div className="table-wrapper">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Мітка / prefix</th>
+                        <th>Створено</th>
+                        <th>Останнє використання</th>
+                        <th>Дії</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {widgetTokens.map((token) => (
+                        <tr key={token.id}>
+                          <td>{token.label || `${token.token_prefix}...`}</td>
+                          <td>{new Date(token.created_at).toLocaleString('uk-UA')}</td>
+                          <td>
+                            {token.last_used_at
+                              ? new Date(token.last_used_at).toLocaleString('uk-UA')
+                              : '—'}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn btn--danger btn--sm"
+                              onClick={() => handleDeleteWidgetToken(token.id)}
+                            >
+                              Видалити
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="empty-state">Ще немає widget token.</p>
+              )}
+            </div>
+          )}
+
+          {formMode === 'edit' && (
+            <div className="form" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border-subtle)' }}>
+              <h4 className="section__title">Документи (RAG)</h4>
+              <p className="auth-card__subtitle" style={{ marginBottom: '1rem' }}>
+                Завантажте TXT, MD або PDF. При чаті модель отримує релевантні фрагменти з цих документів.
+                Потрібна embedding-модель Ollama: <code>nomic-embed-text</code>.
+              </p>
+
+              <div className="form__group">
+                <label htmlFor="workspace_document_upload">Завантажити файл</label>
+                <input
+                  id="workspace_document_upload"
+                  type="file"
+                  accept=".txt,.md,.markdown,.pdf"
+                  onChange={handleDocumentUpload}
+                  disabled={uploadingDocument}
+                />
+                {uploadingDocument && (
+                  <p className="auth-card__subtitle">Індексація документа…</p>
+                )}
+              </div>
+
+              {documents.length > 0 ? (
+                <div className="table-wrapper">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Файл</th>
+                        <th>Статус</th>
+                        <th>Фрагментів</th>
+                        <th>Завантажено</th>
+                        <th>Дії</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {documents.map((doc) => (
+                        <tr key={doc.id}>
+                          <td>
+                            <strong>{doc.original_filename}</strong>
+                            {doc.status === 'failed' && doc.error_message && (
+                              <div className="auth-card__subtitle">{doc.error_message}</div>
+                            )}
+                          </td>
+                          <td>{documentStatusLabel(doc.status)}</td>
+                          <td>{doc.chunk_count || '—'}</td>
+                          <td>{new Date(doc.created_at).toLocaleString('uk-UA')}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn btn--danger btn--sm"
+                              onClick={() => handleDeleteDocument(doc.id, doc.original_filename)}
+                            >
+                              Видалити
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="empty-state">Ще немає документів для RAG.</p>
+              )}
+            </div>
+          )}
         </section>
       )}
 
@@ -266,7 +506,7 @@ function WorkspacesPage() {
                   <th>Назва</th>
                   <th>Температура</th>
                   <th>Користувачі</th>
-                  <th>Моделі</th>
+                  <th>Модель</th>
                   <th>Оновлено</th>
                   <th>Дії</th>
                 </tr>
@@ -281,11 +521,7 @@ function WorkspacesPage() {
                         ? workspace.users.map((user) => user.username).join(', ')
                         : '—'}
                     </td>
-                    <td>
-                      {workspace.model_names?.length > 0
-                        ? workspace.model_names.join(', ')
-                        : '—'}
-                    </td>
+                    <td>{workspace.model_names?.[0] || '—'}</td>
                     <td>
                       {new Date(workspace.updated_at).toLocaleString('uk-UA')}
                     </td>

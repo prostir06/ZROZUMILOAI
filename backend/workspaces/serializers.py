@@ -2,7 +2,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import Workspace
+from .models import WidgetToken, Workspace
 
 User = get_user_model()
 
@@ -58,6 +58,10 @@ class WorkspaceSerializer(serializers.ModelSerializer):
                 continue
             seen.add(trimmed)
             cleaned.append(trimmed)
+        if len(cleaned) > 1:
+            raise serializers.ValidationError(
+                'Workspace може мати лише одну модель',
+            )
         return cleaned
 
     def create(self, validated_data):
@@ -90,3 +94,28 @@ class WorkspaceBriefSerializer(serializers.ModelSerializer):
             'model_names',
         )
         read_only_fields = fields
+
+
+class WidgetTokenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WidgetToken
+        fields = (
+            'id',
+            'label',
+            'token_prefix',
+            'is_active',
+            'created_at',
+            'last_used_at',
+        )
+        read_only_fields = fields
+
+
+class WidgetTokenCreateSerializer(serializers.Serializer):
+    label = serializers.CharField(max_length=100, required=False, allow_blank=True)
+
+
+class WidgetTokenCreateResponseSerializer(WidgetTokenSerializer):
+    token = serializers.CharField(read_only=True)
+
+    class Meta(WidgetTokenSerializer.Meta):
+        fields = WidgetTokenSerializer.Meta.fields + ('token',)

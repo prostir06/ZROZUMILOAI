@@ -1,4 +1,6 @@
 __pycache__/
+backend/cache/
+backend/media/
 *.py[cod]
 *.sqlite3
 .env

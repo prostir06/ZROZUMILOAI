@@ -7,6 +7,7 @@ urlpatterns = [
     path('api/auth/', include('accounts.urls')),
     path('api/chats/', include('chats.urls')),
     path('api/workspaces/', include('workspaces.urls')),
+    path('api/widget/', include('workspaces.widget_urls')),
     path('api/ollama/', include('ollama_proxy.urls')),
     path('api/backups/', include('backups.urls')),
 ]

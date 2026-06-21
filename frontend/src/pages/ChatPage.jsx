@@ -39,15 +39,14 @@ function ChatPage() {
   );
 
   const availableModels = useMemo(() => {
-    if (workspaceLocked) {
-      return models.filter((model) => workspaceModels.includes(model.name));
-    }
-    if (!activeWorkspace) {
+    if (isAdmin) {
       return models;
     }
-    const allowed = new Set(workspaceModels);
-    return models.filter((model) => allowed.has(model.name));
-  }, [models, activeWorkspace, workspaceLocked, workspaceModels]);
+    if (!activeWorkspace) {
+      return [];
+    }
+    return models.filter((model) => workspaceModels.includes(model.name));
+  }, [models, activeWorkspace, isAdmin, workspaceModels]);
 
   useEffect(() => {
     api.getModels().catch(() => ({ models: [] })).then((modelsData) => {
@@ -321,46 +320,66 @@ function ChatPage() {
           <p>{headerSubtitle}</p>
         </div>
         <div className="chat-controls">
-          {!workspaceLocked && workspaces.length > 0 && (
-            <select
-              value={selectedWorkspaceId}
-              onChange={(e) => {
-                const value = e.target.value;
-                setSelectedWorkspaceId(value);
-                if (value) {
-                  navigate(`/workspace/${value}`, { replace: true });
-                } else {
-                  navigate('/', { replace: true });
-                }
-              }}
-              className="select"
-              aria-label="Оберіть workspace"
-            >
-              <option value="">Без workspace</option>
-              {workspaces.map((ws) => (
-                <option key={ws.id} value={ws.id}>{ws.name}</option>
-              ))}
-            </select>
-          )}
-          {workspaceLocked && activeWorkspace && (
-            <span className="chat-controls__label">{activeWorkspace.name}</span>
-          )}
-          {(!workspaceLocked || workspaceModels.length > 1) && (
-            <select
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="select"
-              aria-label="Оберіть модель"
-              disabled={workspaceLocked && workspaceModels.length <= 1}
-            >
-              {availableModels.length === 0 && <option value="">Немає моделей</option>}
-              {availableModels.map((m) => (
-                <option key={m.name} value={m.name}>{m.name}</option>
-              ))}
-            </select>
-          )}
-          {workspaceLocked && workspaceModels.length === 1 && selectedModel && (
-            <span className="chat-controls__label">{selectedModel}</span>
+          {isAdmin ? (
+            <>
+              <select
+                value={selectedWorkspaceId}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSelectedWorkspaceId(value);
+                  if (value) {
+                    navigate(`/workspace/${value}`, { replace: true });
+                    const workspace = workspaces.find((ws) => String(ws.id) === value);
+                    if (workspace?.model_names?.[0]) {
+                      setSelectedModel(workspace.model_names[0]);
+                    }
+                  } else {
+                    navigate('/', { replace: true });
+                  }
+                }}
+                className="select"
+                aria-label="Оберіть workspace"
+              >
+                <option value="">Без workspace</option>
+                {workspaces.map((ws) => (
+                  <option key={ws.id} value={ws.id}>{ws.name}</option>
+                ))}
+              </select>
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="select"
+                aria-label="Оберіть модель"
+              >
+                {models.length === 0 && <option value="">Немає моделей</option>}
+                {models.map((m) => (
+                  <option key={m.name} value={m.name}>{m.name}</option>
+                ))}
+              </select>
+            </>
+          ) : (
+            <>
+              {activeWorkspace && (
+                <span className="chat-controls__label">{activeWorkspace.name}</span>
+              )}
+              {workspaceModels.length > 1 ? (
+                <select
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  className="select"
+                  aria-label="Оберіть модель"
+                >
+                  {availableModels.length === 0 && <option value="">Немає моделей</option>}
+                  {availableModels.map((m) => (
+                    <option key={m.name} value={m.name}>{m.name}</option>
+                  ))}
+                </select>
+              ) : (
+                selectedModel && (
+                  <span className="chat-controls__label">{selectedModel}</span>
+                )
+              )}
+            </>
           )}
           <button type="button" className="btn btn--ghost" onClick={handleClear}>
             {chatId ? 'Видалити' : 'Очистити'}

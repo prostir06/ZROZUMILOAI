@@ -6,6 +6,13 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [allowRegistration, setAllowRegistration] = useState(null);
+
+  useEffect(() => {
+    api.getAuthConfig()
+      .then((config) => setAllowRegistration(config.allow_registration))
+      .catch(() => setAllowRegistration(true));
+  }, []);
 
   useEffect(() => {
     const token = api.getToken();
@@ -47,6 +54,7 @@ export function AuthProvider({ children }) {
     logout,
     isAuthenticated: !!user,
     isAdmin: user?.is_staff || false,
+    allowRegistration,
   };
 
   return (

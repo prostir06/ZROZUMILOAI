@@ -374,7 +374,15 @@ export const CUSTOM_FIELDS = [
 ];
 
 export function hexToRgba(hex, alpha = 1) {
+  if (!hex || typeof hex !== 'string') {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+
   const normalized = hex.replace('#', '');
+  if (!/^[0-9a-fA-F]{3}$|^[0-9a-fA-F]{6}$/.test(normalized)) {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+
   const full = normalized.length === 3
     ? normalized.split('').map((c) => c + c).join('')
     : normalized;
