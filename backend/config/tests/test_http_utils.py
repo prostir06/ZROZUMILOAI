@@ -35,3 +35,30 @@ class ValidateChatMessagesTests(SimpleTestCase):
         """Роль system допустима для Ollama."""
         messages = [{'role': 'system', 'content': 'You are helpful.'}]
         self.assertEqual(validate_chat_messages(messages), messages)
+
+    def test_rejects_too_many_messages(self):
+        """Перевищення CHAT_MAX_MESSAGES."""
+        from django.test import override_settings
+
+        with override_settings(CHAT_MAX_MESSAGES=2):
+            with self.assertRaises(ValidationError):
+                validate_chat_messages([
+                    {'role': 'user', 'content': 'a'},
+                    {'role': 'assistant', 'content': 'b'},
+                    {'role': 'user', 'content': 'c'},
+                ])
+
+    def test_rejects_oversized_message(self):
+        """Перевищення CHAT_MAX_MESSAGE_CHARS."""
+        from django.test import override_settings
+
+        with override_settings(CHAT_MAX_MESSAGE_CHARS=5):
+            with self.assertRaises(ValidationError):
+                validate_chat_messages([{'role': 'user', 'content': 'too-long'}])
+
+    def test_validation_error_message_helper(self):
+        """validation_error_message витягує перший detail."""
+        from config.http_utils import validation_error_message
+
+        err = ValidationError({'messages': ['bad']})
+        self.assertEqual(validation_error_message(err), 'bad')

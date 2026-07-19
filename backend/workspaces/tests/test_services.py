@@ -1,11 +1,12 @@
 """Unit-тести для workspace services."""
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from workspaces.models import Workspace
 from workspaces.services import (
     get_allowed_model_names,
+    get_gemini_api_key,
     get_ollama_options,
     prepare_chat_messages,
     resolve_workspace_for_chat,
@@ -83,7 +84,7 @@ class WorkspaceServicesTests(TestCase):
         }]
 
         with patch(
-            'workspaces.rag.service.search_workspace_documents',
+            'workspaces.rag.service.search_workspace_context',
             return_value=fake_chunks,
         ):
             prepared = prepare_chat_messages(
@@ -108,3 +109,14 @@ class WorkspaceServicesTests(TestCase):
         with self.assertRaises(PermissionDenied):
             from workspaces.services import get_workspace_for_user
             get_workspace_for_user(self.user, other.pk)
+
+    def test_get_gemini_api_key_prefers_workspace(self):
+        """Ключ workspace має пріоритет над глобальним."""
+        self.workspace.gemini_api_key = '  ws-key  '
+        self.workspace.save()
+        self.assertEqual(get_gemini_api_key(self.workspace), 'ws-key')
+
+    @override_settings(GEMINI_API_KEY='global-key')
+    def test_get_gemini_api_key_falls_back_to_settings(self):
+        """Без ключа workspace використовується GEMINI_API_KEY."""
+        self.assertEqual(get_gemini_api_key(self.workspace), 'global-key')

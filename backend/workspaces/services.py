@@ -105,17 +105,21 @@ def resolve_workspace_for_chat(user, model_name, workspace_id=None):
     return None
 
 
-def prepare_chat_messages(messages, workspace, rag_query=None):
-    """Inject workspace system prompt and optional RAG context for Ollama."""
+def prepare_chat_messages(messages, workspace, rag_query=None, meilisearch_course_id=None):
+    """Inject workspace system prompt and optional RAG / Meilisearch context."""
     system_parts = []
 
     if workspace and workspace.system_prompt.strip():
         system_parts.append(workspace.system_prompt.strip())
 
     if workspace and rag_query:
-        from workspaces.rag.service import format_rag_context, search_workspace_documents
+        from workspaces.rag.service import format_rag_context, search_workspace_context
 
-        chunks = search_workspace_documents(workspace, rag_query)
+        chunks = search_workspace_context(
+            workspace,
+            rag_query,
+            course_id=meilisearch_course_id,
+        )
         rag_context = format_rag_context(chunks)
         if rag_context:
             system_parts.append(rag_context)
@@ -148,3 +152,23 @@ def get_ollama_options(workspace):
     except (TypeError, ValueError):
         temperature = 0.7
     return {'temperature': temperature}
+
+
+def get_gemini_api_key(workspace=None):
+    """
+    API ключ Gemini: спочатку workspace, потім глобальний з .env.
+
+    Ключ workspace може бути зашифрований (enc:v1:...); розшифровуємо
+    перед передачею у провайдер.
+    """
+    from django.conf import settings
+
+    from .crypto import decrypt_secret
+
+    if workspace and workspace.gemini_api_key:
+        try:
+            return decrypt_secret(workspace.gemini_api_key).strip()
+        except Exception:
+            return workspace.gemini_api_key.strip()
+    return (settings.GEMINI_API_KEY or '').strip()
+

@@ -174,6 +174,16 @@ OLLAMA_BASE_URL = os.getenv(
     'http://localhost:11434',
 )
 
+GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
+GEMINI_MODEL_NAMES = [
+    name.strip()
+    for name in os.getenv(
+        'GEMINI_MODEL_NAMES',
+        'gemini-2.0-flash,gemini-2.5-flash-lite',
+    ).split(',')
+    if name.strip()
+]
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
@@ -185,6 +195,20 @@ RAG_CHUNK_SIZE = int(os.getenv('RAG_CHUNK_SIZE', '800'))
 RAG_CHUNK_OVERLAP = int(os.getenv('RAG_CHUNK_OVERLAP', '100'))
 RAG_TOP_K = int(os.getenv('RAG_TOP_K', '4'))
 RAG_MAX_FILE_SIZE = int(os.getenv('RAG_MAX_FILE_SIZE', str(10 * 1024 * 1024)))
+
+# Ліміти chat payload (захист від DoS / prompt stuffing).
+CHAT_MAX_MESSAGES = int(os.getenv('CHAT_MAX_MESSAGES', '100'))
+CHAT_MAX_MESSAGE_CHARS = int(os.getenv('CHAT_MAX_MESSAGE_CHARS', '16000'))
+CHAT_MAX_TOTAL_CHARS = int(os.getenv('CHAT_MAX_TOTAL_CHARS', '120000'))
+
+# Опційний окремий ключ для Fernet (інакше похідний від SECRET_KEY).
+FIELD_ENCRYPTION_KEY = os.getenv('FIELD_ENCRYPTION_KEY', '')
+
+MEILISEARCH_URL = os.getenv('MEILISEARCH_URL', '')
+MEILISEARCH_API_KEY = os.getenv('MEILISEARCH_API_KEY', '')
+MEILISEARCH_INDEX_PREFIX = os.getenv('MEILISEARCH_INDEX_PREFIX', 'tutor_')
+MEILISEARCH_TIMEOUT_MS = int(os.getenv('MEILISEARCH_TIMEOUT_MS', '5000'))
+MEILISEARCH_MAX_CHUNK_CHARS = int(os.getenv('MEILISEARCH_MAX_CHUNK_CHARS', '1200'))
 
 _backup_dir = os.getenv('BACKUP_DIR', str(BASE_DIR.parent / 'backup'))
 BACKUP_DIR = Path(_backup_dir)
@@ -200,3 +224,22 @@ CACHES = {
         'LOCATION': str(_cache_dir),
     },
 }
+
+# Production hardening (P2) — активується коли DEBUG=False.
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = 'same-origin'
+    # Увімкніть редірект лише за reverse-proxy з TLS:
+    # SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'False').lower() in (...)
+    _hsts = os.getenv('SECURE_HSTS_SECONDS', '0')
+    try:
+        SECURE_HSTS_SECONDS = int(_hsts)
+    except ValueError:
+        SECURE_HSTS_SECONDS = 0
+    if SECURE_HSTS_SECONDS > 0:
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+        SECURE_HSTS_PRELOAD = True
+

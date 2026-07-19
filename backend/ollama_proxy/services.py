@@ -17,18 +17,19 @@ logger = logging.getLogger(__name__)
 
 
 class OllamaService:
-    """Обгортка над HTTP API Ollama."""
+    """Обгортка над HTTP API Ollama з переіспользовуванням Session (P1)."""
 
-    def __init__(self, base_url=None):
+    def __init__(self, base_url=None, session=None):
         # Базова URL без завершального слеша для коректної конкатенації шляхів.
         self.base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip('/')
+        self._session = session or requests.Session()
 
     def _request(self, method, path, **kwargs):
         """Виконати HTTP-запит до Ollama з логуванням помилок мережі."""
         url = f'{self.base_url}{path}'
         timeout = kwargs.pop('timeout', 30)
         try:
-            response = requests.request(method, url, timeout=timeout, **kwargs)
+            response = self._session.request(method, url, timeout=timeout, **kwargs)
             return response
         except requests.RequestException as exc:
             logger.error('Ollama request failed: %s', exc)
@@ -84,24 +85,6 @@ class OllamaService:
         response = self._request(
             'POST',
             '/api/chat',
-            json=payload,
-            stream=stream,
-            timeout=300,
-        )
-        raise_for_ollama_status(response)
-        return response
-
-    def generate(self, model, prompt, stream=False):
-        """Send generate request."""
-        model = normalize_model_name(model)
-        payload = {
-            'model': model,
-            'prompt': prompt,
-            'stream': stream,
-        }
-        response = self._request(
-            'POST',
-            '/api/generate',
             json=payload,
             stream=stream,
             timeout=300,

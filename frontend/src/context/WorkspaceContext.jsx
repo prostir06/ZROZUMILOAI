@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from './AuthContext';
 
@@ -30,8 +30,13 @@ export function WorkspaceProvider({ children }) {
     refreshWorkspaces();
   }, [refreshWorkspaces]);
 
+  const value = useMemo(
+    () => ({ workspaces, loading, refreshWorkspaces }),
+    [workspaces, loading, refreshWorkspaces],
+  );
+
   return (
-    <WorkspaceContext.Provider value={{ workspaces, loading, refreshWorkspaces }}>
+    <WorkspaceContext.Provider value={value}>
       {children}
     </WorkspaceContext.Provider>
   );

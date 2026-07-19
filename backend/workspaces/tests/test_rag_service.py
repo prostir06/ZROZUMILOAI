@@ -7,6 +7,7 @@ from workspaces.rag.service import (
     extract_last_user_message,
     format_rag_context,
     sanitize_filename,
+    search_workspace_context,
     search_workspace_documents,
 )
 
@@ -66,3 +67,51 @@ class RagServiceHelperTests(SimpleTestCase):
 
         result = search_workspace_documents(MagicMock(), 'питання')
         self.assertEqual(result, [])
+
+
+class SearchWorkspaceContextTests(SimpleTestCase):
+    """Тести об'єднання internal RAG та Meilisearch."""
+
+    def test_empty_query_returns_empty(self):
+        workspace = MagicMock()
+        self.assertEqual(search_workspace_context(workspace, ''), [])
+
+    @override_settings(RAG_TOP_K=3)
+    @patch('workspaces.rag.meilisearch_search.search_openedx_meilisearch')
+    @patch('workspaces.rag.service.search_workspace_documents')
+    def test_hybrid_merges_and_sorts(self, mock_internal, mock_meili):
+        """HYBRID збирає результати з обох джерел і сортує за score."""
+        workspace = MagicMock()
+        workspace.search_source = 'hybrid'
+
+        mock_internal.return_value = [{
+            'content': 'local',
+            'score': 0.5,
+            'document_name': 'doc.txt',
+        }]
+        mock_meili.return_value = [{
+            'content': 'edx',
+            'score': 0.9,
+            'document_name': 'Course',
+        }]
+
+        result = search_workspace_context(workspace, 'query')
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]['content'], 'edx')
+        mock_internal.assert_called_once()
+        mock_meili.assert_called_once()
+
+    @override_settings(RAG_TOP_K=2)
+    @patch('workspaces.rag.service.search_workspace_documents')
+    def test_internal_only_skips_meilisearch(self, mock_internal):
+        """INTERNAL викликає лише локальний RAG."""
+        workspace = MagicMock()
+        workspace.search_source = 'internal'
+        mock_internal.return_value = []
+
+        with patch(
+            'workspaces.rag.meilisearch_search.search_openedx_meilisearch',
+        ) as mock_meili:
+            search_workspace_context(workspace, 'query')
+            mock_meili.assert_not_called()

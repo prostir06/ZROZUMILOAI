@@ -1,4 +1,5 @@
 import { safeJson } from '../utils/safeJson.js';
+import { consumeSSE } from '../utils/sse.js';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -55,36 +56,8 @@ class ApiClient {
     return response;
   }
 
-  async _consumeSSE(response, onChunk) {
-    if (!response.body) {
-      throw new Error('Порожня відповідь сервера');
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    let doneReading = false;
-    while (!doneReading) {
-      const { done, value } = await reader.read();
-      doneReading = done;
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(line.slice(6));
-            onChunk(data);
-          } catch {
-            /* skip malformed chunks */
-          }
-        }
-      }
-    }
+  async _consumeSSE(response, onChunk, signal = null) {
+    await consumeSSE(response, onChunk, { signal });
   }
 
   async request(path, options = {}) {
@@ -449,7 +422,10 @@ class ApiClient {
     return response.json();
   }
 
-  async chatStream(model, messages, onChunk, workspaceId = null) {
+  async chatStream(model, messages, onChunk, workspaceId = null, options = {}) {
+    const controller = options.signal ? null : new AbortController();
+    const signal = options.signal || controller?.signal;
+
     const response = await this._fetchWithAuth('/ollama/chat/', {
       method: 'POST',
       body: JSON.stringify({
@@ -458,6 +434,7 @@ class ApiClient {
         stream: true,
         workspace_id: workspaceId,
       }),
+      signal,
     });
 
     if (!response.ok) {
@@ -471,7 +448,8 @@ class ApiClient {
       throw new Error(message);
     }
 
-    await this._consumeSSE(response, onChunk);
+    await this._consumeSSE(response, onChunk, signal);
+    return { abort: () => controller?.abort() };
   }
 
   pullModelStream(name, onProgress) {

@@ -21,6 +21,15 @@ def hash_widget_token(key):
 class Workspace(models.Model):
     """Named workspace with assigned models and users."""
 
+    class SearchSource(models.TextChoices):
+        INTERNAL = 'internal', 'Локальні документи (RAG)'
+        MEILISEARCH = 'meilisearch', 'Open edX Meilisearch'
+        HYBRID = 'hybrid', 'RAG + Meilisearch'
+
+    class LLMProvider(models.TextChoices):
+        OLLAMA = 'ollama', 'Ollama'
+        GEMINI = 'gemini', 'Google Gemini'
+
     name = models.CharField(max_length=200, unique=True)
     system_prompt = models.TextField(blank=True, default='')
     temperature = models.FloatField(
@@ -28,6 +37,35 @@ class Workspace(models.Model):
         validators=[MinValueValidator(0.0), MaxValueValidator(2.0)],
     )
     model_names = models.JSONField(default=list, blank=True)
+    llm_provider = models.CharField(
+        max_length=20,
+        choices=LLMProvider.choices,
+        default=LLMProvider.OLLAMA,
+    )
+    gemini_api_key = models.CharField(max_length=255, blank=True, default='')
+    search_source = models.CharField(
+        max_length=20,
+        choices=SearchSource.choices,
+        default=SearchSource.INTERNAL,
+    )
+    meilisearch_url = models.URLField(blank=True, default='')
+    meilisearch_api_key = models.CharField(max_length=255, blank=True, default='')
+    meilisearch_index_prefix = models.CharField(
+        max_length=100,
+        blank=True,
+        default='tutor_',
+    )
+    meilisearch_indexes = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Суфікси індексів (course_info) або повні UID (tutor_course_info)',
+    )
+    meilisearch_course_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Фільтр course-v1:... для courseware_content',
+    )
     users = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name='workspaces',

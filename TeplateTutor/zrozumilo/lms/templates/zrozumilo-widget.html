@@ -1,0 +1,12 @@
+<%page expression_filter="h"/>
+<%!
+from django.conf import settings
+%>
+## ZrozumiloAI — плаваючий віджет підтримки (legacy LMS).
+## Не використовуйте async/defer — віджет читає document.currentScript.
+<script
+  src="${getattr(settings, 'ZROZUMILOAI_WIDGET_JS_URL', 'https://chat.example.com/widget.js')}"
+  data-widget-token="${getattr(settings, 'ZROZUMILOAI_WIDGET_TOKEN', 'wt_REPLACE_ME')}"
+  data-title="${getattr(settings, 'ZROZUMILOAI_WIDGET_TITLE', 'Підтримка')}"
+  data-color="${getattr(settings, 'ZROZUMILOAI_WIDGET_COLOR', '#0D9E96')}"
+></script>

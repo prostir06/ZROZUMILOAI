@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 import { useAuth } from './AuthContext';
 
@@ -30,8 +30,13 @@ export function ChatProvider({ children }) {
     refreshChats();
   }, [refreshChats]);
 
+  const value = useMemo(
+    () => ({ chats, loading, refreshChats }),
+    [chats, loading, refreshChats],
+  );
+
   return (
-    <ChatContext.Provider value={{ chats, loading, refreshChats }}>
+    <ChatContext.Provider value={value}>
       {children}
     </ChatContext.Provider>
   );

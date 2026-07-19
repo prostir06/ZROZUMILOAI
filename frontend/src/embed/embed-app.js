@@ -10,6 +10,8 @@ import {
   formatMessageContent,
   getEmbedStatusText,
   safeJson,
+  sanitizeColor,
+  sanitizeTitle,
 } from './utils.js';
 
 const root = document.getElementById('embed-root');
@@ -34,6 +36,7 @@ function wrapAssistantMessage(innerHtml) {
 let config = null;
 let workspace = null;
 let model = '';
+let initError = '';
 let messages = [];
 let isStreaming = false;
 let trustedOrigin = null;
@@ -198,7 +201,7 @@ function getAuthHeader() {
 
 /** Текст статусу під заголовком чату. */
 function getStatusText() {
-  return getEmbedStatusText(config, workspace, model);
+  return getEmbedStatusText(config, workspace, model, initError);
 }
 
 /** HTML індикатора «Помічник друкує». */
@@ -268,9 +271,39 @@ function scrollToBottom() {
 /** Оновлення лише блоку повідомлень (без повного render). */
 function updateMessages() {
   const container = root?.querySelector('#embed-messages');
-  if (container) {
-    container.innerHTML = renderMessages();
-    scrollToBottom();
+  if (!container) {
+    return;
+  }
+
+  // P0: stick-to-bottom — не стрибати, якщо користувач прокрутив вгору.
+  const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+  const wasNearBottom = distance <= 80;
+
+  container.innerHTML = renderMessages();
+
+  if (wasNearBottom) {
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+/** Дописати текст у останній бульбашці асистента без повного rewrite списку. */
+function appendToLastAssistant(text) {
+  const container = root?.querySelector('#embed-messages');
+  if (!container) {
+    updateMessages();
+    return;
+  }
+  const bubbles = container.querySelectorAll('.embed__message--assistant');
+  const last = bubbles[bubbles.length - 1];
+  if (!last) {
+    updateMessages();
+    return;
+  }
+  // formatBoldTextHtml потрібен для повного тексту — для stream додаємо escaped.
+  last.insertAdjacentText('beforeend', text);
+  const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+  if (distance <= 80) {
+    container.scrollTop = container.scrollHeight;
   }
 }
 
@@ -293,9 +326,13 @@ async function apiRequest(path, options = {}) {
 
 /** Завантажити workspace і модель за токеном або API-ключем. */
 async function initWorkspace() {
+  initError = '';
+
   if (config.widgetToken) {
     const response = await apiRequest('/widget/config/');
     if (!response.ok) {
+      const error = await safeJson(response);
+      initError = error.error || error.detail || `Помилка конфігурації (${response.status})`;
       workspace = null;
       model = '';
       return;
@@ -303,12 +340,18 @@ async function initWorkspace() {
     const data = await safeJson(response);
     workspace = data.workspace || null;
     model = data.model || workspace?.model_names?.[0] || '';
+    if (!workspace) {
+      initError = 'Widget token недійсний або workspace недоступний.';
+    }
     return;
   }
 
   const response = await apiRequest('/workspaces/my/');
   if (!response.ok) {
+    const error = await safeJson(response);
+    initError = error.error || error.detail || `Помилка завантаження workspace (${response.status})`;
     workspace = null;
+    model = '';
     return;
   }
 
@@ -318,10 +361,17 @@ async function initWorkspace() {
   ) || null;
 
   model = workspace?.model_names?.[0] || '';
+  if (!workspace) {
+    initError = `Workspace «${config.workspaceName}» не знайдено.`;
+  }
 }
 
 /** SSE-стрімінг відповіді чату. */
 async function chatStream(chatMessages, onChunk) {
+  if (!workspace?.id && !config.widgetToken) {
+    throw new Error('Workspace не завантажено');
+  }
+
   const chatPath = config.widgetToken ? '/widget/chat/' : '/ollama/chat/';
   const body = config.widgetToken
     ? { stream: true, messages: chatMessages }
@@ -331,6 +381,10 @@ async function chatStream(chatMessages, onChunk) {
       stream: true,
       messages: chatMessages,
     };
+
+  if (config.openedxCourseId) {
+    body.openedx_course_id = config.openedxCourseId;
+  }
 
   const response = await apiRequest(chatPath, {
     method: 'POST',
@@ -380,7 +434,7 @@ async function chatStream(chatMessages, onChunk) {
 /** Обробка надсилання повідомлення користувачем. */
 async function handleSend(text) {
   const content = text.trim();
-  if (!content || !model || isStreaming) {
+  if (!content || !model || !workspace || isStreaming) {
     return;
   }
 
@@ -404,7 +458,7 @@ async function handleSend(text) {
           }
           return msg;
         });
-        updateMessages();
+        appendToLastAssistant(chunk.message.content);
       }
       if (chunk.error) {
         messages = messages.map((msg, index) => {
@@ -433,11 +487,12 @@ async function handleSend(text) {
 /** Застосувати конфіг від батьківського віджета. */
 async function applyConfig(nextConfig) {
   config = nextConfig;
+  initError = '';
   messages = [];
   typedGreeting = '';
   stopGreetingTypewriter();
-  document.documentElement.style.setProperty('--color-primary', config.color || '#0D9E96');
-  document.documentElement.style.setProperty('--color-user', config.color || '#0D9E96');
+  document.documentElement.style.setProperty('--color-primary', sanitizeColor(config.color));
+  document.documentElement.style.setProperty('--color-user', sanitizeColor(config.color));
 
   render();
   try {
@@ -445,6 +500,7 @@ async function applyConfig(nextConfig) {
   } catch (err) {
     workspace = null;
     model = '';
+    initError = err.message || 'Помилка ініціалізації чату';
     console.error('[ZrozumiloAI Embed] initWorkspace:', err);
   }
   render();

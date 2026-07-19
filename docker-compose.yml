@@ -20,8 +20,10 @@ services:
       OLLAMA_MAX_QUEUE: ${OLLAMA_MAX_QUEUE:-512}
     volumes:
       - ollama_data:/root/.ollama
+    # P0: не публікуємо 11434 на всі інтерфейси — лише localhost для debug.
+    # Backend у Docker достукається через мережу compose: http://ollama:11434
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
@@ -37,7 +39,7 @@ services:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-production}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-False}
-      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
       DJANGO_ADMIN_USERNAME: ${DJANGO_ADMIN_USERNAME:-admin}
       DJANGO_ADMIN_PASSWORD: ${DJANGO_ADMIN_PASSWORD:-}
       DJANGO_ADMIN_EMAIL: ${DJANGO_ADMIN_EMAIL:-admin@localhost}
@@ -47,7 +49,7 @@ services:
       POSTGRES_HOST: db
       USE_SQLITE: "False"
       OLLAMA_BASE_URL: http://ollama:11434
-      CORS_ALLOWED_ORIGINS: http://localhost,http://localhost:80,http://127.0.0.1
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:80,http://127.0.0.1}
       BACKUP_DIR: /backup
       FORCE_DB_RESTORE: ${FORCE_DB_RESTORE:-0}
       GUNICORN_WORKER_CLASS: ${GUNICORN_WORKER_CLASS:-gevent}
@@ -55,6 +57,14 @@ services:
       GUNICORN_WORKER_CONNECTIONS: ${GUNICORN_WORKER_CONNECTIONS:-1000}
       GUNICORN_TIMEOUT: ${GUNICORN_TIMEOUT:-300}
       RAG_EMBED_MODEL: ${RAG_EMBED_MODEL:-nomic-embed-text}
+      MEILISEARCH_URL: ${MEILISEARCH_URL:-}
+      MEILISEARCH_API_KEY: ${MEILISEARCH_API_KEY:-}
+      MEILISEARCH_INDEX_PREFIX: ${MEILISEARCH_INDEX_PREFIX:-tutor_}
+      MEILISEARCH_TIMEOUT_MS: ${MEILISEARCH_TIMEOUT_MS:-5000}
+      MEILISEARCH_MAX_CHUNK_CHARS: ${MEILISEARCH_MAX_CHUNK_CHARS:-1200}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL_NAMES: ${GEMINI_MODEL_NAMES:-gemini-2.0-flash,gemini-2.5-flash-lite}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
     volumes:
       - ./backup:/backup
       - workspace_media:/app/media

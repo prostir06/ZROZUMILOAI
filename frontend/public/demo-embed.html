@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Демо стороннього сайту з віджетом ZrozumiloAI для тестування embed-чату."
+    />
     <title>Demo — ZrozumiloAI Widget</title>
     <style>
       body {
@@ -13,7 +17,12 @@
         line-height: 1.6;
         color: #1c3d3a;
       }
-      code, pre {
+      a:focus-visible {
+        outline: 2px solid #0d9e96;
+        outline-offset: 2px;
+      }
+      code,
+      pre {
         background: #f4fbfa;
         border: 1px solid rgba(13, 158, 150, 0.14);
         border-radius: 8px;
@@ -25,33 +34,47 @@
         font-size: 0.875rem;
       }
       h1 { color: #0d9e96; }
+      @media (max-width: 600px) {
+        body {
+          margin: 24px 16px;
+          padding: 0;
+        }
+      }
     </style>
   </head>
   <body>
-    <h1>Демо стороннього сайту</h1>
-    <p>
-      Ця сторінка імітує зовнішній сайт з підключеним віджетом ZrozumiloAI.
-      Кнопка чату зʼявиться в правому нижньому куті.
-    </p>
-    <p>
-      Відкрийте через <a href="http://localhost/demo-embed.html">http://localhost/demo-embed.html</a>,
-      не через <code>file://</code>.
-    </p>
+    <main>
+      <h1>Демо стороннього сайту</h1>
+      <p>
+        Ця сторінка імітує зовнішній сайт з підключеним віджетом ZrozumiloAI.
+        Кнопка чату зʼявиться в правому нижньому куті.
+      </p>
+      <p>
+        Відкрийте через
+        <a href="http://localhost/demo-embed.html">http://localhost/demo-embed.html</a>,
+        не через <code>file://</code> — інакше postMessage та CORS не працюватимуть.
+      </p>
 
-    <h2>Підключення</h2>
-    <pre>&lt;script
+      <h2>Підключення</h2>
+      <pre>&lt;script
   src="http://localhost/widget.js"
   data-widget-token="wt_ВАШ_TOKEN"
   data-title="Підтримка"
   data-color="#0D9E96"
 &gt;&lt;/script&gt;</pre>
 
-    <p>
-      Token створюється в адмінці: Workspaces → Редагувати → «Створити token».
-      Token привʼязаний до workspace і не дає доступу до інших API.
-    </p>
+      <p>
+        Token створюється в адмінці: Workspaces → Редагувати → «Створити token».
+        Підставте свій <code>wt_...</code> замість placeholder у прикладі нижче.
+      </p>
+    </main>
 
-    <!-- Віджет: вставте widget token з адмін-панелі -->
-    <script src="http://localhost/widget.js" data-widget-token="wt_eRodaaMHK4E6GXBOVxvvCeJqQ0yy15MsuaMyHcqnUy0" data-title="Підтримка"></script>
+    <!-- Віджет: замініть wt_ВАШ_TOKEN на token з адмін-панелі -->
+    <script
+      src="http://localhost/widget.js"
+      data-widget-token="wt_ВАШ_TOKEN"
+      data-title="Підтримка"
+      data-color="#0D9E96"
+    ></script>
   </body>
 </html>

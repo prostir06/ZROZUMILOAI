@@ -13,7 +13,8 @@ from .document_serializers import (
     WorkspaceDocumentUploadSerializer,
 )
 from .models import Workspace, WorkspaceDocument
-from .rag.service import ingest_workspace_document, sanitize_filename
+from .rag.service import sanitize_filename
+from .rag.tasks import schedule_document_ingest
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ class WorkspaceDocumentListCreateView(APIView):
     parser_classes = (MultiPartParser, FormParser)
 
     def get(self, request, workspace_id):
+        """Повернути список документів (включає status для polling UI)."""
         try:
             workspace = self._get_workspace(workspace_id)
             documents = workspace.documents.all()
@@ -40,28 +42,38 @@ class WorkspaceDocumentListCreateView(APIView):
             )
 
     def post(self, request, workspace_id):
+        """
+        Завантажити файл і запланувати фонову індексацію (P0 async ingest).
+
+        Відповідь одразу зі статусом processing; UI опитує GET /documents/.
+        """
         workspace = self._get_workspace(workspace_id)
         serializer = WorkspaceDocumentUploadSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         uploaded = serializer.validated_data['file']
-        document = WorkspaceDocument.objects.create(
-            workspace=workspace,
-            original_filename=sanitize_filename(uploaded.name),
-            file=uploaded,
-            file_size=uploaded.size,
-            status=WorkspaceDocument.Status.PROCESSING,
-        )
+        try:
+            document = WorkspaceDocument.objects.create(
+                workspace=workspace,
+                original_filename=sanitize_filename(uploaded.name),
+                file=uploaded,
+                file_size=uploaded.size,
+                status=WorkspaceDocument.Status.PROCESSING,
+            )
+        except Exception as exc:
+            logger.exception('Document create failed: %s', exc)
+            return Response(
+                {'error': 'Не вдалося зберегти файл документа'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         try:
-            ingest_workspace_document(document)
+            schedule_document_ingest(document.pk)
         except Exception as exc:
-            logger.error('Document ingest error: %s', exc)
-            document.refresh_from_db()
-            if document.status != WorkspaceDocument.Status.FAILED:
-                document.status = WorkspaceDocument.Status.FAILED
-                document.error_message = str(exc)[:2000]
-                document.save(update_fields=['status', 'error_message', 'updated_at'])
+            logger.exception('Failed to schedule ingest for %s: %s', document.pk, exc)
+            document.status = WorkspaceDocument.Status.FAILED
+            document.error_message = f'Не вдалося запустити індексацію: {exc}'[:2000]
+            document.save(update_fields=['status', 'error_message', 'updated_at'])
 
         document.refresh_from_db()
         return Response(
@@ -97,7 +109,11 @@ class WorkspaceDocumentDeleteView(APIView):
             try:
                 document.file.delete(save=False)
             except OSError as exc:
-                logger.warning('Could not delete file for document %s: %s', document_id, exc)
+                logger.warning(
+                    'Could not delete file for document %s: %s',
+                    document_id,
+                    exc,
+                )
 
         document.delete()
         return Response({'deleted': document_id})

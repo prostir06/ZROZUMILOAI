@@ -1,8 +1,4 @@
 """Public widget API and admin token management."""
-import json
-
-import requests
-from django.http import StreamingHttpResponse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import NotFound, ValidationError
@@ -11,17 +7,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.throttling import ClientIPScopedRateThrottle
-from chats.services import (
-    content_from_ollama_chunk,
-    decode_stream_line,
-    extract_prompt_from_messages,
-    extract_response_from_ollama_payload,
-    log_workspace_chat_exchange,
-)
-from config.http_utils import validate_chat_messages
-from ollama_proxy.services import OllamaService
-from workspaces.services import get_ollama_options, prepare_chat_messages
-from workspaces.rag.service import extract_last_user_message
+from chats.services import extract_prompt_from_messages
+from config.http_utils import validate_chat_messages, validation_error_message
+from llm.chat import run_chat
 
 from .models import WidgetToken, Workspace
 from .serializers import (
@@ -30,17 +18,6 @@ from .serializers import (
     WidgetTokenSerializer,
 )
 from .widget_auth import WidgetTokenAuthentication, WidgetTokenPermission
-
-
-def _validation_message(exc):
-    detail = exc.detail
-    if isinstance(detail, dict):
-        message = next(iter(detail.values()))
-        if isinstance(message, list):
-            message = message[0]
-    else:
-        message = str(detail)
-    return message
 
 
 class WidgetConfigView(APIView):
@@ -91,89 +68,23 @@ class WidgetChatView(APIView):
         try:
             validate_chat_messages(messages)
         except ValidationError as exc:
-            detail = exc.detail
-            if isinstance(detail, dict):
-                message = next(iter(detail.values()))
-                if isinstance(message, list):
-                    message = message[0]
-            else:
-                message = str(detail)
-            return Response({'error': message}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': validation_error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         widget_token.last_used_at = timezone.now()
         widget_token.save(update_fields=['last_used_at'])
 
-        ollama_messages = prepare_chat_messages(
-            messages,
-            workspace,
-            rag_query=extract_last_user_message(messages),
+        return run_chat(
+            model=model,
+            messages=messages,
+            stream=stream,
+            workspace=workspace,
+            user=None,
+            prompt=extract_prompt_from_messages(messages),
+            meilisearch_course_id=request.data.get('openedx_course_id'),
         )
-        options = get_ollama_options(workspace)
-        service = OllamaService()
-        prompt = extract_prompt_from_messages(messages)
-
-        if stream:
-            def event_stream():
-                accumulated = []
-                try:
-                    response = service.chat(
-                        model,
-                        ollama_messages,
-                        stream=True,
-                        options=options,
-                    )
-                    for line in response.iter_lines():
-                        if not line:
-                            continue
-                        decoded = decode_stream_line(line)
-                        if not decoded:
-                            continue
-                        yield f'data: {decoded}\n\n'
-                        chunk_content = content_from_ollama_chunk(decoded)
-                        if chunk_content:
-                            accumulated.append(chunk_content)
-                except ValidationError as exc:
-                    payload = json.dumps({'error': _validation_message(exc)})
-                    yield f'data: {payload}\n\n'
-                except requests.RequestException as exc:
-                    payload = json.dumps({'error': str(exc)})
-                    yield f'data: {payload}\n\n'
-                else:
-                    log_workspace_chat_exchange(
-                        workspace=workspace,
-                        prompt=prompt,
-                        response=''.join(accumulated),
-                    )
-
-            return StreamingHttpResponse(
-                event_stream(),
-                content_type='text/event-stream',
-            )
-
-        try:
-            response = service.chat(
-                model,
-                ollama_messages,
-                stream=False,
-                options=options,
-            )
-            parsed = service.parse_json(response)
-            log_workspace_chat_exchange(
-                workspace=workspace,
-                prompt=prompt,
-                response=extract_response_from_ollama_payload(parsed),
-            )
-            return Response(parsed)
-        except ValidationError as exc:
-            return Response(
-                {'error': _validation_message(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        except requests.RequestException as exc:
-            return Response(
-                {'error': str(exc)},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-            )
 
 
 class WidgetTokenListCreateView(APIView):

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
 
 const AuthContext = createContext(null);
@@ -19,7 +19,11 @@ export function AuthProvider({ children }) {
     if (token) {
       const stored = localStorage.getItem('user');
       if (stored) {
-        setUser(JSON.parse(stored));
+        try {
+          setUser(JSON.parse(stored));
+        } catch {
+          localStorage.removeItem('user');
+        }
       }
       api.getCurrentUser()
         .then((data) => {
@@ -36,18 +40,19 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const login = async (username, password) => {
+  const login = useCallback(async (username, password) => {
     const data = await api.login(username, password);
     setUser(data.user);
     return data;
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     api.clearTokens();
     setUser(null);
-  };
+  }, []);
 
-  const value = {
+  // P1: стабільне value — менше зайвих re-render у Layout/сторінок.
+  const value = useMemo(() => ({
     user,
     loading,
     login,
@@ -55,7 +60,7 @@ export function AuthProvider({ children }) {
     isAuthenticated: !!user,
     isAdmin: user?.is_staff || false,
     allowRegistration,
-  };
+  }), [user, loading, login, logout, allowRegistration]);
 
   return (
     <AuthContext.Provider value={value}>

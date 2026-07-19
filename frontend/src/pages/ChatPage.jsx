@@ -23,8 +23,16 @@ function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [loadingChat, setLoadingChat] = useState(!!chatId);
   const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null);
+  const isAtBottomRef = useRef(true);
   const skipSaveRef = useRef(false);
   const localChatIdRef = useRef(null);
+  const streamAbortRef = useRef(null);
+  const streamRafRef = useRef(null);
+  const streamPendingRef = useRef(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+
+  const SCROLL_BOTTOM_THRESHOLD = 80;
 
   const workspaceLocked = !isAdmin;
 
@@ -45,7 +53,11 @@ function ChatPage() {
     if (!activeWorkspace) {
       return [];
     }
-    return models.filter((model) => workspaceModels.includes(model.name));
+    const provider = activeWorkspace.llm_provider || 'ollama';
+    return models.filter(
+      (model) => workspaceModels.includes(model.name)
+        && (model.provider || 'ollama') === provider,
+    );
   }, [models, activeWorkspace, isAdmin, workspaceModels]);
 
   useEffect(() => {
@@ -106,9 +118,36 @@ function ChatPage() {
     }
   }, [availableModels, selectedModel]);
 
+  const checkScrollPosition = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (!container) {
+      return;
+    }
+    const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const atBottom = distance <= SCROLL_BOTTOM_THRESHOLD;
+    isAtBottomRef.current = atBottom;
+    setShowScrollButton(!atBottom && messages.length > 0);
+  }, [messages.length]);
+
+  const scrollToBottom = useCallback((behavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const container = messagesContainerRef.current;
+    if (!container) {
+      return undefined;
+    }
+    container.addEventListener('scroll', checkScrollPosition, { passive: true });
+    return () => container.removeEventListener('scroll', checkScrollPosition);
+  }, [checkScrollPosition]);
+
+  useEffect(() => {
+    if (isAtBottomRef.current) {
+      scrollToBottom(streaming ? 'auto' : 'smooth');
+    }
+    checkScrollPosition();
+  }, [messages, streaming, scrollToBottom, checkScrollPosition]);
 
   useEffect(() => {
     if (!chatId) {
@@ -159,14 +198,15 @@ function ChatPage() {
     if (messages.length === 0) return undefined;
 
     const timer = setTimeout(() => {
+      // P0: не оновлюємо sidebar на кожен autosave — лише зберігаємо чат.
       api.updateChat(chatId, {
         title,
         model: selectedModel,
         workspace: selectedWorkspaceId ? Number(selectedWorkspaceId) : null,
         messages,
-      })
-        .then(() => refreshChats())
-        .catch(() => {});
+      }).catch(() => {
+        /* тихий retry наступним debounce; UI статус можна додати пізніше */
+      });
     }, 500);
 
     return () => clearTimeout(timer);
@@ -178,8 +218,39 @@ function ChatPage() {
     selectedWorkspaceId,
     loadingChat,
     streaming,
-    refreshChats,
   ]);
+
+  /** Оновити лише останнє assistant-повідомлення (з throttle через rAF). */
+  const patchLastAssistant = useCallback((contentOrError, { isError = false } = {}) => {
+    streamPendingRef.current = { contentOrError, isError };
+    if (streamRafRef.current) {
+      return;
+    }
+    streamRafRef.current = requestAnimationFrame(() => {
+      streamRafRef.current = null;
+      const pending = streamPendingRef.current;
+      if (!pending) {
+        return;
+      }
+      streamPendingRef.current = null;
+      setMessages((prev) => {
+        if (!prev.length) {
+          return prev;
+        }
+        const last = prev[prev.length - 1];
+        if (last.role !== 'assistant') {
+          return prev;
+        }
+        const nextContent = pending.isError
+          ? `Помилка: ${pending.contentOrError}`
+          : last.content + pending.contentOrError;
+        if (nextContent === last.content) {
+          return prev;
+        }
+        return [...prev.slice(0, -1), { ...last, content: nextContent }];
+      });
+    });
+  }, []);
 
   const handleSend = async (event) => {
     event.preventDefault();
@@ -188,6 +259,15 @@ function ChatPage() {
     if (workspaceLocked && !selectedWorkspaceId) {
       return;
     }
+
+    // Скасувати попередній стрім, якщо ще триває.
+    try {
+      streamAbortRef.current?.abort();
+    } catch {
+      /* ignore */
+    }
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
 
     const userMessage = { role: 'user', content: input.trim() };
     const newMessages = [...messages, userMessage];
@@ -225,44 +305,40 @@ function ChatPage() {
         newMessages,
         (chunk) => {
           if (chunk.message?.content) {
-            setMessages((prev) => {
-              const updated = [...prev];
-              const last = updated[updated.length - 1];
-              if (last.role === 'assistant') {
-                updated[updated.length - 1] = {
-                  ...last,
-                  content: last.content + chunk.message.content,
-                };
-              }
-              return updated;
-            });
+            patchLastAssistant(chunk.message.content);
           }
           if (chunk.error) {
-            setMessages((prev) => {
-              const updated = [...prev];
-              updated[updated.length - 1] = {
-                role: 'assistant',
-                content: `Помилка: ${chunk.error}`,
-              };
-              return updated;
-            });
+            patchLastAssistant(chunk.error, { isError: true });
           }
         },
         workspaceId,
+        { signal: abortController.signal },
       );
     } catch (err) {
+      if (err?.name === 'AbortError') {
+        return;
+      }
+      patchLastAssistant(err.message || 'Помилка чату', { isError: true });
+      // Форсувати негайне застосування pending після помилки.
+      if (streamRafRef.current) {
+        cancelAnimationFrame(streamRafRef.current);
+        streamRafRef.current = null;
+      }
       setMessages((prev) => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          role: 'assistant',
-          content: `Помилка: ${err.message}`,
-        };
-        return updated;
+        if (!prev.length) return prev;
+        const last = prev[prev.length - 1];
+        if (last.role !== 'assistant') return prev;
+        return [
+          ...prev.slice(0, -1),
+          { ...last, content: `Помилка: ${err.message}` },
+        ];
       });
     } finally {
       setLoading(false);
       setStreaming(false);
       skipSaveRef.current = false;
+      streamAbortRef.current = null;
+      // Один refresh sidebar після завершення стріму (не на кожен chunk/autosave).
       if (activeChatId) {
         refreshChats();
       }
@@ -399,7 +475,12 @@ function ChatPage() {
       )}
 
       <div className="chat-container">
-        <div className="chat-messages" role="log" aria-live="polite">
+        <div
+          className="chat-messages"
+          ref={messagesContainerRef}
+          role="log"
+          aria-live="polite"
+        >
           {messages.length === 0 && (
             <div className="chat-empty">
               <p>Напишіть повідомлення, щоб почати розмову</p>
@@ -466,11 +547,26 @@ function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
+        {showScrollButton && (
+          <button
+            type="button"
+            className="chat-scroll-bottom"
+            onClick={() => scrollToBottom()}
+            aria-label="До останнього повідомлення"
+            title="До останнього повідомлення"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+            </svg>
+          </button>
+        )}
+
         <form className="chat-input" onSubmit={handleSend}>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Введіть повідомлення..."
+            aria-label="Текст повідомлення"
             rows={2}
             disabled={!selectedModel || loading || (workspaceLocked && !selectedWorkspaceId)}
             onKeyDown={(e) => {

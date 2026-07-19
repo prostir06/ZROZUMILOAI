@@ -7,6 +7,15 @@ const emptyForm = {
   temperature: 0.7,
   user_ids: [],
   model_name: '',
+  llm_provider: 'ollama',
+  gemini_api_key: '',
+  gemini_api_key_set: false,
+  search_source: 'internal',
+  meilisearch_url: '',
+  meilisearch_api_key: '',
+  meilisearch_index_prefix: 'tutor_',
+  meilisearch_indexes: 'course_info, courseware_content',
+  meilisearch_course_id: '',
 };
 
 function WorkspacesPage() {
@@ -23,6 +32,10 @@ function WorkspacesPage() {
   const [widgetTokenLabel, setWidgetTokenLabel] = useState('');
   const [documents, setDocuments] = useState([]);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+
+  const providerModels = models.filter(
+    (model) => (model.provider || 'ollama') === form.llm_provider,
+  );
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -74,12 +87,34 @@ function WorkspacesPage() {
     }
   };
 
+  // P1: polling статусу processing після async ingest.
+  useEffect(() => {
+    if (!editingId) {
+      return undefined;
+    }
+    const hasProcessing = documents.some((doc) => doc.status === 'processing');
+    if (!hasProcessing) {
+      return undefined;
+    }
+    const timer = setInterval(() => {
+      loadDocuments(editingId);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [editingId, documents]);
+
   const openCreateForm = () => {
     setError('');
     setForm(emptyForm);
     setFormMode('create');
     setEditingId(null);
   };
+
+  const parseIndexes = (value) => value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  const formatIndexes = (indexes) => (indexes?.length ? indexes.join(', ') : '');
 
   const openEditForm = (workspace) => {
     setError('');
@@ -89,6 +124,15 @@ function WorkspacesPage() {
       temperature: workspace.temperature ?? 0.7,
       user_ids: workspace.users.map((user) => user.id),
       model_name: workspace.model_names?.[0] || '',
+      llm_provider: workspace.llm_provider || 'ollama',
+      gemini_api_key: '',
+      gemini_api_key_set: Boolean(workspace.gemini_api_key_set),
+      search_source: workspace.search_source || 'internal',
+      meilisearch_url: workspace.meilisearch_url || '',
+      meilisearch_api_key: '',
+      meilisearch_index_prefix: workspace.meilisearch_index_prefix || 'tutor_',
+      meilisearch_indexes: formatIndexes(workspace.meilisearch_indexes) || 'course_info, courseware_content',
+      meilisearch_course_id: workspace.meilisearch_course_id || '',
     });
     setFormMode('edit');
     setEditingId(workspace.id);
@@ -121,6 +165,23 @@ function WorkspacesPage() {
     setForm((prev) => ({ ...prev, model_name: event.target.value }));
   };
 
+  const handleProviderChange = (event) => {
+    const llm_provider = event.target.value;
+    setForm((prev) => {
+      const nextModels = models.filter(
+        (model) => (model.provider || 'ollama') === llm_provider,
+      );
+      const modelStillValid = nextModels.some(
+        (model) => model.name === prev.model_name,
+      );
+      return {
+        ...prev,
+        llm_provider,
+        model_name: modelStillValid ? prev.model_name : '',
+      };
+    });
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
@@ -131,7 +192,20 @@ function WorkspacesPage() {
       temperature: form.temperature,
       user_ids: form.user_ids,
       model_names: form.model_name ? [form.model_name] : [],
+      llm_provider: form.llm_provider,
+      search_source: form.search_source,
+      meilisearch_url: form.meilisearch_url.trim(),
+      meilisearch_index_prefix: form.meilisearch_index_prefix.trim(),
+      meilisearch_indexes: parseIndexes(form.meilisearch_indexes),
+      meilisearch_course_id: form.meilisearch_course_id.trim(),
     };
+
+    if (form.meilisearch_api_key.trim()) {
+      payload.meilisearch_api_key = form.meilisearch_api_key.trim();
+    }
+    if (form.gemini_api_key.trim()) {
+      payload.gemini_api_key = form.gemini_api_key.trim();
+    }
 
     try {
       if (formMode === 'edit') {
@@ -313,9 +387,57 @@ function WorkspacesPage() {
               </div>
 
               <div className="form__group">
+                <label htmlFor="workspace_llm_provider">LLM провайдер</label>
+                <select
+                  id="workspace_llm_provider"
+                  value={form.llm_provider}
+                  onChange={handleProviderChange}
+                >
+                  <option value="ollama">Ollama (локально)</option>
+                  <option value="gemini">Google Gemini (API)</option>
+                </select>
+              </div>
+
+              {form.llm_provider === 'gemini' && (
+                <div className="form__group">
+                  <label htmlFor="workspace_gemini_api_key">Gemini API key</label>
+                  <input
+                    id="workspace_gemini_api_key"
+                    type="password"
+                    value={form.gemini_api_key}
+                    onChange={(e) => setForm((prev) => ({
+                      ...prev,
+                      gemini_api_key: e.target.value,
+                    }))}
+                    placeholder={
+                      formMode === 'edit' && form.gemini_api_key_set
+                        ? 'Залиште порожнім, щоб не змінювати'
+                        : 'Ключ з Google AI Studio'
+                    }
+                    autoComplete="new-password"
+                  />
+                  <p className="auth-card__subtitle">
+                    Отримайте ключ на{' '}
+                    <a
+                      href="https://aistudio.google.com/apikey"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      aistudio.google.com
+                    </a>
+                    . Альтернатива — глобальний <code>GEMINI_API_KEY</code> у .env.
+                  </p>
+                </div>
+              )}
+
+              <div className="form__group">
                 <label htmlFor="workspace_model">Модель</label>
-                {models.length === 0 ? (
-                  <p className="empty-state">Немає встановлених моделей</p>
+                {providerModels.length === 0 ? (
+                  <p className="empty-state">
+                    {form.llm_provider === 'gemini'
+                      ? 'Немає моделей Gemini у налаштуваннях сервера'
+                      : 'Немає встановлених моделей Ollama'}
+                  </p>
                 ) : (
                   <select
                     id="workspace_model"
@@ -323,7 +445,7 @@ function WorkspacesPage() {
                     onChange={handleModelChange}
                   >
                     <option value="">— Не обрано —</option>
-                    {models.map((model) => (
+                    {providerModels.map((model) => (
                       <option key={model.name} value={model.name}>
                         {model.name}
                       </option>
@@ -331,6 +453,84 @@ function WorkspacesPage() {
                   </select>
                 )}
               </div>
+            </div>
+
+            <div className="form" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--color-border-subtle)' }}>
+              <h4 className="section__title">Пошук Open edX (Meilisearch)</h4>
+              <p className="auth-card__subtitle" style={{ marginBottom: '1rem' }}>
+                Meilisearch Tutor: префікс <code>tutor_</code>, індекси
+                <code>tutor_course_info</code> та <code>tutor_courseware_content</code>.
+              </p>
+
+              <div className="form__group">
+                <label htmlFor="workspace_search_source">Джерело контексту для чату</label>
+                <select
+                  id="workspace_search_source"
+                  value={form.search_source}
+                  onChange={(e) => setForm((prev) => ({ ...prev, search_source: e.target.value }))}
+                >
+                  <option value="internal">Локальні документи (RAG)</option>
+                  <option value="meilisearch">Open edX Meilisearch</option>
+                  <option value="hybrid">RAG + Meilisearch</option>
+                </select>
+              </div>
+
+              {form.search_source !== 'internal' && (
+                <>
+                  <div className="form__group">
+                    <label htmlFor="workspace_meilisearch_url">Meilisearch URL</label>
+                    <input
+                      id="workspace_meilisearch_url"
+                      value={form.meilisearch_url}
+                      onChange={(e) => setForm((prev) => ({ ...prev, meilisearch_url: e.target.value }))}
+                      placeholder="meilisearch.local.openedx.io"
+                    />
+                  </div>
+
+                  <div className="form__group">
+                    <label htmlFor="workspace_meilisearch_api_key">API key</label>
+                    <input
+                      id="workspace_meilisearch_api_key"
+                      type="password"
+                      value={form.meilisearch_api_key}
+                      onChange={(e) => setForm((prev) => ({ ...prev, meilisearch_api_key: e.target.value }))}
+                      placeholder={formMode === 'edit' ? 'Залиште порожнім, щоб не змінювати' : ''}
+                      autoComplete="new-password"
+                    />
+                  </div>
+
+                  <div className="form__row">
+                    <div className="form__group">
+                      <label htmlFor="workspace_meilisearch_prefix">Префікс індексів</label>
+                      <input
+                        id="workspace_meilisearch_prefix"
+                        value={form.meilisearch_index_prefix}
+                        onChange={(e) => setForm((prev) => ({ ...prev, meilisearch_index_prefix: e.target.value }))}
+                        placeholder="tutor_"
+                      />
+                    </div>
+                    <div className="form__group">
+                      <label htmlFor="workspace_meilisearch_indexes">Індекси (через кому)</label>
+                      <input
+                        id="workspace_meilisearch_indexes"
+                        value={form.meilisearch_indexes}
+                        onChange={(e) => setForm((prev) => ({ ...prev, meilisearch_indexes: e.target.value }))}
+                        placeholder="course_info, courseware_content"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="form__group">
+                    <label htmlFor="workspace_meilisearch_course_id">Course ID (фільтр, опційно)</label>
+                    <input
+                      id="workspace_meilisearch_course_id"
+                      value={form.meilisearch_course_id}
+                      onChange={(e) => setForm((prev) => ({ ...prev, meilisearch_course_id: e.target.value }))}
+                      placeholder="course-v1:ORG+COURSE+RUN"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="form__actions">
@@ -507,6 +707,7 @@ function WorkspacesPage() {
                   <th>Температура</th>
                   <th>Користувачі</th>
                   <th>Модель</th>
+                  <th>Провайдер</th>
                   <th>Оновлено</th>
                   <th>Дії</th>
                 </tr>
@@ -522,6 +723,7 @@ function WorkspacesPage() {
                         : '—'}
                     </td>
                     <td>{workspace.model_names?.[0] || '—'}</td>
+                    <td>{workspace.llm_provider === 'gemini' ? 'Gemini' : 'Ollama'}</td>
                     <td>
                       {new Date(workspace.updated_at).toLocaleString('uk-UA')}
                     </td>

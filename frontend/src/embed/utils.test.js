@@ -7,6 +7,8 @@ import {
   formatBoldTextHtml,
   formatMessageContent,
   getEmbedStatusText,
+  sanitizeColor,
+  sanitizeTitle,
   truncateText,
 } from './utils.js';
 
@@ -72,6 +74,30 @@ describe('getEmbedStatusText', () => {
 
   it('є model', () => {
     expect(getEmbedStatusText({}, { name: 'ws' }, 'llama3')).toBe('Модель: llama3');
+  });
+
+  it('initError має пріоритет', () => {
+    expect(getEmbedStatusText({}, null, '', 'Custom error')).toBe('Custom error');
+  });
+});
+
+describe('sanitizeColor', () => {
+  it('приймає валідний hex', () => {
+    expect(sanitizeColor('#0D9E96')).toBe('#0D9E96');
+  });
+
+  it('відхиляє небезпечні значення', () => {
+    expect(sanitizeColor('red; background:url(x)')).toBe('#0D9E96');
+  });
+});
+
+describe('sanitizeTitle', () => {
+  it('прибирає HTML-символи', () => {
+    expect(sanitizeTitle('<script>')).toBe('script');
+  });
+
+  it('повертає значення за замовчуванням', () => {
+    expect(sanitizeTitle('')).toBe('Підтримка');
   });
 });
 

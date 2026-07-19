@@ -12,6 +12,22 @@ export const EMBED_FAQ_QUESTIONS = [
   'Чи має Зрозуміло! акредитацію або ліцензію?',
 ];
 
+/** Дозволити лише hex-колір для CSS custom properties. */
+export function sanitizeColor(color) {
+  const value = String(color || '').trim();
+  if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value)) {
+    return value;
+  }
+  return '#0D9E96';
+}
+
+/** Прибрати небезпечні символи з текстового заголовка. */
+export function sanitizeTitle(title) {
+  const value = String(title || 'Підтримка').trim();
+  const cleaned = value.replace(/[<>"']/g, '');
+  return cleaned.slice(0, 80) || 'Підтримка';
+}
+
 /** Екранування HTML для безпечного рендеру тексту. */
 export function escapeHtml(text) {
   if (text == null || text === '') {
@@ -72,7 +88,10 @@ export function buildAuthHeader(config) {
 }
 
 /** Текст статусу embed-чату залежно від workspace/model. */
-export function getEmbedStatusText(config, workspace, model) {
+export function getEmbedStatusText(config, workspace, model, initError = '') {
+  if (initError) {
+    return initError;
+  }
   if (!config) {
     return '';
   }
