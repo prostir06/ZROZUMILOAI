@@ -51,6 +51,13 @@ class WorkspaceChatLog(models.Model):
     )
     prompt = models.TextField()
     response = models.TextField(blank=True, default='')
+    needs_handoff = models.BooleanField(default=False)
+    feedback = models.CharField(
+        max_length=16,
+        blank=True,
+        default='',
+        help_text='up | down | порожньо',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

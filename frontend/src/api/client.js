@@ -324,6 +324,59 @@ class ApiClient {
     return true;
   }
 
+  async retryWorkspaceDocument(workspaceId, documentId) {
+    const response = await this.request(
+      `/workspaces/${workspaceId}/documents/${documentId}/retry/`,
+      { method: 'POST' },
+    );
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.error || 'Failed to retry document');
+    }
+    return response.json();
+  }
+
+  async getWorkspaceRagStats(workspaceId) {
+    const response = await this.request(`/workspaces/${workspaceId}/rag-stats/`);
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.error || error.detail || 'Failed to fetch RAG stats');
+    }
+    return response.json();
+  }
+
+  /** Масовий reindex усіх failed документів workspace. */
+  async reindexFailedWorkspaceDocuments(workspaceId) {
+    const response = await this.request(`/workspaces/${workspaceId}/rag-stats/`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.error || 'Failed to reindex documents');
+    }
+    return response.json();
+  }
+
+  /**
+   * Відгук на відповідь чату (up/down) або запит handoff.
+   * @param {number} logId — id WorkspaceChatLog зі стріму (поле log_id)
+   * @param {{ feedback?: string, needs_handoff?: boolean }} payload
+   */
+  async submitChatFeedback(logId, { feedback, needs_handoff } = {}) {
+    const body = {};
+    if (feedback !== undefined) body.feedback = feedback;
+    if (needs_handoff !== undefined) body.needs_handoff = needs_handoff;
+    const response = await this.request(`/chats/logs/${logId}/feedback/`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.error || 'Failed to submit feedback');
+    }
+    return response.json();
+  }
+
   async getMyWorkspaces() {
     const response = await this.request('/workspaces/my/');
     if (!response.ok) throw new Error('Failed to fetch workspaces');

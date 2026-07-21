@@ -2,6 +2,7 @@
 import requests
 from rest_framework.exceptions import ValidationError
 
+from config.http_utils import validation_error_message
 from ollama_proxy.services import OllamaService
 
 from .base import BaseLLMProvider, LLMProviderError
@@ -12,7 +13,7 @@ class OllamaProvider(BaseLLMProvider):
     Обгортка над OllamaService.
 
     Усі помилки мапляться в LLMProviderError, щоб run_chat мав єдиний контракт
-  відповіді незалежно від провайдера (Ollama чи Gemini).
+    відповіді незалежно від провайдера (Ollama чи Gemini).
     """
 
     provider_id = 'ollama'
@@ -32,8 +33,7 @@ class OllamaProvider(BaseLLMProvider):
         """
         Чат через Ollama API.
 
-        ValidationError (некоректні messages/model) та RequestException
-        перетворюються на LLMProviderError для уніфікованої обробки у views.
+        ValidationError та RequestException → LLMProviderError.
         """
         try:
             response = self._service.chat(
@@ -43,7 +43,7 @@ class OllamaProvider(BaseLLMProvider):
                 options=options,
             )
         except ValidationError as exc:
-            raise LLMProviderError(_validation_detail(exc)) from exc
+            raise LLMProviderError(validation_error_message(exc)) from exc
         except requests.RequestException as exc:
             raise LLMProviderError(str(exc)) from exc
 
@@ -57,19 +57,3 @@ class OllamaProvider(BaseLLMProvider):
 
     def health(self):
         return self._service.health()
-
-
-def _validation_detail(exc):
-    """Перетворити DRF ValidationError у рядок для LLMProviderError."""
-    detail = exc.detail
-    if isinstance(detail, dict):
-        message = next(iter(detail.values()))
-        if isinstance(message, list):
-            return str(message[0])
-        return str(message)
-    return str(detail)
-
-
-def normalize_ollama_stream_chunk(raw_chunk):
-    """Повернути чанк як є — формат уже сумісний з frontend."""
-    return raw_chunk

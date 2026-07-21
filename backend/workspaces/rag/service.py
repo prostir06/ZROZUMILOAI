@@ -6,6 +6,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Count, Sum
 
 from ollama_proxy.services import OllamaService
 
@@ -18,15 +19,15 @@ from .vector_search import search_with_pgvector, uses_pgvector
 
 logger = logging.getLogger(__name__)
 
+# Reciprocal Rank Fusion константа (стандартне k=60).
+RRF_K = 60
+
 
 def ingest_workspace_document(document):
     """
     Проіндексувати документ: витяг тексту, chunking, embeddings.
 
-    Важливо (P0):
-    - HTTP-embeddings виконуються ПОЗА transaction.atomic
-    - у БД пишемо короткою транзакцією через bulk_create
-    - status: processing → ready | failed
+    Embeddings поза atomic (паралельний пул); bulk_create у короткій транзакції.
     """
     document.status = WorkspaceDocument.Status.PROCESSING
     document.error_message = ''
@@ -45,21 +46,22 @@ def ingest_workspace_document(document):
         if not chunk_texts:
             raise ValueError('Не вдалося створити фрагменти тексту')
 
-        # Embeddings поза atomic — не тримаємо DB-transaction на час Ollama.
         ollama = OllamaService()
         embed_model = settings.RAG_EMBED_MODEL
-        prepared_chunks = []
-        for index, chunk_text in enumerate(chunk_texts):
-            embedding = ollama.embed(embed_model, chunk_text)
-            prepared_chunks.append(
-                DocumentChunk(
-                    document=document,
-                    workspace=document.workspace,
-                    chunk_index=index,
-                    content=chunk_text,
-                    embedding=embedding,
-                ),
+        embeddings = _embed_texts_parallel(ollama, embed_model, chunk_texts)
+
+        prepared_chunks = [
+            DocumentChunk(
+                document=document,
+                workspace=document.workspace,
+                chunk_index=index,
+                content=chunk_text,
+                embedding=embedding,
             )
+            for index, (chunk_text, embedding) in enumerate(
+                zip(chunk_texts, embeddings),
+            )
+        ]
 
         with transaction.atomic():
             DocumentChunk.objects.filter(document=document).delete()
@@ -90,16 +92,67 @@ def ingest_workspace_document(document):
         raise
 
 
+def _embed_texts_parallel(ollama, embed_model, texts):
+    """Паралельні embeddings з обмеженою конкуренцією."""
+    workers = max(1, min(
+        getattr(settings, 'RAG_EMBED_CONCURRENCY', 4),
+        len(texts),
+    ))
+    results = [None] * len(texts)
+
+    def _one(index_text):
+        index, text = index_text
+        return index, ollama.embed(embed_model, text)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = [
+            executor.submit(_one, (index, text))
+            for index, text in enumerate(texts)
+        ]
+        for future in as_completed(futures):
+            index, embedding = future.result()
+            results[index] = embedding
+
+    return results
+
+
+def reciprocal_rank_fusion(result_lists, top_k, k=RRF_K):
+    """
+    Об'єднати кілька ранжованих списків через Reciprocal Rank Fusion.
+
+    Кожен елемент — dict з content/score/document_name.
+    Ключ дедуплікації: (document_name, content[:120]) — щоб один фрагмент
+    з internal і Meili не дублювався, навіть якщо сирі score на різних шкалах.
+    """
+    scores = {}
+    payloads = {}
+
+    for results in result_lists:
+        for rank, item in enumerate(results or [], start=1):
+            key = (
+                item.get('document_name', ''),
+                (item.get('content') or '')[:120],
+            )
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank)
+            if key not in payloads:
+                payloads[key] = dict(item)
+
+    merged = []
+    for key, rrf_score in scores.items():
+        entry = payloads[key]
+        entry = dict(entry)
+        entry['score'] = rrf_score
+        merged.append(entry)
+
+    merged.sort(key=lambda item: item.get('score', 0), reverse=True)
+    return merged[:top_k]
+
+
 def search_workspace_context(workspace, query, top_k=None, course_id=None):
     """
     Зібрати контекст з локального RAG та/або Meilisearch Open edX.
 
-    Залежно від workspace.search_source:
-    - internal — лише embeddings у DocumentChunk
-    - meilisearch — лише індекси Open edX (Tutor)
-    - hybrid — обидва джерела паралельно, сортування за score, top_k
-
-    :return: список dict з content, score, document_name
+    Hybrid: RRF замість сирого змішування різних шкал score.
     """
     if not workspace or not query or not query.strip():
         return []
@@ -115,16 +168,14 @@ def search_workspace_context(workspace, query, top_k=None, course_id=None):
         Workspace.SearchSource.HYBRID,
     )
 
-    chunks = []
-
-    # P1: hybrid — паралельний пошук, щоб не складати latency.
     if use_internal and use_meili:
-        chunks.extend(
-            _search_hybrid_parallel(workspace, query, top_k, course_id),
-        )
-    elif use_internal:
+        internal, meili = _search_hybrid_lists(workspace, query, top_k, course_id)
+        return reciprocal_rank_fusion([internal, meili], top_k=top_k)
+
+    chunks = []
+    if use_internal:
         chunks.extend(search_workspace_documents(workspace, query, top_k=top_k))
-    elif use_meili:
+    if use_meili:
         from .meilisearch_search import search_openedx_meilisearch
 
         chunks.extend(
@@ -143,11 +194,12 @@ def search_workspace_context(workspace, query, top_k=None, course_id=None):
     return chunks[:top_k]
 
 
-def _search_hybrid_parallel(workspace, query, top_k, course_id):
-    """Запустити internal + Meilisearch паралельно; ізолювати помилки джерел."""
+def _search_hybrid_lists(workspace, query, top_k, course_id):
+    """Паралельно отримати списки internal + Meili (для RRF)."""
     from .meilisearch_search import search_openedx_meilisearch
 
-    results = []
+    internal = []
+    meili = []
 
     def _internal():
         return search_workspace_documents(workspace, query, top_k=top_k)
@@ -162,33 +214,28 @@ def _search_hybrid_parallel(workspace, query, top_k, course_id):
 
     try:
         with ThreadPoolExecutor(max_workers=2) as executor:
-            futures = {
-                executor.submit(_internal): 'internal',
-                executor.submit(_meili): 'meilisearch',
-            }
-            for future in as_completed(futures):
-                label = futures[future]
-                try:
-                    results.extend(future.result() or [])
-                except Exception as exc:
-                    logger.error('Hybrid search source %s failed: %s', label, exc)
+            fut_int = executor.submit(_internal)
+            fut_meili = executor.submit(_meili)
+            try:
+                internal = fut_int.result() or []
+            except Exception as exc:
+                logger.error('Hybrid internal search failed: %s', exc)
+            try:
+                meili = fut_meili.result() or []
+            except Exception as exc:
+                logger.error('Hybrid meilisearch failed: %s', exc)
     except Exception as exc:
         logger.error('Hybrid parallel search failed: %s', exc)
-        # Fallback: спробувати хоча б internal синхронно.
         try:
-            results.extend(search_workspace_documents(workspace, query, top_k=top_k))
+            internal = search_workspace_documents(workspace, query, top_k=top_k)
         except Exception:
-            pass
+            internal = []
 
-    return results
+    return internal, meili
 
 
 def search_workspace_documents(workspace, query, top_k=None):
-    """
-    Знайти найрелевантніші фрагменти документів workspace.
-
-    :return: список dict з content, score, document_name
-    """
+    """Знайти найрелевантніші фрагменти документів workspace."""
     if not settings.RAG_ENABLED or not workspace or not query or not query.strip():
         return []
 
@@ -215,12 +262,19 @@ def format_rag_context(chunks):
     if not chunks:
         return ''
 
+    min_score = getattr(settings, 'RAG_MIN_SCORE', 0.25)
+    best = max((c.get('score') or 0) for c in chunks)
+
     lines = [
         'Використовуй наведені нижче фрагменти документів workspace для відповіді. '
         'Якщо відповіді немає в контексті — чесно скажи про це.',
-        '',
-        '--- Контекст з документів ---',
     ]
+    if best < min_score:
+        lines.append(
+            'Увага: релевантність знайденого контексту низька. '
+            'Якщо не впевнений — запропонуй звернутися до підтримки.',
+        )
+    lines.extend(['', '--- Контекст з документів ---'])
 
     for index, chunk in enumerate(chunks, start=1):
         source = chunk['document_name']
@@ -234,6 +288,50 @@ def format_rag_context(chunks):
 
     lines.append('--- Кінець контексту ---')
     return '\n'.join(lines)
+
+
+def sources_from_chunks(chunks):
+    """Компактний список джерел для API/UI citations."""
+    sources = []
+    seen = set()
+    for chunk in chunks or []:
+        name = chunk.get('document_name') or 'Документ'
+        key = (name, (chunk.get('content') or '')[:80])
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            score = round(float(chunk.get('score') or 0), 4)
+        except (TypeError, ValueError):
+            score = 0.0
+        sources.append({
+            'document_name': name,
+            'score': score,
+            'excerpt': truncate_text(
+                strip_html(chunk.get('content', '')),
+                180,
+            ),
+        })
+    return sources
+
+
+def workspace_rag_stats(workspace):
+    """Агрегована статистика RAG для адмінки."""
+    docs = workspace.documents.all()
+    by_status = {
+        row['status']: row['count']
+        for row in docs.values('status').annotate(count=Count('id'))
+    }
+    chunk_total = docs.aggregate(total=Sum('chunk_count'))['total'] or 0
+    return {
+        'documents_total': docs.count(),
+        'documents_ready': by_status.get(WorkspaceDocument.Status.READY, 0),
+        'documents_processing': by_status.get(
+            WorkspaceDocument.Status.PROCESSING, 0,
+        ),
+        'documents_failed': by_status.get(WorkspaceDocument.Status.FAILED, 0),
+        'chunks_total': chunk_total,
+    }
 
 
 def extract_last_user_message(messages):

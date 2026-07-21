@@ -68,5 +68,14 @@ class WorkspaceChatLogSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WorkspaceChatLog
-        fields = ('id', 'sent_by', 'workspace', 'prompt', 'response', 'sent_at')
+        fields = (
+            'id',
+            'sent_by',
+            'workspace',
+            'prompt',
+            'response',
+            'needs_handoff',
+            'feedback',
+            'sent_at',
+        )
         read_only_fields = fields

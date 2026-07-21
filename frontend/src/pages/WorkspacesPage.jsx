@@ -32,6 +32,7 @@ function WorkspacesPage() {
   const [widgetTokenLabel, setWidgetTokenLabel] = useState('');
   const [documents, setDocuments] = useState([]);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [ragStats, setRagStats] = useState(null);
 
   const providerModels = models.filter(
     (model) => (model.provider || 'ollama') === form.llm_provider,
@@ -67,6 +68,7 @@ function WorkspacesPage() {
     setNewWidgetToken('');
     setWidgetTokenLabel('');
     setDocuments([]);
+    setRagStats(null);
   };
 
   const loadWidgetTokens = async (workspaceId) => {
@@ -80,10 +82,15 @@ function WorkspacesPage() {
 
   const loadDocuments = async (workspaceId) => {
     try {
-      const docs = await api.getWorkspaceDocuments(workspaceId);
+      const [docs, stats] = await Promise.all([
+        api.getWorkspaceDocuments(workspaceId),
+        api.getWorkspaceRagStats(workspaceId).catch(() => null),
+      ]);
       setDocuments(docs);
+      setRagStats(stats);
     } catch {
       setDocuments([]);
+      setRagStats(null);
     }
   };
 
@@ -289,6 +296,28 @@ function WorkspacesPage() {
       loadDocuments(editingId);
     } catch (err) {
       setError(err.message || 'Помилка видалення документа');
+    }
+  };
+
+  const handleRetryDocument = async (documentId) => {
+    if (!editingId) return;
+    setError('');
+    try {
+      await api.retryWorkspaceDocument(editingId, documentId);
+      await loadDocuments(editingId);
+    } catch (err) {
+      setError(err.message || 'Помилка повторної індексації');
+    }
+  };
+
+  const handleReindexFailed = async () => {
+    if (!editingId) return;
+    setError('');
+    try {
+      await api.reindexFailedWorkspaceDocuments(editingId);
+      await loadDocuments(editingId);
+    } catch (err) {
+      setError(err.message || 'Помилка reindex');
     }
   };
 
@@ -647,6 +676,29 @@ function WorkspacesPage() {
                 )}
               </div>
 
+              {ragStats && (
+                <p className="auth-card__subtitle">
+                  RAG: {ragStats.documents_ready}/{ragStats.documents_total} готово,
+                  {' '}
+                  {ragStats.chunks_total} фрагментів
+                  {ragStats.documents_failed > 0
+                    ? `, помилок: ${ragStats.documents_failed}`
+                    : ''}
+                  {ragStats.documents_failed > 0 && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        className="btn btn--ghost btn--sm"
+                        onClick={handleReindexFailed}
+                      >
+                        Повторити всі failed
+                      </button>
+                    </>
+                  )}
+                </p>
+              )}
+
               {documents.length > 0 ? (
                 <div className="table-wrapper">
                   <table className="table">
@@ -671,7 +723,16 @@ function WorkspacesPage() {
                           <td>{documentStatusLabel(doc.status)}</td>
                           <td>{doc.chunk_count || '—'}</td>
                           <td>{new Date(doc.created_at).toLocaleString('uk-UA')}</td>
-                          <td>
+                          <td className="table__actions">
+                            {doc.status === 'failed' && (
+                              <button
+                                type="button"
+                                className="btn btn--ghost btn--sm"
+                                onClick={() => handleRetryDocument(doc.id)}
+                              >
+                                Повторити
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="btn btn--danger btn--sm"

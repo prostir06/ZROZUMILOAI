@@ -98,6 +98,7 @@ def log_workspace_chat_exchange(
     sent_by='',
     prompt='',
     response='',
+    needs_handoff=False,
 ):
     """
     Зберегти обмін prompt/response у БД для Chats Info.
@@ -120,6 +121,7 @@ def log_workspace_chat_exchange(
             workspace=workspace,
             prompt=prompt,
             response=response or '',
+            needs_handoff=bool(needs_handoff),
         )
     except DatabaseError as exc:
         logger.exception(

@@ -5,6 +5,7 @@ from .log_views import (
     WorkspaceChatLogClearView,
     WorkspaceChatLogDetailView,
     WorkspaceChatLogExportView,
+    WorkspaceChatLogFeedbackView,
     WorkspaceChatLogListView,
 )
 from .views import ChatDetailView, ChatListCreateView
@@ -14,6 +15,11 @@ urlpatterns = [
     path('logs/', WorkspaceChatLogListView.as_view(), name='workspace_chat_logs'),
     path('logs/clear/', WorkspaceChatLogClearView.as_view(), name='workspace_chat_logs_clear'),
     path('logs/export/', WorkspaceChatLogExportView.as_view(), name='workspace_chat_logs_export'),
+    path(
+        'logs/<int:log_id>/feedback/',
+        WorkspaceChatLogFeedbackView.as_view(),
+        name='workspace_chat_log_feedback',
+    ),
     path('logs/<int:log_id>/', WorkspaceChatLogDetailView.as_view(), name='workspace_chat_log_detail'),
     path('<int:chat_id>/', ChatDetailView.as_view(), name='chat_detail'),
 ]

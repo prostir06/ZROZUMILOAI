@@ -143,6 +143,7 @@ REST_FRAMEWORK = {
         'auth_login': os.getenv('AUTH_LOGIN_RATE', '10/minute'),
         'auth_register': os.getenv('AUTH_REGISTER_RATE', '5/minute'),
         'widget_chat': os.getenv('WIDGET_CHAT_RATE', '60/minute'),
+        'user_chat': os.getenv('USER_CHAT_RATE', '60/minute'),
     },
 }
 
@@ -218,12 +219,52 @@ if not BACKUP_DIR.is_absolute():
 _cache_dir = Path(os.getenv('DJANGO_CACHE_DIR', str(BASE_DIR / 'cache')))
 _cache_dir.mkdir(parents=True, exist_ok=True)
 
-CACHES = {
-    'default': {
-        'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
-        'LOCATION': str(_cache_dir),
-    },
-}
+REDIS_URL = os.getenv('REDIS_URL', '').strip()
+
+if REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+        },
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
+            'LOCATION': str(_cache_dir),
+        },
+    }
+
+# Celery: брокер Redis; локально можна CELERY_TASK_ALWAYS_EAGER=True без Redis.
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', REDIS_URL or 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.getenv(
+    'CELERY_RESULT_BACKEND',
+    REDIS_URL or 'redis://localhost:6379/1',
+)
+CELERY_TASK_ALWAYS_EAGER = os.getenv(
+    'CELERY_TASK_ALWAYS_EAGER',
+    'True' if not REDIS_URL else 'False',
+).lower() in ('true', '1', 'yes')
+CELERY_TASK_EAGER_PROPAGATES = True
+CELERY_TASK_TRACK_STARTED = True
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+
+# Довіряти X-Forwarded-For лише за reverse-proxy (Caddy/nginx).
+TRUST_X_FORWARDED_FOR = os.getenv(
+    'TRUST_X_FORWARDED_FOR',
+    'False' if DEBUG else 'True',
+).lower() in ('true', '1', 'yes')
+
+# RAG: мінімальний score для «знаю»; нижче — підказка ескалації.
+RAG_MIN_SCORE = float(os.getenv('RAG_MIN_SCORE', '0.25'))
+RAG_EMBED_CONCURRENCY = int(os.getenv('RAG_EMBED_CONCURRENCY', '4'))
 
 # Production hardening (P2) — активується коли DEBUG=False.
 if not DEBUG:

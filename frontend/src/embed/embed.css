@@ -203,6 +203,30 @@ body {
   font-weight: 600;
 }
 
+.embed__sources {
+  margin-top: 0.55rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--color-border);
+  font-size: 0.78rem;
+  opacity: 0.9;
+}
+
+.embed__sources-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.embed__sources ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+.embed__handoff {
+  margin-top: 0.45rem;
+  font-size: 0.78rem;
+  opacity: 0.8;
+}
+
 .embed__typing {
   align-self: flex-start;
   display: flex;

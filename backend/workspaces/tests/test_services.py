@@ -67,7 +67,7 @@ class WorkspaceServicesTests(TestCase):
     def test_prepare_chat_messages_injects_system_prompt(self):
         """System prompt workspace додається на початок повідомлень."""
         messages = [{'role': 'user', 'content': 'Hi'}]
-        prepared = prepare_chat_messages(messages, self.workspace)
+        prepared, _sources = prepare_chat_messages(messages, self.workspace)
         self.assertEqual(prepared[0]['role'], 'system')
         self.assertEqual(prepared[0]['content'], 'Be helpful.')
         self.assertEqual(prepared[1]['content'], 'Hi')
@@ -87,7 +87,7 @@ class WorkspaceServicesTests(TestCase):
             'workspaces.rag.service.search_workspace_context',
             return_value=fake_chunks,
         ):
-            prepared = prepare_chat_messages(
+            prepared, sources = prepare_chat_messages(
                 messages,
                 self.workspace,
                 rag_query='Що в FAQ?',
@@ -97,6 +97,7 @@ class WorkspaceServicesTests(TestCase):
         self.assertIn('Be helpful.', prepared[0]['content'])
         self.assertIn('faq.md', prepared[0]['content'])
         self.assertIn('Відповідь з FAQ', prepared[0]['content'])
+        self.assertEqual(sources[0]['document_name'], 'faq.md')
 
     def test_get_ollama_options_from_workspace(self):
         """Temperature workspace передається в Ollama options."""

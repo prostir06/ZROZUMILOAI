@@ -2,7 +2,12 @@
 from django.urls import path
 
 from .views import MyWorkspacesView, WorkspaceDetailView, WorkspaceListCreateView
-from .document_views import WorkspaceDocumentDeleteView, WorkspaceDocumentListCreateView
+from .document_views import (
+    WorkspaceDocumentDeleteView,
+    WorkspaceDocumentListCreateView,
+    WorkspaceDocumentRetryView,
+    WorkspaceRagStatsView,
+)
 from .widget_views import WidgetTokenDeleteView, WidgetTokenListCreateView
 
 urlpatterns = [
@@ -32,5 +37,15 @@ urlpatterns = [
         '<int:workspace_id>/documents/<int:document_id>/',
         WorkspaceDocumentDeleteView.as_view(),
         name='workspace_document_delete',
+    ),
+    path(
+        '<int:workspace_id>/documents/<int:document_id>/retry/',
+        WorkspaceDocumentRetryView.as_view(),
+        name='workspace_document_retry',
+    ),
+    path(
+        '<int:workspace_id>/rag-stats/',
+        WorkspaceRagStatsView.as_view(),
+        name='workspace_rag_stats',
     ),
 ]

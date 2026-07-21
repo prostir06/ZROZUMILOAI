@@ -3,11 +3,13 @@
 
 Точка входу для ChatView та WidgetChatView: підготовка повідомлень (RAG),
 вибір провайдера, streaming/non-streaming відповідь у форматі Ollama SSE.
+Sources (citations) відправляються окремим SSE-події `sources` або полем JSON.
 """
 import json
 import logging
 
 import requests
+from django.conf import settings
 from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.response import Response
@@ -18,8 +20,8 @@ from chats.services import (
     extract_response_from_ollama_payload,
     log_workspace_chat_exchange,
 )
-from workspaces.services import get_ollama_options, prepare_chat_messages
 from workspaces.rag.service import extract_last_user_message
+from workspaces.services import get_ollama_options, prepare_chat_messages
 
 from .base import LLMProviderError
 from .factory import resolve_provider
@@ -39,6 +41,48 @@ def _provider_error_response(exc, *, stream=False):
     )
 
 
+def _safe_score(value):
+    """Перетворити score у float; некоректні значення → 0.0."""
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _needs_handoff_from_sources(sources):
+    """
+    True, якщо найкращий RAG score нижчий за поріг (ескалація до людини).
+
+    Порожні sources не ескалюємо — це може бути чат без RAG або збій пошуку.
+    """
+    if not sources:
+        return False
+    try:
+        min_score = float(getattr(settings, 'RAG_MIN_SCORE', 0.25))
+    except (TypeError, ValueError):
+        min_score = 0.25
+    best = max(_safe_score(item.get('score')) for item in sources)
+    return best < min_score
+
+
+def _prepare_chat_context(messages, workspace, meilisearch_course_id):
+    """
+    Підготувати messages + sources для провайдера.
+
+    Помилки RAG/Meili не повинні валити весь чат — працюємо без контексту.
+    """
+    try:
+        return prepare_chat_messages(
+            messages,
+            workspace,
+            rag_query=extract_last_user_message(messages),
+            meilisearch_course_id=meilisearch_course_id,
+        )
+    except Exception:
+        logger.exception('RAG/chat prep failed; continuing without context')
+        return list(messages), []
+
+
 def run_chat(
     *,
     model,
@@ -52,24 +96,32 @@ def run_chat(
     """
     Виконати чат-запит і повернути DRF Response або StreamingHttpResponse.
 
-    prompt — текст для логування; якщо None, витягується з messages.
-
-    Streaming: SSE з data: {...} у форматі Ollama; помилки теж у SSE.
-    Non-streaming: JSON dict відповіді Ollama або {'error': str}.
+    Streaming: спочатку data: {"sources":[...]}, далі Ollama SSE-чанки,
+    наприкінці data: {"log_id":..., "needs_handoff":...}.
+    Non-streaming: JSON з message + sources + log_id.
     """
-    prepared_messages = prepare_chat_messages(
+    prepared_messages, sources = _prepare_chat_context(
         messages,
         workspace,
-        rag_query=extract_last_user_message(messages),
-        meilisearch_course_id=meilisearch_course_id,
+        meilisearch_course_id,
     )
+    needs_handoff = _needs_handoff_from_sources(sources)
     options = get_ollama_options(workspace)
-    provider = resolve_provider(workspace=workspace, model_name=model)
+    try:
+        provider = resolve_provider(workspace=workspace, model_name=model)
+    except Exception as exc:
+        logger.exception('Failed to resolve LLM provider')
+        return _provider_error_response(
+            LLMProviderError(str(exc) or 'Провайдер недоступний'),
+            stream=stream,
+        )
     log_prompt = prompt if prompt is not None else ''
 
     if stream:
         def event_stream():
             accumulated = []
+            if sources:
+                yield f'data: {json.dumps({"sources": sources})}\n\n'
             try:
                 response = provider.chat(
                     model,
@@ -89,19 +141,24 @@ def run_chat(
                         accumulated.append(chunk_content)
             except (LLMProviderError, requests.RequestException) as exc:
                 yield _provider_error_response(exc, stream=True)
-            except Exception as exc:
+            except Exception:
                 logger.exception('Unexpected streaming chat error')
                 yield _provider_error_response(
                     LLMProviderError('Внутрішня помилка чату'),
                     stream=True,
                 )
             else:
-                log_workspace_chat_exchange(
+                log = log_workspace_chat_exchange(
                     workspace=workspace,
                     user=user,
                     prompt=log_prompt,
                     response=''.join(accumulated),
+                    needs_handoff=needs_handoff,
                 )
+                if log:
+                    yield (
+                        f'data: {json.dumps({"log_id": log.pk, "needs_handoff": needs_handoff})}\n\n'
+                    )
 
         return StreamingHttpResponse(
             event_stream(),
@@ -117,17 +174,25 @@ def run_chat(
         )
     except (LLMProviderError, requests.RequestException) as exc:
         return _provider_error_response(exc, stream=False)
-    except Exception as exc:
+    except Exception:
         logger.exception('Unexpected chat error')
         return _provider_error_response(
             LLMProviderError('Внутрішня помилка чату'),
             stream=False,
         )
 
-    log_workspace_chat_exchange(
+    if isinstance(parsed, dict):
+        parsed = dict(parsed)
+        parsed['sources'] = sources
+        parsed['needs_handoff'] = needs_handoff
+
+    log = log_workspace_chat_exchange(
         workspace=workspace,
         user=user,
         prompt=log_prompt,
         response=extract_response_from_ollama_payload(parsed),
+        needs_handoff=needs_handoff,
     )
+    if isinstance(parsed, dict) and log:
+        parsed['log_id'] = log.pk
     return Response(parsed)

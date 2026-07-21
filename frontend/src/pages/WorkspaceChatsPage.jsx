@@ -144,6 +144,8 @@ function WorkspaceChatsPage() {
                   <th>Workspace</th>
                   <th>Prompt</th>
                   <th>Response</th>
+                  <th>Feedback</th>
+                  <th>Handoff</th>
                   <th>Sent At</th>
                   <th aria-label="Дії" />
                 </tr>
@@ -160,6 +162,8 @@ function WorkspaceChatsPage() {
                     <td className="table__cell--truncate" title={log.response}>
                       {truncateText(log.response, RESPONSE_PREVIEW_LENGTH)}
                     </td>
+                    <td>{log.feedback || '—'}</td>
+                    <td>{log.needs_handoff ? 'так' : '—'}</td>
                     <td>{log.sent_at}</td>
                     <td className="table__actions">
                       <button

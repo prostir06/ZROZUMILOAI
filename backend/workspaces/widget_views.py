@@ -38,6 +38,11 @@ class WidgetConfigView(APIView):
                 'model_names': workspace.model_names,
             },
             'model': model,
+            'openedx_course_id': (
+                widget_token.openedx_course_id
+                or workspace.meilisearch_course_id
+                or ''
+            ),
         })
 
 
@@ -76,6 +81,13 @@ class WidgetChatView(APIView):
         widget_token.last_used_at = timezone.now()
         widget_token.save(update_fields=['last_used_at'])
 
+        course_id = (
+            request.data.get('openedx_course_id')
+            or widget_token.openedx_course_id
+            or workspace.meilisearch_course_id
+            or None
+        )
+
         return run_chat(
             model=model,
             messages=messages,
@@ -83,7 +95,7 @@ class WidgetChatView(APIView):
             workspace=workspace,
             user=None,
             prompt=extract_prompt_from_messages(messages),
-            meilisearch_course_id=request.data.get('openedx_course_id'),
+            meilisearch_course_id=course_id,
         )
 
 
@@ -106,6 +118,7 @@ class WidgetTokenListCreateView(APIView):
         raw_token, token = WidgetToken.create_for_workspace(
             workspace,
             label=serializer.validated_data.get('label', ''),
+            openedx_course_id=serializer.validated_data.get('openedx_course_id', ''),
         )
         data = WidgetTokenCreateResponseSerializer(token).data
         data['token'] = raw_token

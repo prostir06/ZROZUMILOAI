@@ -2,28 +2,53 @@ __pycache__/
 backend/cache/
 backend/media/
 *.py[cod]
+*$py.class
 *.sqlite3
 .env
 .venv/
 venv/
+backend/.venv/
 staticfiles/
 *.egg-info/
 dist/
 build/
+.eggs/
+
+# Celery / Redis local artifacts
+celerybeat-schedule
+celerybeat.pid
+dump.rdb
+
+# Tests / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.tox/
+.ruff_cache/
 
 # Node
 node_modules/
 frontend/dist/
+*.tsbuildinfo
 
 # IDE
 .idea/
 .vscode/
 *.swp
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
 
 # Backups (keep folder)
 backup/*
 !backup/.gitkeep
+
+# Local secrets / overrides
+.env.local
+.env.*.local
+*.pem

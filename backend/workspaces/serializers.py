@@ -258,6 +258,7 @@ class WidgetTokenSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'label',
+            'openedx_course_id',
             'token_prefix',
             'is_active',
             'created_at',
@@ -268,6 +269,11 @@ class WidgetTokenSerializer(serializers.ModelSerializer):
 
 class WidgetTokenCreateSerializer(serializers.Serializer):
     label = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    openedx_course_id = serializers.CharField(
+        max_length=255,
+        required=False,
+        allow_blank=True,
+    )
 
 
 class WidgetTokenCreateResponseSerializer(WidgetTokenSerializer):

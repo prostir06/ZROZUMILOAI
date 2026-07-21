@@ -7,16 +7,18 @@
 
 - Чат з AI-помічником (streaming) через Ollama або Gemini
 - Workspaces — ізоляція моделей, system prompt, temperature, LLM-провайдера
-- **RAG** — завантаження документів (TXT, MD, PDF); async індексація у фоні
-- **Meilisearch / hybrid** — пошук у Open edX (Tutor) разом із локальним RAG
+- **RAG** — завантаження документів (TXT, MD, PDF); індексація через Celery/Redis
+- **Citations / feedback** — джерела у відповіді, 👍/👎, handoff при низькій релевантності
+- **Meilisearch / hybrid** — пошук у Open edX (Tutor) разом із локальним RAG (RRF)
 - Збережені чати на сервері (історія діалогів)
-- Embed-віджет для сторонніх сайтів (Widget-Token)
+- Embed-віджет для сторонніх сайтів (Widget-Token, course-scoped)
 - Перегляд моделей (фільтр за workspace); pull/delete — лише адміністратор
 - Реєстрація та авторизація (JWT + API-ключі)
 - Адмін-панель: користувачі, workspaces, моделі, резервні копії БД
 - Налаштування зовнішнього вигляду (теми)
 - Адаптивний інтерфейс (мобільні, планшети, десктоп)
-- Docker Compose з Ollama, PostgreSQL (pgvector), Django та Caddy
+- Docker Compose: Ollama, PostgreSQL (pgvector), Redis, Celery worker, Django, Caddy
+- CI: GitHub Actions (`manage.py test`, `npm test` / lint / build)
 
 ## Структура
 
@@ -24,14 +26,15 @@
 ZROZUMILOAI/
 ├── backend/          # Django REST API
 │   ├── accounts/     # Авторизація, користувачі, API-ключі
-│   ├── chats/        # Збережені діалоги
+│   ├── chats/        # Збережені діалоги + Chats Info
 │   ├── workspaces/   # Workspaces, RAG, widget tokens
 │   ├── llm/          # Провайдери Ollama / Gemini
 │   ├── ollama_proxy/ # HTTP API чату / моделей
 │   └── backups/      # Резервні копії БД
 ├── frontend/         # React (Vite) + embed widget
-├── TeplateTutor/     # Шаблони Open edX / Tutor
-├── OPTIMIZATION_PLAN.md
+├── TeplateTutor/     # Тема Open edX + Tutor plugin
+├── .github/          # CI workflows
+├── LICENSE           # MIT
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -47,12 +50,12 @@ docker compose up --build -d
 - Frontend: http://localhost
 - Backend API: http://localhost:8000/api/
 - Ollama: лише `127.0.0.1:11434` (не публікується на всі інтерфейси)
+- Redis + Celery worker — для черги ingest документів
 
 **Безпека перед GitHub / продакшеном:**
 1. Скопіюйте `.env.example` → `.env` і задайте унікальні `DJANGO_SECRET_KEY`, паролі БД, `GEMINI_API_KEY`.
 2. Не комітьте `.env`, реальні widget tokens, backup з продакшен-даними.
 3. Workspace API keys (Gemini / Meilisearch) шифруються at rest (`FIELD_ENCRYPTION_KEY` опційно).
-4. Див. також `OPTIMIZATION_PLAN.md`.
 
 Завантажте модель:
 
@@ -75,10 +78,13 @@ python -m venv .venv
 .venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 set USE_SQLITE=True
+set CELERY_TASK_ALWAYS_EAGER=True
 python manage.py migrate
 ..\scripts\ensure_admin.ps1
 python manage.py runserver
 ```
+
+Локально без Redis ingest виконується синхронно (`CELERY_TASK_ALWAYS_EAGER=True` за замовчуванням, якщо `REDIS_URL` порожній).
 
 ### Frontend
 

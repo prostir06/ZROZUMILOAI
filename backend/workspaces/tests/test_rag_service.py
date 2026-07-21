@@ -80,7 +80,7 @@ class SearchWorkspaceContextTests(SimpleTestCase):
     @patch('workspaces.rag.meilisearch_search.search_openedx_meilisearch')
     @patch('workspaces.rag.service.search_workspace_documents')
     def test_hybrid_merges_and_sorts(self, mock_internal, mock_meili):
-        """HYBRID збирає результати з обох джерел і сортує за score."""
+        """HYBRID об'єднує результати через RRF (обидва джерела в топі)."""
         workspace = MagicMock()
         workspace.search_source = 'hybrid'
 
@@ -98,7 +98,8 @@ class SearchWorkspaceContextTests(SimpleTestCase):
         result = search_workspace_context(workspace, 'query')
 
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]['content'], 'edx')
+        contents = {item['content'] for item in result}
+        self.assertEqual(contents, {'local', 'edx'})
         mock_internal.assert_called_once()
         mock_meili.assert_called_once()
 

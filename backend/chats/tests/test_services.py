@@ -166,3 +166,27 @@ class LogWorkspaceChatExchangeTests(TestCase):
         )
         self.assertEqual(entry.sent_by, UNKNOWN_USER_LABEL)
         self.assertIsNone(entry.user)
+
+    def test_persists_needs_handoff(self):
+        """Прапорець needs_handoff зберігається в БД."""
+        entry = log_workspace_chat_exchange(
+            workspace=self.workspace,
+            user=self.user,
+            prompt='Складне питання',
+            response='Не знаю',
+            needs_handoff=True,
+        )
+        self.assertTrue(entry.needs_handoff)
+        entry.refresh_from_db()
+        self.assertTrue(entry.needs_handoff)
+
+    def test_explicit_sent_by_overrides_user(self):
+        """Явний sent_by має пріоритет над міткою користувача."""
+        entry = log_workspace_chat_exchange(
+            workspace=self.workspace,
+            user=self.user,
+            sent_by='widget-guest',
+            prompt='Hi',
+            response='Hello',
+        )
+        self.assertEqual(entry.sent_by, 'widget-guest')

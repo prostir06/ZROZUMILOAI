@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework import status
 
 from llm.base import LLMProviderError
@@ -29,7 +29,7 @@ class RunChatTests(TestCase):
     @patch('llm.chat.log_workspace_chat_exchange')
     def test_non_stream_success(self, mock_log, mock_prepare, mock_resolve):
         """Нестрімінговий чат повертає JSON відповіді провайдера."""
-        mock_prepare.return_value = [{'role': 'user', 'content': 'Hi'}]
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
         provider = MagicMock()
         provider.chat.return_value = {
             'message': {'role': 'assistant', 'content': 'Hello'},
@@ -48,13 +48,14 @@ class RunChatTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['message']['content'], 'Hello')
+        self.assertEqual(response.data.get('sources'), [])
         mock_log.assert_called_once()
 
     @patch('llm.chat.resolve_provider')
     @patch('llm.chat.prepare_chat_messages')
     def test_non_stream_provider_error(self, mock_prepare, mock_resolve):
         """LLMProviderError → HTTP 503 з повідомленням."""
-        mock_prepare.return_value = [{'role': 'user', 'content': 'Hi'}]
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
         provider = MagicMock()
         provider.chat.side_effect = LLMProviderError('Gemini недоступний')
         mock_resolve.return_value = provider
@@ -75,7 +76,7 @@ class RunChatTests(TestCase):
     @patch('llm.chat.prepare_chat_messages')
     def test_non_stream_request_exception(self, mock_prepare, mock_resolve):
         """RequestException від провайдера → HTTP 503."""
-        mock_prepare.return_value = [{'role': 'user', 'content': 'Hi'}]
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
         provider = MagicMock()
         provider.chat.side_effect = requests.RequestException('connection refused')
         mock_resolve.return_value = provider
@@ -97,7 +98,10 @@ class RunChatTests(TestCase):
     @patch('llm.chat.log_workspace_chat_exchange')
     def test_stream_yields_sse_chunks(self, mock_log, mock_prepare, mock_resolve):
         """Стрімінг повертає StreamingHttpResponse з SSE data: рядками."""
-        mock_prepare.return_value = [{'role': 'user', 'content': 'Hi'}]
+        mock_prepare.return_value = (
+            [{'role': 'user', 'content': 'Hi'}],
+            [{'document_name': 'FAQ', 'score': 0.9, 'excerpt': '…'}],
+        )
         chunk = json.dumps({
             'message': {'role': 'assistant', 'content': 'Hi'},
             'done': False,
@@ -108,6 +112,7 @@ class RunChatTests(TestCase):
         provider = MagicMock()
         provider.chat.return_value = mock_response
         mock_resolve.return_value = provider
+        mock_log.return_value = MagicMock(pk=42)
 
         response = run_chat(
             model='llama3',
@@ -121,13 +126,15 @@ class RunChatTests(TestCase):
         body = b''.join(response.streaming_content).decode('utf-8')
         self.assertIn('data:', body)
         self.assertIn('Hi', body)
+        self.assertIn('sources', body)
+        self.assertIn('log_id', body)
         mock_log.assert_called_once()
 
     @patch('llm.chat.resolve_provider')
     @patch('llm.chat.prepare_chat_messages')
     def test_stream_provider_error_in_sse(self, mock_prepare, mock_resolve):
         """Помилка під час стріму передається як SSE data: {error}."""
-        mock_prepare.return_value = [{'role': 'user', 'content': 'Hi'}]
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
         provider = MagicMock()
         provider.chat.side_effect = LLMProviderError('stream fail')
         mock_resolve.return_value = provider
@@ -143,3 +150,66 @@ class RunChatTests(TestCase):
 
         body = b''.join(response.streaming_content).decode('utf-8')
         self.assertIn('stream fail', body)
+
+    @override_settings(RAG_MIN_SCORE=0.5)
+    @patch('llm.chat.resolve_provider')
+    @patch('llm.chat.prepare_chat_messages')
+    @patch('llm.chat.log_workspace_chat_exchange')
+    def test_non_stream_sets_needs_handoff_on_low_score(
+        self,
+        mock_log,
+        mock_prepare,
+        mock_resolve,
+    ):
+        """Низький RAG score → needs_handoff у JSON відповіді."""
+        mock_prepare.return_value = (
+            [{'role': 'user', 'content': 'Hi'}],
+            [{'document_name': 'FAQ', 'score': 0.1, 'excerpt': '…'}],
+        )
+        mock_log.return_value = MagicMock(pk=9)
+        provider = MagicMock()
+        provider.chat.return_value = {
+            'message': {'role': 'assistant', 'content': 'Не впевнений'},
+            'done': True,
+        }
+        mock_resolve.return_value = provider
+
+        response = run_chat(
+            model='llama3',
+            messages=[{'role': 'user', 'content': 'Hi'}],
+            stream=False,
+            workspace=self.workspace,
+            user=self.user,
+            prompt='Hi',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['needs_handoff'])
+        self.assertEqual(response.data['log_id'], 9)
+        mock_log.assert_called_once()
+        self.assertTrue(mock_log.call_args.kwargs.get('needs_handoff'))
+
+    @patch('llm.chat.resolve_provider')
+    @patch('llm.chat._prepare_chat_context')
+    def test_prep_failure_continues_without_sources(self, mock_prep, mock_resolve):
+        """Збій RAG prep не валить чат — sources порожні."""
+        mock_prep.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
+        provider = MagicMock()
+        provider.chat.return_value = {
+            'message': {'role': 'assistant', 'content': 'OK'},
+            'done': True,
+        }
+        mock_resolve.return_value = provider
+
+        with patch('llm.chat.log_workspace_chat_exchange', return_value=None):
+            response = run_chat(
+                model='llama3',
+                messages=[{'role': 'user', 'content': 'Hi'}],
+                stream=False,
+                workspace=self.workspace,
+                user=self.user,
+                prompt='Hi',
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('sources'), [])

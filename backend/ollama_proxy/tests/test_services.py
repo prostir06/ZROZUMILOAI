@@ -17,7 +17,7 @@ class OllamaServiceTests(SimpleTestCase):
         service = OllamaService(base_url='http://localhost:11434/')
         self.assertEqual(service.base_url, 'http://localhost:11434')
 
-    @patch('ollama_proxy.services.requests.request')
+    @patch.object(requests.Session, 'request')
     def test_list_models_parses_json(self, mock_request):
         """list_models повертає розпарсений JSON."""
         mock_response = MagicMock()
@@ -31,14 +31,14 @@ class OllamaServiceTests(SimpleTestCase):
         self.assertEqual(data['models'][0]['name'], 'llama3')
         mock_request.assert_called_once()
 
-    @patch('ollama_proxy.services.requests.request')
+    @patch.object(requests.Session, 'request')
     def test_health_returns_false_on_network_error(self, mock_request):
         """health() повертає False при мережевій помилці."""
         mock_request.side_effect = requests.ConnectionError('down')
         service = OllamaService()
         self.assertFalse(service.health())
 
-    @patch('ollama_proxy.services.requests.request')
+    @patch.object(requests.Session, 'request')
     def test_parse_json_raises_on_invalid_body(self, mock_request):
         """parse_json викликає RequestException для некоректного JSON."""
         mock_response = MagicMock()

@@ -13,6 +13,14 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   ollama:
     image: ollama/ollama:latest
     environment:
@@ -20,8 +28,7 @@ services:
       OLLAMA_MAX_QUEUE: ${OLLAMA_MAX_QUEUE:-512}
     volumes:
       - ollama_data:/root/.ollama
-    # P0: не публікуємо 11434 на всі інтерфейси — лише localhost для debug.
-    # Backend у Docker достукається через мережу compose: http://ollama:11434
+    # Не публікуємо 11434 на всі інтерфейси — лише localhost для debug.
     ports:
       - "127.0.0.1:11434:11434"
     healthcheck:
@@ -49,6 +56,11 @@ services:
       POSTGRES_HOST: db
       USE_SQLITE: "False"
       OLLAMA_BASE_URL: http://ollama:11434
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CELERY_TASK_ALWAYS_EAGER: "False"
+      TRUST_X_FORWARDED_FOR: "True"
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:80,http://127.0.0.1}
       BACKUP_DIR: /backup
       FORCE_DB_RESTORE: ${FORCE_DB_RESTORE:-0}
@@ -71,10 +83,51 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       ollama:
         condition: service_started
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/auth/config/')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  worker:
+    build: ./backend
+    command: celery -A config worker -l info --concurrency=2
+    env_file:
+      - .env
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-production}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
+      POSTGRES_DB: ${POSTGRES_DB:-zrozumiloai}
+      POSTGRES_USER: ${POSTGRES_USER:-zrozumiloai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zrozumiloai}
+      POSTGRES_HOST: db
+      USE_SQLITE: "False"
+      OLLAMA_BASE_URL: http://ollama:11434
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      CELERY_TASK_ALWAYS_EAGER: "False"
+      RAG_EMBED_MODEL: ${RAG_EMBED_MODEL:-nomic-embed-text}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
+      BACKUP_DIR: /backup
+    volumes:
+      - ./backup:/backup
+      - workspace_media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ollama:
+        condition: service_started
 
   frontend:
     build: ./frontend
@@ -87,7 +140,14 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:80/ >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
 volumes:
   postgres_data:

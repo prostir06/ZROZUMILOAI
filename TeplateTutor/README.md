@@ -68,9 +68,26 @@ tutor images build openedx
 tutor local restart
 ```
 
+## Tutor plugin (рекомендовано)
+
+Окрім теми, у каталозі є **Tutor plugin** `tutor-contrib-zrozumilo`:
+
+```bash
+pip install -e ./TeplateTutor
+tutor plugins enable zrozumilo
+tutor config save \
+  --set ZROZUMILOAI_WIDGET_JS_URL=https://chat.example.com/widget.js \
+  --set ZROZUMILOAI_WIDGET_TOKEN=wt_ВАШ_TOKEN
+tutor config save   # згенерує ENV_PATCH у openedx-lms-common-settings
+```
+
+Тема все одно потрібна (віджет у `body-extra.html`). Plugin лише прокидає Django settings.
+
+На сторінках курсу шаблон передає `data-openedx-course-id` автоматично (якщо в контексті є `course`).
+
 ## Налаштування віджета
 
-Відредагуйте `zrozumilo/lms/templates/zrozumilo-widget.html` або задайте змінні через Tutor (див. `tutor-settings.patch.example`).
+Відредагуйте `zrozumilo/lms/templates/zrozumilo-widget.html` або задайте змінні через Tutor plugin / `tutor-settings.patch.example`.
 
 | Параметр | Опис |
 |----------|------|
@@ -79,15 +96,15 @@ tutor local restart
 | `ZROZUMILOAI_WIDGET_TITLE` | Заголовок віджета (за замовч. «Підтримка») |
 | `ZROZUMILOAI_WIDGET_COLOR` | Колір `#0D9E96` |
 
-Token створюється: **Workspaces → Редагувати → «Створити token»**.
+Token створюється: **Workspaces → Редагувати → «Створити token»**. Опційно задайте `openedx_course_id` на токені для course-scoped Meili.
 
 ## CSP і HTTPS
 
-Додайте домен ZrozumiloAI до CSP LMS (`script-src`, `frame-src`, `connect-src`) і `CORS_ALLOWED_ORIGINS` на стороні ZrozumiloAI. Деталі — у [README.md](../README.md#як-додати-віджет-чату-до-open-edx).
+Додайте домен ZrozumiloAI до CSP LMS (`script-src`, `frame-src`, `connect-src`) і `CORS_ALLOWED_ORIGINS` на стороні ZrozumiloAI. Приклад patch — `tutor-settings.patch.example`. Деталі — у [README.md](../README.md#як-додати-віджет-чату-до-open-edx).
 
 ## MFE (Learning, Dashboard тощо)
 
-`body-extra.html` працює лише на **legacy LMS**-сторінках. Для MFE потрібен Tutor plugin з Frontend Plugin Framework (слот `footer_slot`). Див. основний README про Open edX.
+`body-extra.html` працює лише на **legacy LMS**-сторінках. Для MFE потрібен окремий Frontend Plugin Framework (слот `footer_slot`). Див. основний README про Open edX.
 
 ## CMS (Studio)
 

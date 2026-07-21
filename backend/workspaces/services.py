@@ -106,26 +106,36 @@ def resolve_workspace_for_chat(user, model_name, workspace_id=None):
 
 
 def prepare_chat_messages(messages, workspace, rag_query=None, meilisearch_course_id=None):
-    """Inject workspace system prompt and optional RAG / Meilisearch context."""
+    """
+    Inject workspace system prompt and optional RAG / Meilisearch context.
+
+    :return: (prepared_messages, sources) — sources для citations у UI
+    """
     system_parts = []
+    sources = []
 
     if workspace and workspace.system_prompt.strip():
         system_parts.append(workspace.system_prompt.strip())
 
     if workspace and rag_query:
-        from workspaces.rag.service import format_rag_context, search_workspace_context
+        from workspaces.rag.service import (
+            format_rag_context,
+            search_workspace_context,
+            sources_from_chunks,
+        )
 
         chunks = search_workspace_context(
             workspace,
             rag_query,
             course_id=meilisearch_course_id,
         )
+        sources = sources_from_chunks(chunks)
         rag_context = format_rag_context(chunks)
         if rag_context:
             system_parts.append(rag_context)
 
     if not system_parts:
-        return list(messages)
+        return list(messages), sources
 
     prompt = '\n\n'.join(system_parts)
     prepared = []
@@ -140,7 +150,7 @@ def prepare_chat_messages(messages, workspace, rag_query=None, meilisearch_cours
 
     if not has_system:
         prepared.insert(0, {'role': 'system', 'content': prompt})
-    return prepared
+    return prepared, sources
 
 
 def get_ollama_options(workspace):

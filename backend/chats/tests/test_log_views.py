@@ -98,3 +98,39 @@ class WorkspaceChatLogApiTests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         response = self.client.get(f'{self.export_url}?format=csv')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_admin_patch_feedback_and_handoff(self):
+        """Admin PATCH оновлює feedback і needs_handoff."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.patch(
+            self.detail_url,
+            {'feedback': 'down', 'needs_handoff': True},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.feedback, 'down')
+        self.assertTrue(self.log.needs_handoff)
+        self.assertIn('needs_handoff', response.data)
+        self.assertIn('feedback', response.data)
+
+    def test_admin_patch_invalid_feedback(self):
+        """Невалідний feedback → 400."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.patch(
+            self.detail_url,
+            {'feedback': 'maybe'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_list_includes_feedback_fields(self):
+        """Список містить поля feedback/needs_handoff."""
+        self.log.feedback = 'up'
+        self.log.needs_handoff = True
+        self.log.save(update_fields=['feedback', 'needs_handoff'])
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(self.list_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data[0]['feedback'], 'up')
+        self.assertTrue(response.data[0]['needs_handoff'])

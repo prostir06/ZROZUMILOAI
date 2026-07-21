@@ -42,14 +42,14 @@ class Workspace(models.Model):
         choices=LLMProvider.choices,
         default=LLMProvider.OLLAMA,
     )
-    gemini_api_key = models.CharField(max_length=255, blank=True, default='')
+    gemini_api_key = models.TextField(blank=True, default='')
     search_source = models.CharField(
         max_length=20,
         choices=SearchSource.choices,
         default=SearchSource.INTERNAL,
     )
     meilisearch_url = models.URLField(blank=True, default='')
-    meilisearch_api_key = models.CharField(max_length=255, blank=True, default='')
+    meilisearch_api_key = models.TextField(blank=True, default='')
     meilisearch_index_prefix = models.CharField(
         max_length=100,
         blank=True,
@@ -180,6 +180,12 @@ class WidgetToken(models.Model):
         related_name='widget_tokens',
     )
     label = models.CharField(max_length=100, blank=True, default='')
+    openedx_course_id = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Опційний фільтр course-v1:... для Meilisearch у віджеті',
+    )
     token_prefix = models.CharField(max_length=12)
     token_hash = models.CharField(max_length=64, unique=True)
     is_active = models.BooleanField(default=True)
@@ -196,12 +202,13 @@ class WidgetToken(models.Model):
         return f'{label} ({self.workspace.name})'
 
     @classmethod
-    def create_for_workspace(cls, workspace, label=''):
+    def create_for_workspace(cls, workspace, label='', openedx_course_id=''):
         """Create token and return the raw value (shown once)."""
         raw_token = generate_widget_token_value()
         instance = cls.objects.create(
             workspace=workspace,
             label=label.strip(),
+            openedx_course_id=(openedx_course_id or '').strip(),
             token_prefix=raw_token[:12],
             token_hash=hash_widget_token(raw_token),
         )

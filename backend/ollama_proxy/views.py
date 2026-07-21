@@ -8,7 +8,11 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from config.http_utils import validate_chat_messages, validation_error_message
+from config.http_utils import (
+    validate_chat_messages,
+    validation_error_message,
+)
+from accounts.throttling import ClientIPScopedRateThrottle
 from chats.services import extract_prompt_from_messages
 from llm.chat import run_chat
 from llm.factory import list_all_models
@@ -130,6 +134,8 @@ class ChatView(APIView):
     """Chat with selected model (Ollama or Gemini)."""
 
     permission_classes = (IsAuthenticated,)
+    throttle_classes = (ClientIPScopedRateThrottle,)
+    throttle_scope = 'user_chat'
 
     def post(self, request):
         model = (request.data.get('model') or '').strip()

@@ -11,7 +11,6 @@ import {
   getEmbedStatusText,
   safeJson,
   sanitizeColor,
-  sanitizeTitle,
 } from './utils.js';
 
 const root = document.getElementById('embed-root');
@@ -242,6 +241,20 @@ function renderMessages() {
     const bubble = `
       <div class="embed__message embed__message--${msg.role}">
         ${formatMessageContent(msg.content, msg.role)}
+        ${msg.role === 'assistant' && Array.isArray(msg.sources) && msg.sources.length
+          ? `<div class="embed__sources"><div class="embed__sources-title">Джерела</div><ul>${
+            msg.sources.map((source) => (
+              `<li><strong>${escapeHtml(source.document_name || 'Документ')}</strong>${
+                source.excerpt
+                  ? ` — ${escapeHtml(source.excerpt)}`
+                  : ''
+              }</li>`
+            )).join('')
+          }</ul></div>`
+          : ''}
+        ${msg.role === 'assistant' && msg.needsHandoff
+          ? '<div class="embed__handoff">Якщо відповідь не допомогла — зверніться до підтримки курсу.</div>'
+          : ''}
       </div>
     `;
     if (msg.role === 'assistant') {
@@ -451,6 +464,7 @@ async function handleSend(text) {
 
   try {
     await chatStream(chatMessages, (chunk) => {
+      // Спочатку текст (append DOM), потім meta — щоб updateMessages не затирав стрім.
       if (chunk.message?.content) {
         messages = messages.map((msg, index) => {
           if (index === messages.length - 1 && msg.role === 'assistant') {
@@ -467,6 +481,23 @@ async function handleSend(text) {
           }
           return msg;
         });
+        updateMessages();
+      }
+      if (chunk.sources || chunk.log_id != null || typeof chunk.needs_handoff === 'boolean') {
+        messages = messages.map((msg, index) => {
+          if (index !== messages.length - 1 || msg.role !== 'assistant') {
+            return msg;
+          }
+          return {
+            ...msg,
+            ...(chunk.sources ? { sources: chunk.sources } : {}),
+            ...(chunk.log_id != null ? { logId: chunk.log_id } : {}),
+            ...(typeof chunk.needs_handoff === 'boolean'
+              ? { needsHandoff: chunk.needs_handoff }
+              : {}),
+          };
+        });
+        // Повний rewrite потрібен для блоку «Джерела» / handoff hint.
         updateMessages();
       }
     });

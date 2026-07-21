@@ -6,6 +6,7 @@ import { useChats } from '../context/ChatContext';
 import { useWorkspaces } from '../context/WorkspaceContext';
 import { formatBoldText } from '../utils/formatMessage';
 import { buildChatTitle } from '../utils/chat';
+import { applyStreamChunk } from '../utils/streamMessages';
 
 function ChatPage() {
   const { chatId, workspaceId: routeWorkspaceId } = useParams();
@@ -304,11 +305,19 @@ function ChatPage() {
         selectedModel,
         newMessages,
         (chunk) => {
+          // Текст — через rAF; meta (sources/logId) — окремо без повторного content.
           if (chunk.message?.content) {
             patchLastAssistant(chunk.message.content);
           }
           if (chunk.error) {
             patchLastAssistant(chunk.error, { isError: true });
+          }
+          if (
+            chunk.sources
+            || chunk.log_id != null
+            || typeof chunk.needs_handoff === 'boolean'
+          ) {
+            setMessages((prev) => applyStreamChunk(prev, chunk, { metaOnly: true }));
           }
         },
         workspaceId,
@@ -344,6 +353,69 @@ function ChatPage() {
       }
     }
   };
+
+  const flushStreamPending = useCallback(() => {
+    if (streamRafRef.current) {
+      cancelAnimationFrame(streamRafRef.current);
+      streamRafRef.current = null;
+    }
+    const pending = streamPendingRef.current;
+    streamPendingRef.current = null;
+    if (!pending) {
+      return;
+    }
+    setMessages((prev) => {
+      if (!prev.length) {
+        return prev;
+      }
+      const last = prev[prev.length - 1];
+      if (last.role !== 'assistant') {
+        return prev;
+      }
+      const nextContent = pending.isError
+        ? `Помилка: ${pending.contentOrError}`
+        : last.content + pending.contentOrError;
+      if (nextContent === last.content) {
+        return prev;
+      }
+      return [...prev.slice(0, -1), { ...last, content: nextContent }];
+    });
+  }, []);
+
+  const handleStopGeneration = useCallback(() => {
+    try {
+      streamAbortRef.current?.abort();
+    } catch {
+      /* AbortController.abort() не повинен кидати — захист від нестандартних поліфілів */
+    }
+    flushStreamPending();
+    setLoading(false);
+    setStreaming(false);
+  }, [flushStreamPending]);
+
+  const handleFeedback = useCallback(async (msg, feedback) => {
+    if (!msg?.logId) return;
+    try {
+      await api.submitChatFeedback(msg.logId, { feedback });
+      setMessages((prev) => prev.map((item) => (
+        item.logId === msg.logId ? { ...item, feedback } : item
+      )));
+    } catch (err) {
+      window.alert(err.message || 'Не вдалося зберегти відгук');
+    }
+  }, []);
+
+  const handleRequestHandoff = useCallback(async (msg) => {
+    if (!msg?.logId) return;
+    try {
+      await api.submitChatFeedback(msg.logId, { needs_handoff: true });
+      setMessages((prev) => prev.map((item) => (
+        item.logId === msg.logId ? { ...item, needsHandoff: true } : item
+      )));
+    } catch (err) {
+      window.alert(err.message || 'Не вдалося надіслати запит до підтримки');
+    }
+  }, []);
 
   const handleClear = useCallback(async () => {
     if (chatId) {
@@ -514,6 +586,67 @@ function ChatPage() {
                       <div className="chat-message__content">
                         {formatBoldText(msg.content)}
                       </div>
+                      {Array.isArray(msg.sources) && msg.sources.length > 0 && (
+                        <div className="chat-sources">
+                          <div className="chat-sources__title">Джерела</div>
+                          <ul>
+                            {msg.sources.map((source, srcIndex) => (
+                              <li key={`${source.document_name}-${srcIndex}`}>
+                                <strong>{source.document_name}</strong>
+                                {source.excerpt ? (
+                                  <span className="chat-sources__excerpt">
+                                    {' '}
+                                    —
+                                    {' '}
+                                    {source.excerpt}
+                                  </span>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {(msg.needsHandoff || msg.logId) && !streaming && (
+                        <div className="chat-feedback">
+                          {msg.needsHandoff && (
+                            <span className="chat-feedback__hint">
+                              Низька впевненість — можна звернутися до підтримки
+                            </span>
+                          )}
+                          {msg.logId && (
+                            <>
+                              <button
+                                type="button"
+                                className={`btn btn--ghost btn--sm${msg.feedback === 'up' ? ' is-active' : ''}`}
+                                onClick={() => handleFeedback(msg, 'up')}
+                                aria-label="Корисна відповідь"
+                                aria-pressed={msg.feedback === 'up'}
+                              >
+                                👍
+                              </button>
+                              <button
+                                type="button"
+                                className={`btn btn--ghost btn--sm${msg.feedback === 'down' ? ' is-active' : ''}`}
+                                onClick={() => handleFeedback(msg, 'down')}
+                                aria-label="Некорисна відповідь"
+                                aria-pressed={msg.feedback === 'down'}
+                              >
+                                👎
+                              </button>
+                              {!msg.needsHandoff && (
+                                <button
+                                  type="button"
+                                  className="btn btn--ghost btn--sm"
+                                  onClick={() => handleRequestHandoff(msg)}
+                                  aria-label="Запросити допомогу людини"
+                                >
+                                  До людини
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -588,6 +721,16 @@ function ChatPage() {
           >
             Надіслати
           </button>
+          {streaming && (
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={handleStopGeneration}
+              aria-label="Зупинити генерацію відповіді"
+            >
+              Зупинити
+            </button>
+          )}
         </form>
       </div>
     </div>
