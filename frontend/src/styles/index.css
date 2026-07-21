@@ -1131,28 +1131,6 @@ textarea {
   font-weight: 700;
 }
 
-.chat-sources {
-  margin-top: 0.75rem;
-  padding-top: 0.65rem;
-  border-top: 1px solid var(--color-border-subtle);
-  font-size: 0.85rem;
-  opacity: 0.9;
-}
-
-.chat-sources__title {
-  font-weight: 600;
-  margin-bottom: 0.35rem;
-}
-
-.chat-sources ul {
-  margin: 0;
-  padding-left: 1.1rem;
-}
-
-.chat-sources__excerpt {
-  opacity: 0.75;
-}
-
 .chat-feedback {
   display: flex;
   flex-wrap: wrap;

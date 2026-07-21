@@ -8,7 +8,7 @@
 - Чат з AI-помічником (streaming) через Ollama або Gemini
 - Workspaces — ізоляція моделей, system prompt, temperature, LLM-провайдера
 - **RAG** — завантаження документів (TXT, MD, PDF); індексація через Celery/Redis
-- **Citations / feedback** — джерела у відповіді, 👍/👎, handoff при низькій релевантності
+- **Feedback / handoff** — 👍/👎 на відповіді, ескалація при низькій релевантності RAG
 - **Meilisearch / hybrid** — пошук у Open edX (Tutor) разом із локальним RAG (RRF)
 - Збережені чати на сервері (історія діалогів)
 - Embed-віджет для сторонніх сайтів (Widget-Token, course-scoped)

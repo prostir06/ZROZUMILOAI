@@ -10,6 +10,11 @@ python manage.py migrate --noinput
 python manage.py ensure_admin
 python manage.py collectstatic --noinput
 
+# Якщо передано команду (напр. celery worker) — виконуємо її.
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
+
 WORKER_CLASS="${GUNICORN_WORKER_CLASS:-gevent}"
 WORKERS="${GUNICORN_WORKERS:-4}"
 TIMEOUT="${GUNICORN_TIMEOUT:-300}"

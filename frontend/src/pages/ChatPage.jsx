@@ -313,8 +313,7 @@ function ChatPage() {
             patchLastAssistant(chunk.error, { isError: true });
           }
           if (
-            chunk.sources
-            || chunk.log_id != null
+            chunk.log_id != null
             || typeof chunk.needs_handoff === 'boolean'
           ) {
             setMessages((prev) => applyStreamChunk(prev, chunk, { metaOnly: true }));
@@ -586,26 +585,6 @@ function ChatPage() {
                       <div className="chat-message__content">
                         {formatBoldText(msg.content)}
                       </div>
-                      {Array.isArray(msg.sources) && msg.sources.length > 0 && (
-                        <div className="chat-sources">
-                          <div className="chat-sources__title">Джерела</div>
-                          <ul>
-                            {msg.sources.map((source, srcIndex) => (
-                              <li key={`${source.document_name}-${srcIndex}`}>
-                                <strong>{source.document_name}</strong>
-                                {source.excerpt ? (
-                                  <span className="chat-sources__excerpt">
-                                    {' '}
-                                    —
-                                    {' '}
-                                    {source.excerpt}
-                                  </span>
-                                ) : null}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
                       {(msg.needsHandoff || msg.logId) && !streaming && (
                         <div className="chat-feedback">
                           {msg.needsHandoff && (

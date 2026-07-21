@@ -241,17 +241,6 @@ function renderMessages() {
     const bubble = `
       <div class="embed__message embed__message--${msg.role}">
         ${formatMessageContent(msg.content, msg.role)}
-        ${msg.role === 'assistant' && Array.isArray(msg.sources) && msg.sources.length
-          ? `<div class="embed__sources"><div class="embed__sources-title">Джерела</div><ul>${
-            msg.sources.map((source) => (
-              `<li><strong>${escapeHtml(source.document_name || 'Документ')}</strong>${
-                source.excerpt
-                  ? ` — ${escapeHtml(source.excerpt)}`
-                  : ''
-              }</li>`
-            )).join('')
-          }</ul></div>`
-          : ''}
         ${msg.role === 'assistant' && msg.needsHandoff
           ? '<div class="embed__handoff">Якщо відповідь не допомогла — зверніться до підтримки курсу.</div>'
           : ''}
@@ -483,21 +472,19 @@ async function handleSend(text) {
         });
         updateMessages();
       }
-      if (chunk.sources || chunk.log_id != null || typeof chunk.needs_handoff === 'boolean') {
+      if (chunk.log_id != null || typeof chunk.needs_handoff === 'boolean') {
         messages = messages.map((msg, index) => {
           if (index !== messages.length - 1 || msg.role !== 'assistant') {
             return msg;
           }
           return {
             ...msg,
-            ...(chunk.sources ? { sources: chunk.sources } : {}),
             ...(chunk.log_id != null ? { logId: chunk.log_id } : {}),
             ...(typeof chunk.needs_handoff === 'boolean'
               ? { needsHandoff: chunk.needs_handoff }
               : {}),
           };
         });
-        // Повний rewrite потрібен для блоку «Джерела» / handoff hint.
         updateMessages();
       }
     });
