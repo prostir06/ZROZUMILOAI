@@ -1,6 +1,8 @@
 """Serializers for saved chats."""
 from rest_framework import serializers
+from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from config.http_utils import validate_chat_messages, validation_error_message
 from workspaces.services import validate_user_chat_workspace
 
 from .models import Chat, WorkspaceChatLog
@@ -32,15 +34,10 @@ class ChatSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'created_at', 'updated_at')
 
     def validate_messages(self, value):
-        if not isinstance(value, list):
-            raise serializers.ValidationError('messages має бути списком')
-        for item in value:
-            if not isinstance(item, dict):
-                raise serializers.ValidationError('Некоректне повідомлення')
-            if item.get('role') not in ('user', 'assistant'):
-                raise serializers.ValidationError('Некоректна роль повідомлення')
-            if not isinstance(item.get('content'), str):
-                raise serializers.ValidationError('Некоректний вміст повідомлення')
+        try:
+            validate_chat_messages(value)
+        except DRFValidationError as exc:
+            raise serializers.ValidationError(validation_error_message(exc)) from exc
         return value
 
     def validate(self, attrs):

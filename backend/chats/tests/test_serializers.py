@@ -44,7 +44,7 @@ class ChatSerializerTests(TestCase):
             'title': 'Test',
             'model': 'llama3',
             'workspace': self.workspace.pk,
-            'messages': [{'role': 'system', 'content': 'Hi'}],
+            'messages': [{'role': 'bot', 'content': 'Hi'}],
         })
         self.assertFalse(serializer.is_valid())
 

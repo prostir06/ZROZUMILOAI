@@ -209,6 +209,27 @@ body {
   opacity: 0.8;
 }
 
+.embed__feedback {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.embed__feedback-btn {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.embed__feedback-btn[aria-pressed="true"] {
+  border-color: var(--color-primary);
+  background: rgba(13, 158, 150, 0.08);
+}
+
 .embed__typing {
   align-self: flex-start;
   display: flex;

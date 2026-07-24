@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import DocumentsRagSection from './workspaces/DocumentsRagSection';
+import MeilisearchSection from './workspaces/MeilisearchSection';
+import WidgetTokensSection from './workspaces/WidgetTokensSection';
 
 const emptyForm = {
   name: '',
@@ -30,6 +33,7 @@ function WorkspacesPage() {
   const [widgetTokens, setWidgetTokens] = useState([]);
   const [newWidgetToken, setNewWidgetToken] = useState('');
   const [widgetTokenLabel, setWidgetTokenLabel] = useState('');
+  const [widgetTokenCourseId, setWidgetTokenCourseId] = useState('');
   const [documents, setDocuments] = useState([]);
   const [uploadingDocument, setUploadingDocument] = useState(false);
   const [ragStats, setRagStats] = useState(null);
@@ -67,6 +71,7 @@ function WorkspacesPage() {
     setWidgetTokens([]);
     setNewWidgetToken('');
     setWidgetTokenLabel('');
+    setWidgetTokenCourseId('');
     setDocuments([]);
     setRagStats(null);
   };
@@ -247,9 +252,14 @@ function WorkspacesPage() {
     setError('');
     setNewWidgetToken('');
     try {
-      const data = await api.createWidgetToken(editingId, widgetTokenLabel.trim());
+      const data = await api.createWidgetToken(
+        editingId,
+        widgetTokenLabel.trim(),
+        widgetTokenCourseId.trim(),
+      );
       setNewWidgetToken(data.token);
       setWidgetTokenLabel('');
+      setWidgetTokenCourseId('');
       loadWidgetTokens(editingId);
     } catch (err) {
       setError(err.message || 'Помилка створення widget token');
@@ -319,13 +329,6 @@ function WorkspacesPage() {
     } catch (err) {
       setError(err.message || 'Помилка reindex');
     }
-  };
-
-  const documentStatusLabel = (status) => {
-    if (status === 'ready') return 'Готовий';
-    if (status === 'processing') return 'Обробка';
-    if (status === 'failed') return 'Помилка';
-    return status;
   };
 
   const widgetEmbedSnippet = newWidgetToken
@@ -484,83 +487,7 @@ function WorkspacesPage() {
               </div>
             </div>
 
-            <div className="form" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--color-border-subtle)' }}>
-              <h4 className="section__title">Пошук Open edX (Meilisearch)</h4>
-              <p className="auth-card__subtitle" style={{ marginBottom: '1rem' }}>
-                Meilisearch Tutor: префікс <code>tutor_</code>, індекси
-                <code>tutor_course_info</code> та <code>tutor_courseware_content</code>.
-              </p>
-
-              <div className="form__group">
-                <label htmlFor="workspace_search_source">Джерело контексту для чату</label>
-                <select
-                  id="workspace_search_source"
-                  value={form.search_source}
-                  onChange={(e) => setForm((prev) => ({ ...prev, search_source: e.target.value }))}
-                >
-                  <option value="internal">Локальні документи (RAG)</option>
-                  <option value="meilisearch">Open edX Meilisearch</option>
-                  <option value="hybrid">RAG + Meilisearch</option>
-                </select>
-              </div>
-
-              {form.search_source !== 'internal' && (
-                <>
-                  <div className="form__group">
-                    <label htmlFor="workspace_meilisearch_url">Meilisearch URL</label>
-                    <input
-                      id="workspace_meilisearch_url"
-                      value={form.meilisearch_url}
-                      onChange={(e) => setForm((prev) => ({ ...prev, meilisearch_url: e.target.value }))}
-                      placeholder="meilisearch.local.openedx.io"
-                    />
-                  </div>
-
-                  <div className="form__group">
-                    <label htmlFor="workspace_meilisearch_api_key">API key</label>
-                    <input
-                      id="workspace_meilisearch_api_key"
-                      type="password"
-                      value={form.meilisearch_api_key}
-                      onChange={(e) => setForm((prev) => ({ ...prev, meilisearch_api_key: e.target.value }))}
-                      placeholder={formMode === 'edit' ? 'Залиште порожнім, щоб не змінювати' : ''}
-                      autoComplete="new-password"
-                    />
-                  </div>
-
-                  <div className="form__row">
-                    <div className="form__group">
-                      <label htmlFor="workspace_meilisearch_prefix">Префікс індексів</label>
-                      <input
-                        id="workspace_meilisearch_prefix"
-                        value={form.meilisearch_index_prefix}
-                        onChange={(e) => setForm((prev) => ({ ...prev, meilisearch_index_prefix: e.target.value }))}
-                        placeholder="tutor_"
-                      />
-                    </div>
-                    <div className="form__group">
-                      <label htmlFor="workspace_meilisearch_indexes">Індекси (через кому)</label>
-                      <input
-                        id="workspace_meilisearch_indexes"
-                        value={form.meilisearch_indexes}
-                        onChange={(e) => setForm((prev) => ({ ...prev, meilisearch_indexes: e.target.value }))}
-                        placeholder="course_info, courseware_content"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="form__group">
-                    <label htmlFor="workspace_meilisearch_course_id">Course ID (фільтр, опційно)</label>
-                    <input
-                      id="workspace_meilisearch_course_id"
-                      value={form.meilisearch_course_id}
-                      onChange={(e) => setForm((prev) => ({ ...prev, meilisearch_course_id: e.target.value }))}
-                      placeholder="course-v1:ORG+COURSE+RUN"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
+            <MeilisearchSection form={form} setForm={setForm} />
 
             <div className="form__actions">
               <button type="submit" className="btn btn--primary">
@@ -573,183 +500,29 @@ function WorkspacesPage() {
           </form>
 
           {formMode === 'edit' && (
-            <div className="form" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border-subtle)' }}>
-              <h4 className="section__title">Widget token для embed</h4>
-              <p className="auth-card__subtitle" style={{ marginBottom: '1rem' }}>
-                Створіть token для віджета на сторонньому сайті. Повний token показується один раз.
-              </p>
-
-              <div className="form__row">
-                <div className="form__group">
-                  <label htmlFor="widget_token_label">Мітка (опційно)</label>
-                  <input
-                    id="widget_token_label"
-                    value={widgetTokenLabel}
-                    onChange={(e) => setWidgetTokenLabel(e.target.value)}
-                    placeholder="Напр. Сайт zrozumilo.com"
-                  />
-                </div>
-                <div className="form__group" style={{ alignSelf: 'end' }}>
-                  <button
-                    type="button"
-                    className="btn btn--primary"
-                    onClick={handleCreateWidgetToken}
-                  >
-                    Створити token
-                  </button>
-                </div>
-              </div>
-
-              {newWidgetToken && (
-                <div className="form__group">
-                  <label htmlFor="widget_embed_snippet">Код для сайту (збережіть token)</label>
-                  <textarea
-                    id="widget_embed_snippet"
-                    readOnly
-                    rows={3}
-                    value={widgetEmbedSnippet}
-                    className="input"
-                  />
-                </div>
-              )}
-
-              {widgetTokens.length > 0 ? (
-                <div className="table-wrapper">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Мітка / prefix</th>
-                        <th>Створено</th>
-                        <th>Останнє використання</th>
-                        <th>Дії</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {widgetTokens.map((token) => (
-                        <tr key={token.id}>
-                          <td>{token.label || `${token.token_prefix}...`}</td>
-                          <td>{new Date(token.created_at).toLocaleString('uk-UA')}</td>
-                          <td>
-                            {token.last_used_at
-                              ? new Date(token.last_used_at).toLocaleString('uk-UA')
-                              : '—'}
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="btn btn--danger btn--sm"
-                              onClick={() => handleDeleteWidgetToken(token.id)}
-                            >
-                              Видалити
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="empty-state">Ще немає widget token.</p>
-              )}
-            </div>
+            <WidgetTokensSection
+              widgetTokenLabel={widgetTokenLabel}
+              setWidgetTokenLabel={setWidgetTokenLabel}
+              widgetTokenCourseId={widgetTokenCourseId}
+              setWidgetTokenCourseId={setWidgetTokenCourseId}
+              onCreateToken={handleCreateWidgetToken}
+              newWidgetToken={newWidgetToken}
+              widgetEmbedSnippet={widgetEmbedSnippet}
+              widgetTokens={widgetTokens}
+              onDeleteToken={handleDeleteWidgetToken}
+            />
           )}
 
           {formMode === 'edit' && (
-            <div className="form" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border-subtle)' }}>
-              <h4 className="section__title">Документи (RAG)</h4>
-              <p className="auth-card__subtitle" style={{ marginBottom: '1rem' }}>
-                Завантажте TXT, MD або PDF. При чаті модель отримує релевантні фрагменти з цих документів.
-                Потрібна embedding-модель Ollama: <code>nomic-embed-text</code>.
-              </p>
-
-              <div className="form__group">
-                <label htmlFor="workspace_document_upload">Завантажити файл</label>
-                <input
-                  id="workspace_document_upload"
-                  type="file"
-                  accept=".txt,.md,.markdown,.pdf"
-                  onChange={handleDocumentUpload}
-                  disabled={uploadingDocument}
-                />
-                {uploadingDocument && (
-                  <p className="auth-card__subtitle">Індексація документа…</p>
-                )}
-              </div>
-
-              {ragStats && (
-                <p className="auth-card__subtitle">
-                  RAG: {ragStats.documents_ready}/{ragStats.documents_total} готово,
-                  {' '}
-                  {ragStats.chunks_total} фрагментів
-                  {ragStats.documents_failed > 0
-                    ? `, помилок: ${ragStats.documents_failed}`
-                    : ''}
-                  {ragStats.documents_failed > 0 && (
-                    <>
-                      {' '}
-                      <button
-                        type="button"
-                        className="btn btn--ghost btn--sm"
-                        onClick={handleReindexFailed}
-                      >
-                        Повторити всі failed
-                      </button>
-                    </>
-                  )}
-                </p>
-              )}
-
-              {documents.length > 0 ? (
-                <div className="table-wrapper">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>Файл</th>
-                        <th>Статус</th>
-                        <th>Фрагментів</th>
-                        <th>Завантажено</th>
-                        <th>Дії</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {documents.map((doc) => (
-                        <tr key={doc.id}>
-                          <td>
-                            <strong>{doc.original_filename}</strong>
-                            {doc.status === 'failed' && doc.error_message && (
-                              <div className="auth-card__subtitle">{doc.error_message}</div>
-                            )}
-                          </td>
-                          <td>{documentStatusLabel(doc.status)}</td>
-                          <td>{doc.chunk_count || '—'}</td>
-                          <td>{new Date(doc.created_at).toLocaleString('uk-UA')}</td>
-                          <td className="table__actions">
-                            {doc.status === 'failed' && (
-                              <button
-                                type="button"
-                                className="btn btn--ghost btn--sm"
-                                onClick={() => handleRetryDocument(doc.id)}
-                              >
-                                Повторити
-                              </button>
-                            )}
-                            <button
-                              type="button"
-                              className="btn btn--danger btn--sm"
-                              onClick={() => handleDeleteDocument(doc.id, doc.original_filename)}
-                            >
-                              Видалити
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="empty-state">Ще немає документів для RAG.</p>
-              )}
-            </div>
+            <DocumentsRagSection
+              documents={documents}
+              ragStats={ragStats}
+              uploadingDocument={uploadingDocument}
+              onUpload={handleDocumentUpload}
+              onRetry={handleRetryDocument}
+              onDelete={handleDeleteDocument}
+              onReindexFailed={handleReindexFailed}
+            />
           )}
         </section>
       )}

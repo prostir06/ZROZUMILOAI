@@ -244,6 +244,15 @@ function renderMessages() {
         ${msg.role === 'assistant' && msg.needsHandoff
           ? '<div class="embed__handoff">Якщо відповідь не допомогла — зверніться до підтримки курсу.</div>'
           : ''}
+        ${msg.role === 'assistant' && msg.logId && !isStreaming
+          ? `<div class="embed__feedback" data-log-id="${msg.logId}">
+              <button type="button" class="embed__feedback-btn" data-feedback="up" aria-label="Корисна відповідь" aria-pressed="${msg.feedback === 'up' ? 'true' : 'false'}">👍</button>
+              <button type="button" class="embed__feedback-btn" data-feedback="down" aria-label="Некорисна відповідь" aria-pressed="${msg.feedback === 'down' ? 'true' : 'false'}">👎</button>
+              ${!msg.needsHandoff
+                ? '<button type="button" class="embed__feedback-btn" data-handoff="1" aria-label="Запросити допомогу людини">До людини</button>'
+                : ''}
+            </div>`
+          : ''}
       </div>
     `;
     if (msg.role === 'assistant') {
@@ -285,6 +294,44 @@ function updateMessages() {
 
   if (wasNearBottom) {
     container.scrollTop = container.scrollHeight;
+  }
+
+  container.querySelectorAll('.embed__feedback').forEach((block) => {
+    block.onclick = (event) => {
+      const btn = event.target.closest('[data-feedback],[data-handoff]');
+      if (!btn) return;
+      const logId = Number(block.getAttribute('data-log-id'));
+      if (!logId) return;
+      const payload = {};
+      if (btn.hasAttribute('data-feedback')) {
+        payload.feedback = btn.getAttribute('data-feedback');
+      }
+      if (btn.hasAttribute('data-handoff')) {
+        payload.needs_handoff = true;
+      }
+      submitEmbedFeedback(logId, payload);
+    };
+  });
+}
+
+/** Надіслати feedback з embed через Widget-Token. */
+async function submitEmbedFeedback(logId, payload) {
+  try {
+    await apiRequest(`/widget/logs/${logId}/feedback/`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    messages = messages.map((msg) => {
+      if (msg.logId !== logId) return msg;
+      return {
+        ...msg,
+        ...(payload.feedback ? { feedback: payload.feedback } : {}),
+        ...(payload.needs_handoff ? { needsHandoff: true } : {}),
+      };
+    });
+    updateMessages();
+  } catch (err) {
+    console.error('[ZrozumiloAI Embed] feedback:', err);
   }
 }
 

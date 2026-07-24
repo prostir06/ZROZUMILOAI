@@ -120,11 +120,11 @@ def reciprocal_rank_fusion(result_lists, top_k, k=RRF_K):
     """
     Об'єднати кілька ранжованих списків через Reciprocal Rank Fusion.
 
-    Кожен елемент — dict з content/score/document_name.
-    Ключ дедуплікації: (document_name, content[:120]) — щоб один фрагмент
-    з internal і Meili не дублювався, навіть якщо сирі score на різних шкалах.
+    Ранжування — за rrf_score; поле score лишає оригінальний cosine/Meili
+    (max при злитті), щоб RAG_MIN_SCORE / handoff не порівнювали з ~1/(k+rank).
     """
-    scores = {}
+    rrf_scores = {}
+    relevance = {}
     payloads = {}
 
     for results in result_lists:
@@ -133,18 +133,24 @@ def reciprocal_rank_fusion(result_lists, top_k, k=RRF_K):
                 item.get('document_name', ''),
                 (item.get('content') or '')[:120],
             )
-            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank)
+            rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (k + rank)
+            try:
+                original = float(item.get('score') or 0)
+            except (TypeError, ValueError):
+                original = 0.0
+            relevance[key] = max(relevance.get(key, 0.0), original)
             if key not in payloads:
                 payloads[key] = dict(item)
 
     merged = []
-    for key, rrf_score in scores.items():
-        entry = payloads[key]
-        entry = dict(entry)
-        entry['score'] = rrf_score
+    for key, rrf_score in rrf_scores.items():
+        entry = dict(payloads[key])
+        entry['rrf_score'] = rrf_score
+        entry['score'] = relevance[key]
+        entry['relevance_score'] = relevance[key]
         merged.append(entry)
 
-    merged.sort(key=lambda item: item.get('score', 0), reverse=True)
+    merged.sort(key=lambda item: item.get('rrf_score', 0), reverse=True)
     return merged[:top_k]
 
 
@@ -240,10 +246,13 @@ def search_workspace_documents(workspace, query, top_k=None):
         return []
 
     top_k = top_k or settings.RAG_TOP_K
+    query_text = query.strip()
 
     try:
-        ollama = OllamaService()
-        query_vector = ollama.embed(settings.RAG_EMBED_MODEL, query.strip())
+        query_vector = _cached_query_embedding(
+            workspace_id=workspace.pk,
+            query=query_text,
+        )
     except Exception as exc:
         logger.error('RAG query embedding failed: %s', exc)
         return []
@@ -257,13 +266,48 @@ def search_workspace_documents(workspace, query, top_k=None):
         return []
 
 
+def _cached_query_embedding(workspace_id, query):
+    """
+    Embed запиту з коротким кешем (Redis/FileBased).
+
+    Gemini-workspaces також використовують Ollama для embeddings.
+    """
+    import hashlib
+
+    from django.core.cache import cache
+
+    embed_model = settings.RAG_EMBED_MODEL
+    digest = hashlib.sha256(query.encode('utf-8')).hexdigest()
+    try:
+        ws_key = str(int(workspace_id))
+    except (TypeError, ValueError):
+        ws_key = 'anon'
+    cache_key = f'rag:qemb:{ws_key}:{embed_model}:{digest}'
+    ttl = int(getattr(settings, 'RAG_QUERY_EMBED_CACHE_TTL', 300))
+
+    try:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+    except Exception as exc:
+        logger.warning('Failed to read query embedding cache: %s', exc)
+
+    ollama = OllamaService()
+    vector = ollama.embed(embed_model, query)
+    try:
+        cache.set(cache_key, vector, timeout=ttl)
+    except Exception as exc:
+        logger.warning('Failed to cache query embedding: %s', exc)
+    return vector
+
+
 def format_rag_context(chunks):
     """Сформувати блок контексту для system prompt."""
     if not chunks:
         return ''
 
     min_score = getattr(settings, 'RAG_MIN_SCORE', 0.25)
-    best = max((c.get('score') or 0) for c in chunks)
+    best = max(_chunk_relevance_score(c) for c in chunks)
 
     lines = [
         'Використовуй наведені нижче фрагменти документів workspace для відповіді. '
@@ -290,6 +334,15 @@ def format_rag_context(chunks):
     return '\n'.join(lines)
 
 
+def _chunk_relevance_score(chunk):
+    """Оригінальний score для порогів (не RRF)."""
+    raw = chunk.get('relevance_score', chunk.get('score', 0))
+    try:
+        return float(raw or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def sources_from_chunks(chunks):
     """Компактний список джерел для API/UI citations."""
     sources = []
@@ -301,7 +354,7 @@ def sources_from_chunks(chunks):
             continue
         seen.add(key)
         try:
-            score = round(float(chunk.get('score') or 0), 4)
+            score = round(_chunk_relevance_score(chunk), 4)
         except (TypeError, ValueError):
             score = 0.0
         sources.append({

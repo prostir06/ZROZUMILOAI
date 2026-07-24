@@ -44,11 +44,14 @@ frontend/dist/
 Thumbs.db
 Desktop.ini
 
-# Backups (keep folder)
+# Backups (keep folder; never commit dumps)
 backup/*
 !backup/.gitkeep
+*.sql
 
 # Local secrets / overrides
 .env.local
 .env.*.local
 *.pem
+credentials.json
+service-account*.json

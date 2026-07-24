@@ -46,12 +46,30 @@ class WorkspaceChatLogApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_admin_lists_logs(self):
-        """Admin отримує список записів."""
+        """Admin отримує пагінований список записів."""
         self.client.force_authenticate(user=self.admin)
         response = self.client.get(self.list_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['prompt'], 'Допоможіть')
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['prompt'], 'Допоможіть')
+        self.assertIn('limit', response.data)
+        self.assertIn('offset', response.data)
+
+    def test_admin_filters_needs_handoff(self):
+        """Фільтр needs_handoff=1 повертає лише ескалації."""
+        WorkspaceChatLog.objects.create(
+            sent_by='student',
+            workspace=self.workspace,
+            prompt='Handoff',
+            response='Escalated',
+            needs_handoff=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f'{self.list_url}?needs_handoff=1')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertTrue(response.data['results'][0]['needs_handoff'])
 
     def test_admin_deletes_log(self):
         """Admin видаляє один запис."""
@@ -132,5 +150,5 @@ class WorkspaceChatLogApiTests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         response = self.client.get(self.list_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data[0]['feedback'], 'up')
-        self.assertTrue(response.data[0]['needs_handoff'])
+        self.assertEqual(response.data['results'][0]['feedback'], 'up')
+        self.assertTrue(response.data['results'][0]['needs_handoff'])

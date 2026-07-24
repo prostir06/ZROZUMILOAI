@@ -203,7 +203,8 @@ def search_openedx_meilisearch(workspace, query, top_k=None, course_id=None):
         client = meilisearch.Client(
             url,
             api_key or None,
-            timeout=settings.MEILISEARCH_TIMEOUT_MS,
+            # Meilisearch Python SDK очікує timeout у секундах.
+            timeout=max(0.1, float(settings.MEILISEARCH_TIMEOUT_MS) / 1000.0),
         )
     except Exception as exc:
         logger.error('Meilisearch client init failed: %s', exc)

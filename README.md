@@ -47,10 +47,10 @@ docker compose up --build -d
 ```
 
 Після запуску:
-- Frontend: http://localhost
-- Backend API: http://localhost:8000/api/
+- Frontend / API через Caddy: http://localhost
 - Ollama: лише `127.0.0.1:11434` (не публікується на всі інтерфейси)
 - Redis + Celery worker — для черги ingest документів
+- Backend API слухає лише всередині Docker-мережі (`backend:8000`), не на хості
 
 **Безпека перед GitHub / продакшеном:**
 1. Скопіюйте `.env.example` → `.env` і задайте унікальні `DJANGO_SECRET_KEY`, паролі БД, `GEMINI_API_KEY`.
@@ -160,6 +160,8 @@ API-ключ генерується автоматично при реєстра
 2. Backend індексує текст: chunking + embeddings через Ollama (`RAG_EMBED_MODEL`, за замовчуванням `nomic-embed-text`).
 3. Вектори зберігаються в **PostgreSQL + pgvector** (HNSW-індекс, cosine-пошук).
 4. При кожному повідомленні в чаті (в т.ч. widget) у system prompt додаються найрелевантніші фрагменти.
+
+**Важливо:** навіть якщо workspace використовує **Gemini** для чату, embeddings для RAG усе одно йдуть через **Ollama** (`nomic-embed-text`). Без запущеного Ollama ingest документів і RAG-контекст не працюватимуть.
 
 Docker використовує образ `pgvector/pgvector:pg16`. Локально з `USE_SQLITE=True` пошук працює через Python fallback (без pgvector).
 

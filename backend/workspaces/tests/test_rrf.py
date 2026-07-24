@@ -23,6 +23,24 @@ class ReciprocalRankFusionTests(SimpleTestCase):
         self.assertEqual(names[0], 'B')
         self.assertIn('A', names)
         self.assertIn('C', names)
+        # Оригінальний score (не RRF) для порогів handoff.
+        b_item = next(item for item in merged if item['document_name'] == 'B')
+        self.assertEqual(b_item['score'], 12.0)
+        self.assertGreater(b_item['rrf_score'], 0)
+        self.assertLess(b_item['rrf_score'], 1.0)
+
+    @override_settings(RAG_MIN_SCORE=0.25, MEILISEARCH_MAX_CHUNK_CHARS=200)
+    def test_hybrid_original_score_avoids_false_low_relevance(self):
+        """Після RRF format_rag_context дивиться на оригінальний score."""
+        merged = reciprocal_rank_fusion(
+            [
+                [{'document_name': 'A', 'content': 'x', 'score': 0.9}],
+                [{'document_name': 'B', 'content': 'y', 'score': 0.8}],
+            ],
+            top_k=2,
+        )
+        text = format_rag_context(merged)
+        self.assertNotIn('підтримки', text.lower())
 
     def test_top_k_limit(self):
         lists = [

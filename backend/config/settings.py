@@ -16,6 +16,21 @@ SECRET_KEY = os.getenv(
 
 DEBUG = os.getenv('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
+_INSECURE_SECRET_MARKERS = (
+    'django-insecure-change-me',
+    'change-me-in-production',
+    'your-secret-key-change-in-production',
+)
+if not DEBUG:
+    if not SECRET_KEY or any(m in SECRET_KEY for m in _INSECURE_SECRET_MARKERS):
+        raise ValueError(
+            'DJANGO_SECRET_KEY має бути унікальним у продакшені (DEBUG=False).',
+        )
+    if not os.getenv('FIELD_ENCRYPTION_KEY', '').strip():
+        raise ValueError(
+            'FIELD_ENCRYPTION_KEY обовʼязковий у продакшені (DEBUG=False).',
+        )
+
 ALLOWED_HOSTS = os.getenv(
     'DJANGO_ALLOWED_HOSTS',
     'localhost,127.0.0.1,backend',
@@ -44,6 +59,7 @@ if not _use_sqlite:
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'config.middleware.RequestIdMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -265,6 +281,55 @@ TRUST_X_FORWARDED_FOR = os.getenv(
 # RAG: мінімальний score для «знаю»; нижче — підказка ескалації.
 RAG_MIN_SCORE = float(os.getenv('RAG_MIN_SCORE', '0.25'))
 RAG_EMBED_CONCURRENCY = int(os.getenv('RAG_EMBED_CONCURRENCY', '4'))
+# Кеш embeddings для пошукового запиту (секунди).
+RAG_QUERY_EMBED_CACHE_TTL = int(os.getenv('RAG_QUERY_EMBED_CACHE_TTL', '300'))
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'filters': {
+        'request_id': {
+            '()': 'config.middleware.RequestIdFilter',
+        },
+    },
+    'formatters': {
+        'verbose': {
+            'format': (
+                '[{asctime}] {levelname} request_id={request_id} '
+                '{name} {message}'
+            ),
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+            'filters': ['request_id'],
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+    },
+    'loggers': {
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'workspaces': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'llm': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
 
 # Production hardening (P2) — активується коли DEBUG=False.
 if not DEBUG:

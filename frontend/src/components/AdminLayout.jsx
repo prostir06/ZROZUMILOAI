@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 
 const ADMIN_LINKS = [
+  { to: '/admin/dashboard', label: 'Огляд' },
   { to: '/admin/workspaces', label: 'Workspaces' },
   { to: '/admin/chats', label: 'Chats Info' },
   { to: '/admin/models', label: 'Моделі' },

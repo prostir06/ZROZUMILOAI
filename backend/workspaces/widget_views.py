@@ -1,4 +1,11 @@
-"""Public widget API and admin token management."""
+"""
+Public widget API та admin-управління WidgetToken.
+
+Усі публічні endpoints автентифікуються через Widget-Token.
+Відповіді — JSON (DRF Response). Помилки обгортаються у try/except
+із зрозумілими HTTP-статусами.
+"""
+from django.db import DatabaseError
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import NotFound, ValidationError
@@ -21,33 +28,44 @@ from .widget_auth import WidgetTokenAuthentication, WidgetTokenPermission
 
 
 class WidgetConfigView(APIView):
-    """Return workspace config for an embed widget token."""
+    """Повернути конфіг workspace для embed-віджета (JSON)."""
 
     authentication_classes = (WidgetTokenAuthentication,)
     permission_classes = (WidgetTokenPermission,)
 
     def get(self, request):
-        widget_token = request.auth
-        workspace = widget_token.workspace
-        model = (workspace.model_names or [None])[0]
-        return Response({
-            'workspace': {
-                'id': workspace.id,
-                'name': workspace.name,
-                'temperature': workspace.temperature,
-                'model_names': workspace.model_names,
-            },
-            'model': model,
-            'openedx_course_id': (
-                widget_token.openedx_course_id
-                or workspace.meilisearch_course_id
-                or ''
-            ),
-        })
+        try:
+            widget_token = request.auth
+            workspace = widget_token.workspace
+            model = (workspace.model_names or [None])[0]
+            return Response({
+                'workspace': {
+                    'id': workspace.id,
+                    'name': workspace.name,
+                    'temperature': workspace.temperature,
+                    'model_names': workspace.model_names,
+                },
+                'model': model,
+                'openedx_course_id': (
+                    widget_token.openedx_course_id
+                    or workspace.meilisearch_course_id
+                    or ''
+                ),
+            })
+        except Exception:
+            return Response(
+                {'error': 'Не вдалося завантажити конфіг віджета'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class WidgetChatView(APIView):
-    """Chat endpoint scoped to the widget token workspace."""
+    """
+    Чат endpoint, обмежений workspace токена.
+
+    Course scope: якщо openedx_course_id заданий на token або workspace,
+    клієнт не може його перевизначити (ACL).
+    """
 
     authentication_classes = (WidgetTokenAuthentication,)
     permission_classes = (WidgetTokenPermission,)
@@ -78,29 +96,44 @@ class WidgetChatView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        widget_token.last_used_at = timezone.now()
-        widget_token.save(update_fields=['last_used_at'])
+        # Оновлення last_used не повинно валити чат при збої БД.
+        try:
+            widget_token.last_used_at = timezone.now()
+            widget_token.save(update_fields=['last_used_at'])
+        except DatabaseError:
+            pass
 
-        course_id = (
-            request.data.get('openedx_course_id')
-            or widget_token.openedx_course_id
-            or workspace.meilisearch_course_id
-            or None
+        # Token/workspace course scope має пріоритет над клієнтським override.
+        locked_course = (
+            (widget_token.openedx_course_id or '').strip()
+            or (workspace.meilisearch_course_id or '').strip()
         )
+        if locked_course:
+            course_id = locked_course
+        else:
+            course_id = (
+                (request.data.get('openedx_course_id') or '').strip() or None
+            )
 
-        return run_chat(
-            model=model,
-            messages=messages,
-            stream=stream,
-            workspace=workspace,
-            user=None,
-            prompt=extract_prompt_from_messages(messages),
-            meilisearch_course_id=course_id,
-        )
+        try:
+            return run_chat(
+                model=model,
+                messages=messages,
+                stream=stream,
+                workspace=workspace,
+                user=None,
+                prompt=extract_prompt_from_messages(messages),
+                meilisearch_course_id=course_id,
+            )
+        except Exception:
+            return Response(
+                {'error': 'Помилка обробки чату віджета'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
 
 class WidgetTokenListCreateView(APIView):
-    """List or create widget tokens for a workspace (admin only)."""
+    """Список / створення widget tokens (лише admin)."""
 
     permission_classes = (IsAdminUser,)
 
@@ -115,11 +148,21 @@ class WidgetTokenListCreateView(APIView):
         serializer = WidgetTokenCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        raw_token, token = WidgetToken.create_for_workspace(
-            workspace,
-            label=serializer.validated_data.get('label', ''),
-            openedx_course_id=serializer.validated_data.get('openedx_course_id', ''),
-        )
+        try:
+            raw_token, token = WidgetToken.create_for_workspace(
+                workspace,
+                label=serializer.validated_data.get('label', ''),
+                openedx_course_id=serializer.validated_data.get(
+                    'openedx_course_id',
+                    '',
+                ),
+            )
+        except Exception:
+            return Response(
+                {'error': 'Не вдалося створити widget token'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
         data = WidgetTokenCreateResponseSerializer(token).data
         data['token'] = raw_token
         return Response(data, status=status.HTTP_201_CREATED)
@@ -132,7 +175,7 @@ class WidgetTokenListCreateView(APIView):
 
 
 class WidgetTokenDeleteView(APIView):
-    """Revoke a widget token (admin only)."""
+    """Відкликати widget token (лише admin)."""
 
     permission_classes = (IsAdminUser,)
 
@@ -147,5 +190,67 @@ class WidgetTokenDeleteView(APIView):
                 {'error': 'Token не знайдено'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        token.delete()
+
+        try:
+            token.delete()
+        except DatabaseError:
+            return Response(
+                {'error': 'Не вдалося видалити token'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         return Response({'deleted': token_id})
+
+
+class WidgetFeedbackView(APIView):
+    """
+    Feedback 👍/👎 для запису чату з embed (Widget-Token).
+
+    Доступ лише до логів того ж workspace, що й токен.
+    Тіло запиту JSON: {"feedback": "up"|"down"|"", "needs_handoff": bool}.
+    """
+
+    authentication_classes = (WidgetTokenAuthentication,)
+    permission_classes = (WidgetTokenPermission,)
+    throttle_classes = (ClientIPScopedRateThrottle,)
+    throttle_scope = 'widget_chat'
+
+    def post(self, request, log_id):
+        from chats.log_views import _apply_feedback_fields, _save_log_feedback
+        from chats.models import WorkspaceChatLog
+        from chats.serializers import WorkspaceChatLogSerializer
+
+        widget_token = request.auth
+        try:
+            log = WorkspaceChatLog.objects.get(pk=log_id)
+        except WorkspaceChatLog.DoesNotExist:
+            return Response(
+                {'error': 'Запис не знайдено'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except DatabaseError:
+            return Response(
+                {'error': 'Помилка бази даних'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        if log.workspace_id != widget_token.workspace_id:
+            return Response(
+                {'error': 'Немає доступу до цього запису'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            error = _apply_feedback_fields(log, request.data)
+            if error is not None:
+                return error
+
+            error = _save_log_feedback(log)
+            if error is not None:
+                return error
+
+            return Response(WorkspaceChatLogSerializer(log).data)
+        except Exception:
+            return Response(
+                {'error': 'Не вдалося зберегти відгук'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )

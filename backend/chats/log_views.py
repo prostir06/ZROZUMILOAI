@@ -56,15 +56,39 @@ def _save_log_feedback(log):
 
 
 class WorkspaceChatLogListView(APIView):
-    """Список записаних чатів workspace (лише admin)."""
+    """Список записаних чатів workspace (лише admin) з фільтрами і пагінацією."""
 
     permission_classes = (IsAdminUser,)
 
     def get(self, request):
         try:
             logs = WorkspaceChatLog.objects.select_related('workspace', 'user')
-            serializer = WorkspaceChatLogSerializer(logs, many=True)
-            return Response(serializer.data)
+
+            needs_handoff = request.query_params.get('needs_handoff')
+            if needs_handoff in ('1', 'true', 'yes'):
+                logs = logs.filter(needs_handoff=True)
+            elif needs_handoff in ('0', 'false', 'no'):
+                logs = logs.filter(needs_handoff=False)
+
+            feedback = request.query_params.get('feedback')
+            if feedback is not None and feedback in _ALLOWED_FEEDBACK:
+                logs = logs.filter(feedback=feedback)
+
+            try:
+                limit = min(max(int(request.query_params.get('limit', 50)), 1), 200)
+                offset = max(int(request.query_params.get('offset', 0)), 0)
+            except (TypeError, ValueError):
+                limit, offset = 50, 0
+
+            total = logs.count()
+            page = logs[offset:offset + limit]
+            serializer = WorkspaceChatLogSerializer(page, many=True)
+            return Response({
+                'count': total,
+                'limit': limit,
+                'offset': offset,
+                'results': serializer.data,
+            })
         except Exception as exc:
             logger.exception('Помилка отримання списку chat logs: %s', exc)
             return Response(

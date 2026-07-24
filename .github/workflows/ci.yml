@@ -48,3 +48,14 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docker compose config
+        run: docker compose config --quiet
+      - name: Frontend Dockerfile uses npm ci
+        run: |
+          grep -q 'package-lock.json' frontend/Dockerfile
+          grep -q 'npm ci' frontend/Dockerfile

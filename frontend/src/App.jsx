@@ -17,6 +17,7 @@ const BackupPage = lazy(() => import('./pages/BackupPage'));
 const ModelsPage = lazy(() => import('./pages/ModelsPage'));
 const WorkspacesPage = lazy(() => import('./pages/WorkspacesPage'));
 const WorkspaceChatsPage = lazy(() => import('./pages/WorkspaceChatsPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 
 function RouteFallback() {
   return (
@@ -39,7 +40,9 @@ function PrivateRoute({ children }) {
 function AdminRoute({ children }) {
   const { isAdmin, loading } = useAuth();
 
-  if (loading) return null;
+  if (loading) {
+    return <RouteFallback />;
+  }
   return isAdmin ? children : <Navigate to="/" replace />;
 }
 
@@ -104,7 +107,8 @@ function App() {
               </AdminRoute>
             )}
           >
-            <Route index element={<Navigate to="/admin/workspaces" replace />} />
+            <Route index element={<Navigate to="/admin/dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardPage />} />
             <Route path="workspaces" element={<WorkspacesPage />} />
             <Route path="chats" element={<WorkspaceChatsPage />} />
             <Route path="models" element={<ModelsPage />} />

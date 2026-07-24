@@ -267,14 +267,17 @@ class ApiClient {
     return response.json();
   }
 
-  async createWidgetToken(workspaceId, label = '') {
+  async createWidgetToken(workspaceId, label = '', openedxCourseId = '') {
     const response = await this.request(`/workspaces/${workspaceId}/widget-tokens/`, {
       method: 'POST',
-      body: JSON.stringify({ label }),
+      body: JSON.stringify({
+        label,
+        openedx_course_id: openedxCourseId || '',
+      }),
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Failed to create widget token');
+      throw new Error(error.detail || error.error || 'Failed to create widget token');
     }
     return response.json();
   }
@@ -456,25 +459,6 @@ class ApiClient {
     return safeJson(response, {});
   }
 
-  async chat(model, messages, stream = false, workspaceId = null) {
-    const response = await this.request('/ollama/chat/', {
-      method: 'POST',
-      body: JSON.stringify({
-        model,
-        messages,
-        stream,
-        workspace_id: workspaceId,
-      }),
-    });
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Chat failed');
-    }
-
-    return response.json();
-  }
-
   async chatStream(model, messages, onChunk, workspaceId = null, options = {}) {
     const controller = options.signal ? null : new AbortController();
     const signal = options.signal || controller?.signal;
@@ -584,13 +568,31 @@ class ApiClient {
     window.URL.revokeObjectURL(url);
   }
 
-  async getWorkspaceChatLogs() {
-    const response = await this.request('/chats/logs/');
+  async getWorkspaceChatLogs({ needsHandoff, feedback, limit = 50, offset = 0 } = {}) {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    params.set('offset', String(offset));
+    if (needsHandoff === true) params.set('needs_handoff', 'true');
+    if (needsHandoff === false) params.set('needs_handoff', 'false');
+    if (feedback !== undefined && feedback !== null) {
+      params.set('feedback', feedback);
+    }
+    const response = await this.request(`/chats/logs/?${params.toString()}`);
     if (!response.ok) {
       const error = await safeJson(response, {});
       throw new Error(error.error || error.detail || 'Failed to fetch workspace chats');
     }
-    return safeJson(response, []);
+    const data = await safeJson(response, {});
+    // Підтримка старого формату (масив) і нового { results, count }.
+    if (Array.isArray(data)) {
+      return { count: data.length, results: data, limit, offset: 0 };
+    }
+    return {
+      count: data.count || 0,
+      results: data.results || [],
+      limit: data.limit ?? limit,
+      offset: data.offset ?? offset,
+    };
   }
 
   async deleteWorkspaceChatLog(logId) {
