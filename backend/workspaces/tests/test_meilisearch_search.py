@@ -79,6 +79,30 @@ class MeilisearchHelperTests(SimpleTestCase):
             'course = "course-v1:X"',
         )
 
+    def test_build_course_filter_rejects_injection(self):
+        """Спецсимволи filter DSL відхиляються."""
+        self.assertIsNone(
+            build_course_filter('x" OR course = "y', 'tutor_courseware_content'),
+        )
+        self.assertIsNone(
+            build_course_filter('evil OR 1=1', 'tutor_course_info'),
+        )
+
+    def test_sanitize_accepts_openedx_course_id(self):
+        from workspaces.rag.meilisearch_search import sanitize_meilisearch_course_id
+
+        self.assertEqual(
+            sanitize_meilisearch_course_id('course-v1:ORG+COURSE+RUN'),
+            'course-v1:ORG+COURSE+RUN',
+        )
+
+    def test_sanitize_rejects_non_string(self):
+        from workspaces.rag.meilisearch_search import sanitize_meilisearch_course_id
+
+        self.assertIsNone(sanitize_meilisearch_course_id(None))
+        self.assertIsNone(sanitize_meilisearch_course_id(123))
+
+
 
 class MeilisearchSearchTests(SimpleTestCase):
     @patch('workspaces.rag.meilisearch_search.meilisearch.Client')

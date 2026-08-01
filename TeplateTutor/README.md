@@ -104,7 +104,9 @@ Token створюється: **Workspaces → Редагувати → «Ств
 
 ## MFE (Learning, Dashboard тощо)
 
-`body-extra.html` працює лише на **legacy LMS**-сторінках. Для MFE потрібен окремий Frontend Plugin Framework (слот `footer_slot`). Див. основний README про Open edX.
+`body-extra.html` працює лише на **legacy LMS**-сторінках. Для Learning MFE (Tutor 21+) див. **[mfe/README.md](mfe/README.md)** і приклад [`mfe/footer-plugin.example.jsx`](mfe/footer-plugin.example.jsx) (FPF footer slot).
+
+`./install.sh` тепер також виконує `pip install -e` для Tutor plugin.
 
 ## CMS (Studio)
 

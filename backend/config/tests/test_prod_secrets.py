@@ -17,3 +17,9 @@ class ProdSecretsFailFastTests(SimpleTestCase):
         self.assertTrue(
             any(marker in 'change-me-in-production' for marker in markers),
         )
+        self.assertTrue(
+            any(
+                marker in 'zrozumiloai-docker-dev-secret-change-me'
+                for marker in markers
+            ),
+        )

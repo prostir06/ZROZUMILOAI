@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
-import { truncateText } from '../embed/utils.js';
+import { truncateText } from '../utils/text.js';
 
 const EXPORT_FORMATS = [
   { id: 'csv', label: 'CSV' },

@@ -27,9 +27,9 @@ class IngestWorkspaceDocumentTests(TestCase):
         self.document.file = MagicMock()
         self.document.file.path = '/tmp/faq.md'
 
-    @patch('workspaces.rag.service.OllamaService')
+    @patch('workspaces.rag.ingest.OllamaService')
     @patch(
-        'workspaces.rag.service.extract_text_from_file',
+        'workspaces.rag.ingest.extract_text_from_file',
         return_value='Короткий FAQ текст для індексації.',
     )
     def test_ingest_creates_chunks_and_marks_ready(self, _extract, mock_ollama_cls):
@@ -46,9 +46,9 @@ class IngestWorkspaceDocumentTests(TestCase):
         )
         mock_ollama_cls.return_value.embed.assert_called()
 
-    @patch('workspaces.rag.service.OllamaService')
+    @patch('workspaces.rag.ingest.OllamaService')
     @patch(
-        'workspaces.rag.service.extract_text_from_file',
+        'workspaces.rag.ingest.extract_text_from_file',
         side_effect=ValueError('bad file'),
     )
     def test_ingest_marks_failed_on_error(self, _extract, mock_ollama_cls):

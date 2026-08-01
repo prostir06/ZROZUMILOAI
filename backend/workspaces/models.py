@@ -66,6 +66,17 @@ class Workspace(models.Model):
         default='',
         help_text='Фільтр course-v1:... для courseware_content',
     )
+    embed_greeting = models.CharField(
+        max_length=500,
+        blank=True,
+        default='',
+        help_text='Привітання embed-віджета (порожнє = дефолт)',
+    )
+    embed_faq_questions = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Список рядків FAQ для швидких кнопок embed',
+    )
     users = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name='workspaces',
@@ -84,10 +95,16 @@ class Workspace(models.Model):
 
 
 def workspace_document_upload_to(instance, filename):
-    """Шлях збереження файлу документа workspace."""
+    """Шлях збереження файлу: UUID-префікс уникає overwrite при однаковій назві."""
+    import uuid
+
     from workspaces.rag.service import sanitize_filename
+
     safe_name = sanitize_filename(filename)
-    return f'workspace_documents/{instance.workspace_id}/{safe_name}'
+    return (
+        f'workspace_documents/{instance.workspace_id}/'
+        f'{uuid.uuid4().hex}_{safe_name}'
+    )
 
 
 class WorkspaceDocument(models.Model):

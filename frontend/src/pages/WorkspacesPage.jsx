@@ -19,6 +19,8 @@ const emptyForm = {
   meilisearch_index_prefix: 'tutor_',
   meilisearch_indexes: 'course_info, courseware_content',
   meilisearch_course_id: '',
+  embed_greeting: '',
+  embed_faq_questions: '',
 };
 
 function WorkspacesPage() {
@@ -145,6 +147,10 @@ function WorkspacesPage() {
       meilisearch_index_prefix: workspace.meilisearch_index_prefix || 'tutor_',
       meilisearch_indexes: formatIndexes(workspace.meilisearch_indexes) || 'course_info, courseware_content',
       meilisearch_course_id: workspace.meilisearch_course_id || '',
+      embed_greeting: workspace.embed_greeting || '',
+      embed_faq_questions: Array.isArray(workspace.embed_faq_questions)
+        ? workspace.embed_faq_questions.join('\n')
+        : '',
     });
     setFormMode('edit');
     setEditingId(workspace.id);
@@ -210,6 +216,12 @@ function WorkspacesPage() {
       meilisearch_index_prefix: form.meilisearch_index_prefix.trim(),
       meilisearch_indexes: parseIndexes(form.meilisearch_indexes),
       meilisearch_course_id: form.meilisearch_course_id.trim(),
+      embed_greeting: form.embed_greeting.trim(),
+      embed_faq_questions: form.embed_faq_questions
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 8),
     };
 
     if (form.meilisearch_api_key.trim()) {
@@ -378,6 +390,27 @@ function WorkspacesPage() {
                 onChange={handlePromptChange}
                 rows={4}
                 placeholder="Інструкції для моделі в цьому workspace..."
+              />
+            </div>
+
+            <div className="form__group">
+              <label htmlFor="workspace_embed_greeting">Привітання embed (опційно)</label>
+              <input
+                id="workspace_embed_greeting"
+                value={form.embed_greeting}
+                onChange={(e) => setForm((prev) => ({ ...prev, embed_greeting: e.target.value }))}
+                placeholder="Вітаю! Я Помічник…"
+              />
+            </div>
+
+            <div className="form__group">
+              <label htmlFor="workspace_embed_faq">FAQ embed (по одному питанню на рядок)</label>
+              <textarea
+                id="workspace_embed_faq"
+                value={form.embed_faq_questions}
+                onChange={(e) => setForm((prev) => ({ ...prev, embed_faq_questions: e.target.value }))}
+                rows={3}
+                placeholder={"Як зареєструватися?\nЯк отримати сертифікат?"}
               />
             </div>
 

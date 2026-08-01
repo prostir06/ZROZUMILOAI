@@ -154,19 +154,49 @@ def extract_openedx_hit_name(hit):
     return 'Open edX'
 
 
+def sanitize_meilisearch_course_id(course_id):
+    """
+    Валідувати course id для Meili filter (без ін'єкції DSL).
+
+    Дозволені: літери, цифри, :, +, _, -, ., / (типовий Open edX course-v1:...).
+    Лапки та спецсимволи filter відкидаються.
+    """
+    import re
+
+    try:
+        if not course_id or not isinstance(course_id, str):
+            return None
+        value = course_id.strip()
+        if not value or len(value) > 200:
+            return None
+        if not re.fullmatch(r'[A-Za-z0-9:_+\-./]+', value):
+            logger.warning('Відхилено небезпечний meilisearch course_id')
+            return None
+        return value
+    except (TypeError, ValueError, re.error) as exc:
+        logger.warning('sanitize_meilisearch_course_id failed: %s', exc)
+        return None
+
+
 def build_course_filter(course_id, index_uid):
-    """Фільтр Meilisearch для обмеження пошуку одним курсом."""
-    if not course_id:
+    """
+    Побудувати рядок filter для Meilisearch.
+
+    Повертає None, якщо course_id невалідний або порожній —
+    тоді пошук іде без course-обмеження.
+    """
+    try:
+        course_id = sanitize_meilisearch_course_id(course_id)
+        if not course_id:
+            return None
+        index_uid = str(index_uid or '')
+        if 'courseware' in index_uid:
+            return f'course = "{course_id}"'
+        return f'id = "{course_id}" OR course = "{course_id}"'
+    except (TypeError, ValueError) as exc:
+        logger.warning('build_course_filter failed: %s', exc)
         return None
 
-    course_id = course_id.strip()
-    if not course_id:
-        return None
-
-    if 'courseware' in index_uid:
-        return f'course = "{course_id}"'
-
-    return f'id = "{course_id}" OR course = "{course_id}"'
 
 
 def search_openedx_meilisearch(workspace, query, top_k=None, course_id=None):

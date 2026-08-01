@@ -1,0 +1,21 @@
+# Locked for reproducible Docker/CI installs.
+# Regenerate after changing requirements.txt:
+#   pip install -r requirements.txt && pip freeze > requirements.lock
+# Prefer: pip-compile requirements.txt -o requirements.lock
+Django==5.2.15
+djangorestframework==3.17.1
+djangorestframework-simplejwt==5.5.1
+django-cors-headers==4.9.0
+requests==2.32.4
+cryptography==45.0.7
+gunicorn==22.0.0
+gevent==24.11.1
+psycogreen==1.0.2
+psycopg2-binary==2.9.10
+python-dotenv==1.1.1
+pypdf==5.4.0
+pgvector==0.3.6
+meilisearch==0.34.1
+celery==5.5.3
+redis==5.2.1
+django-redis==5.4.0

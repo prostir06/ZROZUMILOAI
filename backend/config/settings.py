@@ -20,6 +20,8 @@ _INSECURE_SECRET_MARKERS = (
     'django-insecure-change-me',
     'change-me-in-production',
     'your-secret-key-change-in-production',
+    'zrozumiloai-docker-dev-secret-change-me',
+    'change-me',
 )
 if not DEBUG:
     if not SECRET_KEY or any(m in SECRET_KEY for m in _INSECURE_SECRET_MARKERS):
@@ -174,10 +176,11 @@ CORS_ALLOWED_ORIGINS = os.getenv(
     'http://localhost:5173,http://localhost:3000,http://localhost',
 ).split(',')
 
-# Sandbox iframe (без allow-same-origin) надсилає Origin: null — потрібно для embed API.
-CORS_ALLOWED_ORIGIN_REGEXES = [
-    r'^null$',
-]
+# Origin: null лише за явним opt-in (рідкісний sandbox iframe без allow-same-origin).
+# За замовчуванням вимкнено: widget.js уже використовує allow-same-origin.
+CORS_ALLOWED_ORIGIN_REGEXES = []
+if os.getenv('CORS_ALLOW_NULL_ORIGIN', 'False').lower() in ('true', '1', 'yes'):
+    CORS_ALLOWED_ORIGIN_REGEXES = [r'^null$']
 
 CORS_ALLOW_CREDENTIALS = True
 

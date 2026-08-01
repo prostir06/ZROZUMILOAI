@@ -48,9 +48,9 @@ class RagServiceHelperTests(SimpleTestCase):
         self.assertEqual(result, [])
 
     @override_settings(RAG_ENABLED=True, RAG_EMBED_MODEL='test', RAG_TOP_K=2)
-    @patch('workspaces.rag.service.search_with_python')
-    @patch('workspaces.rag.service.uses_pgvector', return_value=False)
-    @patch('workspaces.rag.service.OllamaService')
+    @patch('workspaces.rag.search_context.search_with_python')
+    @patch('workspaces.rag.search_context.uses_pgvector', return_value=False)
+    @patch('workspaces.rag.search_context.OllamaService')
     def test_search_delegates_to_python(self, mock_ollama, _mock_pg, mock_python):
         mock_ollama.return_value.embed.return_value = [0.1, 0.2]
         mock_python.return_value = [{'content': 'x', 'score': 1, 'document_name': 'a.txt'}]
@@ -61,7 +61,7 @@ class RagServiceHelperTests(SimpleTestCase):
         self.assertEqual(len(result), 1)
 
     @override_settings(RAG_ENABLED=True, RAG_EMBED_MODEL='test', RAG_TOP_K=2)
-    @patch('workspaces.rag.service.OllamaService')
+    @patch('workspaces.rag.search_context.OllamaService')
     def test_search_returns_empty_on_embed_error(self, mock_ollama):
         mock_ollama.return_value.embed.side_effect = RuntimeError('ollama down')
 
@@ -78,7 +78,7 @@ class SearchWorkspaceContextTests(SimpleTestCase):
 
     @override_settings(RAG_TOP_K=3)
     @patch('workspaces.rag.meilisearch_search.search_openedx_meilisearch')
-    @patch('workspaces.rag.service.search_workspace_documents')
+    @patch('workspaces.rag.search_context.search_workspace_documents')
     def test_hybrid_merges_and_sorts(self, mock_internal, mock_meili):
         """HYBRID об'єднує результати через RRF (обидва джерела в топі)."""
         workspace = MagicMock()
@@ -104,7 +104,7 @@ class SearchWorkspaceContextTests(SimpleTestCase):
         mock_meili.assert_called_once()
 
     @override_settings(RAG_TOP_K=2)
-    @patch('workspaces.rag.service.search_workspace_documents')
+    @patch('workspaces.rag.search_context.search_workspace_documents')
     def test_internal_only_skips_meilisearch(self, mock_internal):
         """INTERNAL викликає лише локальний RAG."""
         workspace = MagicMock()

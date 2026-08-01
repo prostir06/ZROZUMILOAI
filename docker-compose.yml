@@ -48,7 +48,8 @@ services:
     environment:
       APP_ROLE: web
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-zrozumiloai-docker-dev-secret-change-me}
-      DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
+      # Локально True; прод — docker-compose.prod.yml (DEBUG=False + сильний секрет).
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-False}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend}
       DJANGO_ADMIN_USERNAME: ${DJANGO_ADMIN_USERNAME:-admin}
@@ -95,7 +96,7 @@ services:
     expose:
       - "8000"
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/auth/config/')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health/')\""]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -110,7 +111,7 @@ services:
     environment:
       APP_ROLE: worker
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-zrozumiloai-docker-dev-secret-change-me}
-      DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
       POSTGRES_DB: ${POSTGRES_DB:-zrozumiloai}
       POSTGRES_USER: ${POSTGRES_USER:-zrozumiloai}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zrozumiloai}

@@ -17,6 +17,21 @@ const root = document.getElementById('embed-root');
 const CONFIG_TIMEOUT_MS = 15000;
 const ASSISTANT_ICON_URL = '/zrozumilo-assistant.png';
 
+/** Привітання з API (workspace) або дефолт. */
+function getGreetingText() {
+  const fromApi = (workspace?.greeting || config?.greeting || '').trim();
+  return fromApi || EMBED_GREETING;
+}
+
+/** FAQ з API або дефолтні питання. */
+function getFaqQuestions() {
+  const fromApi = workspace?.faq_questions || config?.faqQuestions;
+  if (Array.isArray(fromApi) && fromApi.length > 0) {
+    return fromApi.map((item) => String(item).trim()).filter(Boolean).slice(0, 8);
+  }
+  return EMBED_FAQ_QUESTIONS;
+}
+
 /** Іконка Помічника біля відповіді ШІ. */
 function renderAssistantIcon() {
   return `<img src="${ASSISTANT_ICON_URL}" alt="" class="embed__assistant-icon" width="28" height="28" />`;
@@ -58,29 +73,30 @@ function updateGreetingElement() {
     greetingEl.textContent = typedGreeting;
   }
   if (cursorEl) {
-    cursorEl.hidden = typedGreeting.length >= EMBED_GREETING.length;
+    cursorEl.hidden = typedGreeting.length >= getGreetingText().length;
   }
 }
 
 /** Ефект друкування привітання при відкритті форми. */
 function startGreetingTypewriter() {
+  const greeting = getGreetingText();
   if (
     typewriterTimer
     || messages.length > 0
     || !model
-    || typedGreeting.length >= EMBED_GREETING.length
+    || typedGreeting.length >= greeting.length
   ) {
     return;
   }
   typedGreeting = '';
   let index = 0;
   typewriterTimer = setInterval(() => {
-    if (index >= EMBED_GREETING.length) {
+    if (index >= greeting.length) {
       stopGreetingTypewriter();
       updateGreetingElement();
       return;
     }
-    typedGreeting += EMBED_GREETING[index];
+    typedGreeting += greeting[index];
     index += 1;
     updateGreetingElement();
   }, 28);
@@ -91,7 +107,7 @@ function renderFaqCloud() {
   if (!model) {
     return '';
   }
-  const chips = EMBED_FAQ_QUESTIONS.map(
+  const chips = getFaqQuestions().map(
     (question) => `
       <button
         type="button"
@@ -185,7 +201,7 @@ function render() {
 
   if (messages.length === 0 && model) {
     updateGreetingElement();
-    if (typedGreeting.length < EMBED_GREETING.length && !typewriterTimer) {
+    if (typedGreeting.length < getGreetingText().length && !typewriterTimer) {
       startGreetingTypewriter();
     }
   }
@@ -388,6 +404,10 @@ async function initWorkspace() {
     }
     const data = await safeJson(response);
     workspace = data.workspace || null;
+    if (workspace) {
+      workspace.greeting = data.greeting || '';
+      workspace.faq_questions = data.faq_questions || [];
+    }
     model = data.model || workspace?.model_names?.[0] || '';
     if (!workspace) {
       initError = 'Widget token недійсний або workspace недоступний.';
@@ -488,7 +508,7 @@ async function handleSend(text) {
   }
 
   stopGreetingTypewriter();
-  typedGreeting = EMBED_GREETING;
+  typedGreeting = getGreetingText();
 
   messages = [...messages, { role: 'user', content }];
   isStreaming = true;

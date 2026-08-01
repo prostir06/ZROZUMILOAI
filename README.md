@@ -53,9 +53,11 @@ docker compose up --build -d
 - Backend API слухає лише всередині Docker-мережі (`backend:8000`), не на хості
 
 **Безпека перед GitHub / продакшеном:**
-1. Скопіюйте `.env.example` → `.env` і задайте унікальні `DJANGO_SECRET_KEY`, паролі БД, `GEMINI_API_KEY`.
-2. Не комітьте `.env`, реальні widget tokens, backup з продакшен-даними.
-3. Workspace API keys (Gemini / Meilisearch) шифруються at rest (`FIELD_ENCRYPTION_KEY` опційно).
+1. Скопіюйте `.env.example` → `.env` і задайте унікальні `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, паролі БД, `GEMINI_API_KEY`.
+2. Не комітьте `.env`, реальні widget tokens, backup з продакшен-даними. Якщо token потрапив у git — revoke у Workspaces і створіть новий.
+3. При `DJANGO_DEBUG=False` дефолтний compose-ключ `zrozumiloai-docker-dev-secret-change-me` **відхиляється** — обовʼязковий власний секрет.
+4. Для продакшену використовуйте `docker compose -f docker-compose.yml -f docker-compose.prod.yml`.
+5. Workspace API keys (Gemini / Meilisearch) шифруються at rest (`FIELD_ENCRYPTION_KEY`).
 
 Завантажте модель:
 

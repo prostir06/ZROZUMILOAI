@@ -17,16 +17,73 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements.lock
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          if [ -f requirements.lock ]; then
+            pip install -r requirements.lock
+          else
+            pip install -r requirements.txt
+          fi
       - name: Run tests
         env:
           USE_SQLITE: 'True'
-          DJANGO_SECRET_KEY: test-secret-key
+          DJANGO_SECRET_KEY: test-secret-key-at-least-32-chars!!
           CELERY_TASK_ALWAYS_EAGER: 'True'
           ALLOW_REGISTRATION: 'True'
         run: python manage.py test --verbosity=1
+
+  backend-postgres:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: zrozumiloai_test
+          POSTGRES_USER: zrozumiloai
+          POSTGRES_PASSWORD: zrozumiloai
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zrozumiloai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements.lock
+      - name: Install dependencies
+        run: |
+          if [ -f requirements.lock ]; then
+            pip install -r requirements.lock
+          else
+            pip install -r requirements.txt
+          fi
+      - name: Migrate and smoke tests on Postgres
+        env:
+          USE_SQLITE: 'False'
+          DJANGO_SECRET_KEY: test-secret-key-at-least-32-chars!!
+          CELERY_TASK_ALWAYS_EAGER: 'True'
+          ALLOW_REGISTRATION: 'True'
+          POSTGRES_DB: zrozumiloai_test
+          POSTGRES_USER: zrozumiloai
+          POSTGRES_PASSWORD: zrozumiloai
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: '5432'
+        run: |
+          python manage.py migrate --noinput
+          python manage.py test workspaces.tests.test_pgvector workspaces.tests.test_rrf config.tests.test_health --verbosity=1
 
   frontend:
     runs-on: ubuntu-latest
@@ -55,7 +112,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate docker compose config
         run: docker compose config --quiet
+      - name: Validate prod overlay syntax
+        run: |
+          DJANGO_SECRET_KEY=ci-prod-secret-key-32chars-min!! \
+          FIELD_ENCRYPTION_KEY=ci-fernet-key-placeholder-32b!! \
+          POSTGRES_PASSWORD=ci-postgres-password \
+          REDIS_PASSWORD=ci-redis-password \
+          DJANGO_ADMIN_PASSWORD=ci-admin-password \
+          CADDY_SITE_ADDRESS=localhost \
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
       - name: Frontend Dockerfile uses npm ci
         run: |
           grep -q 'package-lock.json' frontend/Dockerfile
           grep -q 'npm ci' frontend/Dockerfile
+      - name: Health route exists
+        run: grep -q "api/health" backend/config/urls.py

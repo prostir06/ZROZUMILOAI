@@ -38,6 +38,13 @@ class WidgetConfigView(APIView):
             widget_token = request.auth
             workspace = widget_token.workspace
             model = (workspace.model_names or [None])[0]
+            faq = workspace.embed_faq_questions or []
+            if not isinstance(faq, list):
+                faq = []
+            faq = [str(item).strip() for item in faq if str(item).strip()][:8]
+            greeting = (workspace.embed_greeting or '').strip()
+            if not greeting:
+                greeting = f'Вітаю! Я Помічник workspace «{workspace.name}».'
             return Response({
                 'workspace': {
                     'id': workspace.id,
@@ -46,6 +53,8 @@ class WidgetConfigView(APIView):
                     'model_names': workspace.model_names,
                 },
                 'model': model,
+                'greeting': greeting,
+                'faq_questions': faq,
                 'openedx_course_id': (
                     widget_token.openedx_course_id
                     or workspace.meilisearch_course_id
@@ -215,7 +224,7 @@ class WidgetFeedbackView(APIView):
     throttle_scope = 'widget_chat'
 
     def post(self, request, log_id):
-        from chats.log_views import _apply_feedback_fields, _save_log_feedback
+        from chats.feedback import apply_feedback_fields, save_log_feedback
         from chats.models import WorkspaceChatLog
         from chats.serializers import WorkspaceChatLogSerializer
 
@@ -240,11 +249,11 @@ class WidgetFeedbackView(APIView):
             )
 
         try:
-            error = _apply_feedback_fields(log, request.data)
+            error = apply_feedback_fields(log, request.data)
             if error is not None:
                 return error
 
-            error = _save_log_feedback(log)
+            error = save_log_feedback(log)
             if error is not None:
                 return error
 

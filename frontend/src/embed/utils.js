@@ -1,7 +1,3 @@
-/**
- * Утиліти embed-чату: екранування HTML та форматування тексту.
- */
-
 /** Привітання embed-віджета при відкритті. */
 export const EMBED_GREETING = 'Вітаю! Я Помічник на платформі Зрозуміло!';
 
@@ -56,13 +52,7 @@ export function formatMessageContent(text, role) {
   return escapeHtml(text);
 }
 
-/** Скоротити текст для превʼю в таблиці. */
-export function truncateText(text, maxLength) {
-  if (!text || text.length <= maxLength) {
-    return text || '—';
-  }
-  return `${text.slice(0, maxLength)}…`;
-}
+export { truncateText } from '../utils/text.js';
 
 /** Безпечний парсинг JSON з fetch Response (для embed API). */
 export async function safeJson(response, fallback = {}) {

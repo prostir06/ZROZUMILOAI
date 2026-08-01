@@ -67,6 +67,8 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             'meilisearch_index_prefix',
             'meilisearch_indexes',
             'meilisearch_course_id',
+            'embed_greeting',
+            'embed_faq_questions',
             'users',
             'user_ids',
             'created_at',
@@ -115,6 +117,32 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             name = str(item).strip()
             if name:
                 cleaned.append(name)
+        return cleaned
+
+    def validate_embed_greeting(self, value):
+        """Обрізати привітання embed до безпечної довжини."""
+        try:
+            text = str(value or '').strip()
+        except (TypeError, ValueError) as exc:
+            raise serializers.ValidationError('Некоректне привітання') from exc
+        return text[:500]
+
+    def validate_embed_faq_questions(self, value):
+        """Список рядків FAQ для embed (макс. 8 коротких питань)."""
+        if value is None or value == '':
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError('FAQ має бути списком рядків')
+        cleaned = []
+        try:
+            for item in value:
+                text = str(item).strip()
+                if text:
+                    cleaned.append(text[:200])
+                if len(cleaned) >= 8:
+                    break
+        except (TypeError, ValueError) as exc:
+            raise serializers.ValidationError('Некоректний список FAQ') from exc
         return cleaned
 
     def validate(self, attrs):
