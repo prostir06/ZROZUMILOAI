@@ -44,7 +44,8 @@ services:
   backend:
     build: ./backend
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       APP_ROLE: web
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-zrozumiloai-docker-dev-secret-change-me}
@@ -107,7 +108,8 @@ services:
     build: ./backend
     command: celery -A config worker -l info --concurrency=2
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       APP_ROLE: worker
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-zrozumiloai-docker-dev-secret-change-me}
