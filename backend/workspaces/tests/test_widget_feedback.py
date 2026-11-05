@@ -72,7 +72,7 @@ class WidgetFeedbackApiTests(APITestCase):
         self.assertIn('error', response.data)
 
     def test_foreign_workspace_log_forbidden(self):
-        """Лог іншого workspace → 403."""
+        """Лог іншого workspace → 404 (без existence oracle)."""
         url = reverse(
             'widget_chat_log_feedback',
             kwargs={'log_id': self.other_log.pk},
@@ -83,7 +83,7 @@ class WidgetFeedbackApiTests(APITestCase):
             format='json',
             **self._auth(),
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_missing_log_returns_404(self):
         """Неіснуючий log_id → 404 JSON."""

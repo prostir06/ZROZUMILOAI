@@ -61,3 +61,17 @@ class ApiKeyAuthTests(APITestCase):
             HTTP_AUTHORIZATION='Api-Key zai_invalid_key_value',
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_inactive_user_api_key_rejected(self):
+        """Деактивований користувач не проходить Api-Key auth."""
+        user = User.objects.create_user(
+            username='inactive_key',
+            password=STRONG_PASSWORD,
+            is_active=False,
+        )
+        raw_key = create_api_key(user)
+        response = self.client.get(
+            reverse('current_user'),
+            HTTP_AUTHORIZATION=f'Api-Key {raw_key}',
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

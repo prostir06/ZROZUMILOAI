@@ -41,6 +41,45 @@ class ChatViewAclTests(TestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        self.assertEqual(kwargs.get('model'), 'llama3')
+        self.assertEqual(kwargs.get('workspace'), self.workspace)
+        self.assertEqual(kwargs.get('user'), self.owner)
+        self.assertFalse(kwargs.get('stream'))
+
+    def test_chat_requires_auth(self):
+        response = self.client.post(
+            '/api/ollama/chat/',
+            {
+                'model': 'llama3',
+                'messages': [{'role': 'user', 'content': 'Hi'}],
+                'workspace_id': self.workspace.pk,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_chat_rejects_oversized_model_name(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.post(
+            '/api/ollama/chat/',
+            {
+                'model': 'x' * 201,
+                'messages': [{'role': 'user', 'content': 'Hi'}],
+                'workspace_id': self.workspace.pk,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_model_pull_forbidden_for_non_admin(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.post(
+            '/api/ollama/models/pull/',
+            {'name': 'llama3'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_stranger_denied_workspace(self):
         self.client.force_authenticate(user=self.stranger)
@@ -57,6 +96,32 @@ class ChatViewAclTests(TestCase):
         self.assertIn(
             response.status_code,
             (status.HTTP_403_FORBIDDEN, status.HTTP_400_BAD_REQUEST),
+        )
+
+    @patch('ollama_proxy.views.run_chat')
+    def test_workspace_course_id_locks_client_override(self, mock_run):
+        """meilisearch_course_id workspace блокує openedx_course_id з клієнта."""
+        mock_run.return_value = Response({'message': {'content': 'ok'}})
+        self.workspace.meilisearch_course_id = 'course-v1:ORG+LOCKED+2024'
+        self.workspace.save(update_fields=['meilisearch_course_id'])
+
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.post(
+            '/api/ollama/chat/',
+            {
+                'model': 'llama3',
+                'messages': [{'role': 'user', 'content': 'Hi'}],
+                'stream': False,
+                'workspace_id': self.workspace.pk,
+                'openedx_course_id': 'course-v1:OTHER+ANY+2024',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        _, kwargs = mock_run.call_args
+        self.assertEqual(
+            kwargs.get('meilisearch_course_id'),
+            'course-v1:ORG+LOCKED+2024',
         )
 
 
@@ -92,4 +157,4 @@ class ChatFeedbackApiTests(TestCase):
             {'feedback': 'down'},
             format='json',
         )
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

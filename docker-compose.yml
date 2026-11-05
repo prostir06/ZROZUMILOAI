@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-zrozumiloai}
       POSTGRES_USER: ${POSTGRES_USER:-zrozumiloai}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zrozumiloai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -15,7 +15,8 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    # 7.2.x — останній Redis під BSD-3-Clause (7.4+ = SSPL/RSAL). Див. NOTICE.
+    image: redis:7.2.7-alpine
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -48,7 +49,7 @@ services:
         required: false
     environment:
       APP_ROLE: web
-      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-zrozumiloai-docker-dev-secret-change-me}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       # Локально True; прод — docker-compose.prod.yml (DEBUG=False + сильний секрет).
       DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
       ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-False}
@@ -58,7 +59,7 @@ services:
       DJANGO_ADMIN_EMAIL: ${DJANGO_ADMIN_EMAIL:-admin@localhost}
       POSTGRES_DB: ${POSTGRES_DB:-zrozumiloai}
       POSTGRES_USER: ${POSTGRES_USER:-zrozumiloai}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zrozumiloai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_HOST: db
       USE_SQLITE: "False"
       OLLAMA_BASE_URL: http://ollama:11434
@@ -112,11 +113,11 @@ services:
         required: false
     environment:
       APP_ROLE: worker
-      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-zrozumiloai-docker-dev-secret-change-me}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
       POSTGRES_DB: ${POSTGRES_DB:-zrozumiloai}
       POSTGRES_USER: ${POSTGRES_USER:-zrozumiloai}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zrozumiloai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_HOST: db
       USE_SQLITE: "False"
       OLLAMA_BASE_URL: http://ollama:11434

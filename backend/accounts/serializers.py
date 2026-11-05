@@ -1,6 +1,7 @@
 """Serializers for user accounts."""
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.db import transaction
 from rest_framework import serializers
 
 from .services import create_api_key
@@ -71,10 +72,11 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data.pop('password_confirm')
         password = validated_data.pop('password')
-        user = User(**validated_data)
-        user.set_password(password)
-        user.save()
-        user._created_api_key = create_api_key(user)
+        with transaction.atomic():
+            user = User(**validated_data)
+            user.set_password(password)
+            user.save()
+            user._created_api_key = create_api_key(user)
         return user
 
 
@@ -100,10 +102,11 @@ class AdminCreateUserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password')
-        user = User(**validated_data)
-        user.set_password(password)
-        user.save()
-        user._created_api_key = create_api_key(user)
+        with transaction.atomic():
+            user = User(**validated_data)
+            user.set_password(password)
+            user.save()
+            user._created_api_key = create_api_key(user)
         return user
 
 

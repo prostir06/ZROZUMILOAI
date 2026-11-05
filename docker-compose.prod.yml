@@ -11,7 +11,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
 
   redis:
-    image: redis:7.4-alpine
+    # Закріплено на BSD Redis 7.2.x (не 7.4+/SSPL). Альтернатива: valkey/valkey:8-alpine.
+    image: redis:7.2.7-alpine
     command:
       - redis-server
       - --requirepass

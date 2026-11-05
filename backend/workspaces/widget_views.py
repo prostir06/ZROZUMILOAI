@@ -5,10 +5,12 @@ Public widget API та admin-управління WidgetToken.
 Відповіді — JSON (DRF Response). Помилки обгортаються у try/except
 із зрозумілими HTTP-статусами.
 """
+import logging
+
 from django.db import DatabaseError
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -18,13 +20,16 @@ from chats.services import extract_prompt_from_messages
 from config.http_utils import validate_chat_messages, validation_error_message
 from llm.chat import run_chat
 
-from .models import WidgetToken, Workspace
+from .models import WidgetToken
 from .serializers import (
     WidgetTokenCreateSerializer,
     WidgetTokenCreateResponseSerializer,
     WidgetTokenSerializer,
 )
+from .services import get_workspace_or_404
 from .widget_auth import WidgetTokenAuthentication, WidgetTokenPermission
+
+logger = logging.getLogger(__name__)
 
 
 class WidgetConfigView(APIView):
@@ -62,6 +67,7 @@ class WidgetConfigView(APIView):
                 ),
             })
         except Exception:
+            logger.exception('WidgetConfigView failed')
             return Response(
                 {'error': 'Не вдалося завантажити конфіг віджета'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -135,6 +141,10 @@ class WidgetChatView(APIView):
                 meilisearch_course_id=course_id,
             )
         except Exception:
+            logger.exception(
+                'WidgetChatView failed (workspace=%s)',
+                getattr(workspace, 'pk', '?'),
+            )
             return Response(
                 {'error': 'Помилка обробки чату віджета'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -167,6 +177,10 @@ class WidgetTokenListCreateView(APIView):
                 ),
             )
         except Exception:
+            logger.exception(
+                'WidgetToken create failed (workspace=%s)',
+                workspace_id,
+            )
             return Response(
                 {'error': 'Не вдалося створити widget token'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -177,10 +191,7 @@ class WidgetTokenListCreateView(APIView):
         return Response(data, status=status.HTTP_201_CREATED)
 
     def _get_workspace(self, workspace_id):
-        try:
-            return Workspace.objects.get(pk=workspace_id)
-        except Workspace.DoesNotExist as exc:
-            raise NotFound('Workspace не знайдено') from exc
+        return get_workspace_or_404(workspace_id)
 
 
 class WidgetTokenDeleteView(APIView):
@@ -230,7 +241,10 @@ class WidgetFeedbackView(APIView):
 
         widget_token = request.auth
         try:
-            log = WorkspaceChatLog.objects.get(pk=log_id)
+            log = WorkspaceChatLog.objects.select_related('workspace').get(
+                pk=log_id,
+                workspace_id=widget_token.workspace_id,
+            )
         except WorkspaceChatLog.DoesNotExist:
             return Response(
                 {'error': 'Запис не знайдено'},
@@ -240,12 +254,6 @@ class WidgetFeedbackView(APIView):
             return Response(
                 {'error': 'Помилка бази даних'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        if log.workspace_id != widget_token.workspace_id:
-            return Response(
-                {'error': 'Немає доступу до цього запису'},
-                status=status.HTTP_403_FORBIDDEN,
             )
 
         try:
@@ -259,6 +267,10 @@ class WidgetFeedbackView(APIView):
 
             return Response(WorkspaceChatLogSerializer(log).data)
         except Exception:
+            logger.exception(
+                'WidgetFeedbackView failed (log_id=%s)',
+                log_id,
+            )
             return Response(
                 {'error': 'Не вдалося зберегти відгук'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -55,7 +55,7 @@ docker compose up --build -d
 **Безпека перед GitHub / продакшеном:**
 1. Скопіюйте `.env.example` → `.env` і задайте унікальні `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, паролі БД, `GEMINI_API_KEY`.
 2. Не комітьте `.env`, реальні widget tokens, backup з продакшен-даними. Якщо token потрапив у git — revoke у Workspaces і створіть новий.
-3. При `DJANGO_DEBUG=False` дефолтний compose-ключ `zrozumiloai-docker-dev-secret-change-me` **відхиляється** — обовʼязковий власний секрет.
+3. `docker-compose.yml` вимагає `DJANGO_SECRET_KEY` і `POSTGRES_PASSWORD` з `.env` (без слабких fallback). При `DJANGO_DEBUG=False` placeholder-секрети **відхиляються**.
 4. Для продакшену використовуйте `docker compose -f docker-compose.yml -f docker-compose.prod.yml`.
 5. Workspace API keys (Gemini / Meilisearch) шифруються at rest (`FIELD_ENCRYPTION_KEY`).
 
@@ -219,7 +219,7 @@ Workspace може брати контекст з **Meilisearch Tutor/Open edX**
 
 - **Frontend:** React 18, React Router, Vite, CSS3
 - **Backend:** Django 5, DRF, SimpleJWT
-- **Інфра:** Docker, PostgreSQL, Ollama, Caddy
+- **Інфра:** Docker, PostgreSQL (pgvector), Redis 7.2 (BSD), Celery, Ollama, Caddy
 
 ## HTTPS (Caddy)
 
@@ -333,4 +333,10 @@ data-embed-url="https://chat.example.com/embed.html"
 
 ## Ліцензія
 
-MIT
+Код проєкту — **MIT** (див. `LICENSE`). Атрибуція сторонніх компонентів (LGPL тощо) — у `NOTICE`.
+
+**Моделі Ollama** (ваги) ліцензуються окремо від цього репозиторію:
+- `llama3.2` — Meta Llama Community License (перевірте умови перед комерційним SaaS)
+- `nomic-embed-text` — зазвичай Apache-2.0 (перевірте картку моделі в Ollama / на сайті автора)
+
+У CI: `pip-licenses` і `license-checker` блокують GPL/AGPL у залежностях. Redis у Compose закріплено на **7.2.7-alpine** (BSD), не 7.4+/SSPL.

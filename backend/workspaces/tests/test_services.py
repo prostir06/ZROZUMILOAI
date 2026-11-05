@@ -10,7 +10,6 @@ from workspaces.services import (
     get_ollama_options,
     prepare_chat_messages,
     resolve_workspace_for_chat,
-    user_can_use_model,
 )
 
 User = get_user_model()
@@ -41,14 +40,12 @@ class WorkspaceServicesTests(TestCase):
     def test_staff_sees_all_models(self):
         """Адміністратор має доступ до всіх моделей."""
         self.assertIsNone(get_allowed_model_names(self.staff))
-        self.assertTrue(user_can_use_model(self.staff, 'any-model'))
 
     def test_user_limited_to_workspace_models(self):
         """Звичайний користувач обмежений моделями свого workspace."""
         allowed = get_allowed_model_names(self.user)
         self.assertEqual(allowed, {'llama3'})
-        self.assertTrue(user_can_use_model(self.user, 'llama3'))
-        self.assertFalse(user_can_use_model(self.user, 'mistral'))
+        self.assertNotIn('mistral', allowed)
 
     def test_resolve_workspace_requires_id_for_user(self):
         """Користувач без workspace_id отримує помилку валідації."""
@@ -103,6 +100,14 @@ class WorkspaceServicesTests(TestCase):
         """Temperature workspace передається в Ollama options."""
         options = get_ollama_options(self.workspace)
         self.assertEqual(options, {'temperature': 0.5})
+
+    def test_get_workspace_for_user_rejects_non_int_id(self):
+        """Нецілий workspace_id → ValidationError, не 500."""
+        from rest_framework.exceptions import ValidationError
+        from workspaces.services import get_workspace_for_user
+
+        with self.assertRaises(ValidationError):
+            get_workspace_for_user(self.user, 'abc')
 
     def test_get_workspace_for_user_denies_foreign_workspace(self):
         """Користувач не має доступу до чужого workspace."""

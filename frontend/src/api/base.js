@@ -130,7 +130,7 @@ export class BaseApiClient {
 
   async getCurrentUser() {
     const response = await this.request('/auth/me/');
-    if (!response.ok) throw new Error('Failed to fetch user');
+    if (!response.ok) throw new Error('Не вдалося отримати профіль');
     return response.json();
   }
 
@@ -151,7 +151,7 @@ export class BaseApiClient {
         || error.new_password?.[0]
         || error.new_password_confirm?.[0]
         || Object.values(error).flat()[0]
-        || 'Failed to change password';
+        || 'Не вдалося змінити пароль';
       throw new Error(message);
     }
 
@@ -160,7 +160,7 @@ export class BaseApiClient {
 
   async getUsers() {
     const response = await this.request('/auth/users/');
-    if (!response.ok) throw new Error('Failed to fetch users');
+    if (!response.ok) throw new Error('Не вдалося отримати профільs');
     return response.json();
   }
 
@@ -188,7 +188,7 @@ export class BaseApiClient {
       throw new Error(
         error.detail
         || error.non_field_errors?.[0]
-        || 'Failed to delete user',
+        || 'Не вдалося видалити користувача',
       );
     }
     return true;
@@ -206,7 +206,7 @@ export class BaseApiClient {
         error.detail
         || error.non_field_errors?.[0]
         || Object.values(error).flat()[0]
-        || 'Failed to update user',
+        || 'Не вдалося оновити користувача',
       );
     }
 

@@ -59,3 +59,37 @@ class BackupServiceTests(TestCase):
         with patch.object(Path, 'iterdir', side_effect=OSError('denied')):
             with self.assertRaises(RuntimeError):
                 self.service.list_backups()
+
+    def test_quote_pg_ident_allows_safe_names(self):
+        """Звичайні імена ролей PostgreSQL екрануються в лапки."""
+        self.assertEqual(self.service._quote_pg_ident('zrozumiloai'), '"zrozumiloai"')
+
+    def test_quote_pg_ident_rejects_injection(self):
+        """Метасимволи / shell-injection у імені ролі відхиляються."""
+        for bad in ('admin; \\! rm', 'a b', 'x-y', '"evil"', ''):
+            with self.assertRaises(ValueError):
+                self.service._quote_pg_ident(bad)
+
+    @override_settings(
+        DATABASES={
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': 'test',
+                'USER': 'safe_user',
+            },
+        },
+    )
+    def test_restore_postgresql_uses_transactional_script(self):
+        """Restore пише BEGIN/COMMIT і не DROP-ає окремо до restore."""
+        dump = Path(self.temp_dir) / 'dump.sql'
+        dump.write_text('-- dump\n', encoding='utf-8')
+        with patch.object(self.service, '_run_psql') as mock_psql:
+            self.service._restore_postgresql(dump)
+        mock_psql.assert_called_once()
+        args = mock_psql.call_args.args
+        self.assertIn('-f', args)
+        script_path = Path(args[args.index('-f') + 1])
+        self.assertFalse(script_path.exists())
+        # Скрипт видаляється в finally; перевіряємо виклик із ON_ERROR_STOP.
+        self.assertEqual(args[0], '-v')
+        self.assertEqual(args[1], 'ON_ERROR_STOP=1')

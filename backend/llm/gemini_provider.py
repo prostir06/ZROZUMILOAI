@@ -1,6 +1,8 @@
 """Google Gemini через AI Studio API ключ."""
 import json
 import logging
+import re
+import threading
 
 import requests
 from django.conf import settings
@@ -10,6 +12,32 @@ from .base import BaseLLMProvider, LLMProviderError
 logger = logging.getLogger(__name__)
 
 GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta'
+_GEMINI_MODEL_RE = re.compile(r'^[A-Za-z0-9._\-]{1,128}$')
+
+
+def _sanitize_gemini_model_name(model):
+    """Дозволити лише безпечні імена моделей у URL Gemini."""
+    name = (model or '').split(':')[0].strip()
+    if not _GEMINI_MODEL_RE.fullmatch(name):
+        raise LLMProviderError('Недопустиме ім\'я моделі Gemini')
+    return name
+
+_session_lock = threading.Lock()
+_sessions_by_key = {}
+
+
+def get_shared_gemini_session(api_key=''):
+    """Process-wide Session на api_key (keep-alive)."""
+    key = (api_key or '').strip() or '__default__'
+    session = _sessions_by_key.get(key)
+    if session is not None:
+        return session
+    with _session_lock:
+        session = _sessions_by_key.get(key)
+        if session is None:
+            session = requests.Session()
+            _sessions_by_key[key] = session
+        return session
 
 
 def split_messages_for_gemini(messages):
@@ -51,6 +79,21 @@ def gemini_text_from_payload(payload):
     return ''.join(texts)
 
 
+def require_gemini_text(payload):
+    """Текст з повної відповіді Gemini або LLMProviderError (SAFETY/empty)."""
+    if not isinstance(payload, dict):
+        raise LLMProviderError('Некоректна відповідь Gemini')
+    feedback = payload.get('promptFeedback') or {}
+    block_reason = feedback.get('blockReason')
+    candidates = payload.get('candidates') or []
+    if block_reason and not candidates:
+        raise LLMProviderError(f'Відхилено Gemini: {block_reason}')
+    text = gemini_text_from_payload(payload)
+    if not text.strip():
+        raise LLMProviderError('Порожня відповідь Gemini')
+    return text
+
+
 def to_ollama_chunk(text):
     """Нормалізувати фрагмент у формат Ollama SSE для frontend."""
     return json.dumps({
@@ -75,7 +118,7 @@ class GeminiProvider(BaseLLMProvider):
     def __init__(self, api_key=None, session=None):
         self.api_key = (api_key or settings.GEMINI_API_KEY or '').strip()
         # P1: reuse TCP/TLS через Session між запитами одного провайдера.
-        self._session = session or requests.Session()
+        self._session = session or get_shared_gemini_session(self.api_key)
 
     def _require_api_key(self):
         if not self.api_key:
@@ -120,7 +163,7 @@ class GeminiProvider(BaseLLMProvider):
 
     def chat(self, model, messages, stream=False, options=None):
         self._require_api_key()
-        model = model.split(':')[0]
+        model = _sanitize_gemini_model_name(model)
         payload = self._build_payload(messages, options)
         url = f'{GEMINI_API_BASE}/models/{model}:generateContent'
 
@@ -142,7 +185,7 @@ class GeminiProvider(BaseLLMProvider):
             raise LLMProviderError(
                 'Некоректна JSON-відповідь від Gemini API',
             ) from exc
-        return to_ollama_response(gemini_text_from_payload(data))
+        return to_ollama_response(require_gemini_text(data))
 
     def _stream_request(self, url, payload):
         response = self._session.post(
@@ -191,20 +234,30 @@ class GeminiStreamResponse:
     def __init__(self, response):
         self._response = response
 
+    def close(self):
+        """Закрити underlying HTTP response (TCP leak prevention)."""
+        try:
+            self._response.close()
+        except Exception:
+            pass
+
     def iter_lines(self, decode_unicode=False):
         del decode_unicode
-        for line in self._response.iter_lines(decode_unicode=True):
-            if not line:
-                continue
-            if isinstance(line, bytes):
-                line = line.decode('utf-8')
-            if line.startswith('data: '):
-                line = line[6:]
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                logger.debug('Пропущено некоректний SSE-чанк Gemini')
-                continue
-            text = gemini_text_from_payload(payload)
-            if text:
-                yield to_ollama_chunk(text).encode('utf-8')
+        try:
+            for line in self._response.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                if isinstance(line, bytes):
+                    line = line.decode('utf-8')
+                if line.startswith('data: '):
+                    line = line[6:]
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.debug('Пропущено некоректний SSE-чанк Gemini')
+                    continue
+                text = gemini_text_from_payload(payload)
+                if text:
+                    yield to_ollama_chunk(text).encode('utf-8')
+        finally:
+            self.close()

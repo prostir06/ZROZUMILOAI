@@ -120,6 +120,7 @@ def run_chat(
     if stream:
         def event_stream():
             accumulated = []
+            response = None
             if sources:
                 yield f'data: {json.dumps({"sources": sources})}\n\n'
             try:
@@ -140,6 +141,12 @@ def run_chat(
                     if chunk_content:
                         accumulated.append(chunk_content)
             except (LLMProviderError, requests.RequestException) as exc:
+                logger.warning(
+                    'Streaming LLM error (workspace=%s, model=%s): %s',
+                    getattr(workspace, 'pk', None),
+                    model,
+                    exc,
+                )
                 yield _provider_error_response(exc, stream=True)
             except Exception:
                 logger.exception('Unexpected streaming chat error')
@@ -159,6 +166,12 @@ def run_chat(
                     yield (
                         f'data: {json.dumps({"log_id": log.pk, "needs_handoff": needs_handoff})}\n\n'
                     )
+            finally:
+                if response is not None and hasattr(response, 'close'):
+                    try:
+                        response.close()
+                    except Exception:
+                        pass
 
         return StreamingHttpResponse(
             event_stream(),

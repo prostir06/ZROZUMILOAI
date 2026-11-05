@@ -111,6 +111,25 @@ class WorkspaceDocumentApiTests(TestCase):
         self.assertEqual(document.status, WorkspaceDocument.Status.PROCESSING)
         mock_schedule.assert_called_once_with(document.pk)
 
+    @patch('workspaces.document_views.schedule_document_ingest')
+    def test_retry_processing_document_rejected(self, mock_schedule):
+        """Повторний retry під час PROCESSING → 400 (ідемпотентність)."""
+        self.client.force_authenticate(user=self.admin)
+        document = WorkspaceDocument.objects.create(
+            workspace=self.workspace,
+            original_filename='busy.txt',
+            file=SimpleUploadedFile('busy.txt', b'data'),
+            file_size=4,
+            status=WorkspaceDocument.Status.PROCESSING,
+        )
+        response = self.client.post(
+            f'/api/workspaces/{self.workspace.pk}/documents/{document.pk}/retry/',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        mock_schedule.assert_not_called()
+        document.refresh_from_db()
+        self.assertEqual(document.status, WorkspaceDocument.Status.PROCESSING)
+
     def test_rag_stats(self):
         self.client.force_authenticate(user=self.admin)
         WorkspaceDocument.objects.create(

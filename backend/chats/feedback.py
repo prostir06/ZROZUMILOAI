@@ -59,7 +59,10 @@ def apply_feedback_fields(log, data):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
             else:
-                log.needs_handoff = bool(raw)
+                return Response(
+                    {'error': 'needs_handoff має бути true/false'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
     except (TypeError, AttributeError, ValueError) as exc:
         logger.warning('Invalid feedback payload: %s', exc)
         return Response(

@@ -6,27 +6,48 @@ HTTP middleware для кореляції запитів у логах.
 Примітка: Django логує 4xx/5xx у BaseHandler ПІСЛЯ повернення з middleware,
 тому request_id скидається лише на початку наступного запиту (не в finally).
 """
-from __future__ import annotations
-
+import json
 import logging
 import threading
 import uuid
+from datetime import datetime, timezone
 
 # Thread-local сховище request_id для поточного запиту.
 _request_context = threading.local()
 
 
-def get_request_id() -> str:
+def get_request_id():
     """Повернути request_id поточного потоку або '-' поза HTTP-запитом."""
     return getattr(_request_context, 'request_id', '-')
+
+
+def set_request_id(request_id):
+    """Встановити request_id (HTTP middleware або Celery worker)."""
+    _request_context.request_id = (request_id or '-').strip() or '-'
 
 
 class RequestIdFilter(logging.Filter):
     """Додає поле request_id у LogRecord для форматера."""
 
-    def filter(self, record: logging.LogRecord) -> bool:
+    def filter(self, record):
         record.request_id = get_request_id()
         return True
+
+
+class JsonLogFormatter(logging.Formatter):
+    """Структуровані JSON-логи з request_id (без сторонніх залежностей)."""
+
+    def format(self, record):
+        payload = {
+            'ts': datetime.now(timezone.utc).isoformat(),
+            'level': record.levelname,
+            'logger': record.name,
+            'message': record.getMessage(),
+            'request_id': getattr(record, 'request_id', '-'),
+        }
+        if record.exc_info:
+            payload['exc_info'] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False)
 
 
 class RequestIdMiddleware:

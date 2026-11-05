@@ -1,6 +1,7 @@
 """Database backup service."""
 import logging
 import os
+import re
 import shutil
 import subprocess
 from datetime import datetime
@@ -12,6 +13,7 @@ from django.db import connection
 logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {'.sql', '.sqlite3', '.db'}
+_PG_IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 
 class BackupService:
@@ -22,7 +24,7 @@ class BackupService:
         self.backup_dir.mkdir(parents=True, exist_ok=True)
 
     def _timestamp_name(self, extension):
-        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
         db_name = settings.DATABASES['default'].get('NAME', 'database')
         if isinstance(db_name, Path):
             db_name = db_name.stem
@@ -68,17 +70,26 @@ class BackupService:
             '--no-acl',
         ]
 
-        result = subprocess.run(
-            command,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                command,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired as exc:
+            logger.error('pg_dump timed out after 300s')
+            raise RuntimeError('pg_dump перевищив ліміт часу') from exc
 
         if result.returncode != 0:
-            logger.error('pg_dump failed: %s', result.stderr)
-            raise RuntimeError(result.stderr or 'pg_dump завершився з помилкою')
+            logger.error(
+                'pg_dump failed (rc=%s): %s',
+                result.returncode,
+                (result.stderr or '')[:500],
+            )
+            raise RuntimeError('pg_dump завершився з помилкою')
 
         return self._file_info(filepath)
 
@@ -193,37 +204,72 @@ class BackupService:
             *extra_args,
         ]
 
-        result = subprocess.run(
-            command,
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                command,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=300,
+            )
+        except subprocess.TimeoutExpired as exc:
+            logger.error('psql timed out after 300s')
+            raise RuntimeError('psql перевищив ліміт часу') from exc
 
         if result.returncode != 0:
-            logger.error('psql failed: %s', result.stderr)
-            raise RuntimeError(result.stderr or 'psql завершився з помилкою')
+            logger.error(
+                'psql failed (rc=%s): %s',
+                result.returncode,
+                (result.stderr or '')[:500],
+            )
+            raise RuntimeError('psql завершився з помилкою')
 
         return result
 
-    def _reset_postgresql_schema(self):
-        db_user = settings.DATABASES['default'].get('USER', '')
-        reset_sql = (
-            'DROP SCHEMA IF EXISTS public CASCADE; '
-            'CREATE SCHEMA public; '
-            f'GRANT ALL ON SCHEMA public TO {db_user}; '
-            'GRANT ALL ON SCHEMA public TO public;'
-        )
-        self._run_psql('-c', reset_sql)
+    def _quote_pg_ident(self, ident):
+        """Екранувати ідентифікатор PostgreSQL (без метакоманд psql)."""
+        name = (ident or '').strip()
+        if not _PG_IDENT_RE.fullmatch(name):
+            raise ValueError('Недопустиме ім\'я користувача БД')
+        return f'"{name}"'
 
     def _restore_postgresql(self, filepath):
-        self._reset_postgresql_schema()
-        self._run_psql('-f', str(filepath))
+        """
+        DROP + restore в одному psql-скрипті з транзакцією.
+
+        Якщо restore падає — ROLLBACK, схема не лишається порожньою.
+        """
+        db_user = settings.DATABASES['default'].get('USER', '')
+        quoted_user = self._quote_pg_ident(db_user)
+        combined = self.backup_dir / f'.restore_tmp_{datetime.now().strftime("%Y%m%d%H%M%S%f")}.sql'
+        try:
+            with combined.open('w', encoding='utf-8') as out:
+                out.write('BEGIN;\n')
+                out.write('DROP SCHEMA IF EXISTS public CASCADE;\n')
+                out.write('CREATE SCHEMA public;\n')
+                out.write(f'GRANT ALL ON SCHEMA public TO {quoted_user};\n')
+                out.write('GRANT ALL ON SCHEMA public TO public;\n')
+                with Path(filepath).open('r', encoding='utf-8', errors='replace') as src:
+                    shutil.copyfileobj(src, out)
+                out.write('\nCOMMIT;\n')
+            self._run_psql('-v', 'ON_ERROR_STOP=1', '-f', str(combined))
+        finally:
+            try:
+                combined.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def _restore_sqlite(self, filepath):
         db_path = Path(settings.DATABASES['default']['NAME'])
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        if db_path.exists():
-            db_path.unlink()
-        shutil.copy2(filepath, db_path)
+        tmp_path = db_path.with_suffix(db_path.suffix + '.tmp_restore')
+        try:
+            shutil.copy2(filepath, tmp_path)
+            os.replace(tmp_path, db_path)
+        finally:
+            if tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass

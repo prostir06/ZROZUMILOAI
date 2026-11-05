@@ -1,4 +1,6 @@
 """Views for authentication and user management."""
+import logging
+
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from rest_framework import generics, permissions, status
@@ -18,6 +20,7 @@ from .serializers import (
 )
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class AuthConfigView(APIView):
@@ -45,6 +48,7 @@ class RegisterView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
+        logger.info('User registered: user_id=%s', user.pk)
         data = UserCreateResponseSerializer(user).data
         data['api_key'] = user._created_api_key
         return Response(data, status=status.HTTP_201_CREATED)
@@ -70,6 +74,7 @@ class ChangePasswordView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
+        logger.info('Password changed: user_id=%s', request.user.pk)
         return Response({'detail': 'Пароль змінено'})
 
 
@@ -142,12 +147,15 @@ class CustomTokenObtainPairView(TokenObtainPairView):
     throttle_scope = 'auth_login'
 
     def post(self, request, *args, **kwargs):
+        username = (request.data.get('username') or '').strip()
         response = super().post(request, *args, **kwargs)
         if response.status_code == 200:
-            username = request.data.get('username')
+            logger.info('Login success: user=%s', username or '?')
             try:
                 user = User.objects.select_related('api_key').get(username=username)
                 response.data['user'] = UserSerializer(user).data
             except User.DoesNotExist:
                 pass
+        else:
+            logger.warning('Login failed: user=%s status=%s', username or '?', response.status_code)
         return response

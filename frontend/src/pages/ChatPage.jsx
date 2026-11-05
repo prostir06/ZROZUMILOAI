@@ -143,6 +143,18 @@ function ChatPage() {
     return () => container.removeEventListener('scroll', checkScrollPosition);
   }, [checkScrollPosition]);
 
+  useEffect(() => () => {
+    try {
+      streamAbortRef.current?.abort();
+    } catch {
+      /* ignore */
+    }
+    if (streamRafRef.current) {
+      cancelAnimationFrame(streamRafRef.current);
+      streamRafRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (isAtBottomRef.current) {
       scrollToBottom(streaming ? 'auto' : 'smooth');
@@ -680,6 +692,7 @@ function ChatPage() {
             placeholder="Введіть повідомлення..."
             aria-label="Текст повідомлення"
             rows={2}
+            maxLength={16000}
             disabled={!selectedModel || loading || (workspaceLocked && !selectedWorkspaceId)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {

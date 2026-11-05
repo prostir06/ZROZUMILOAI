@@ -1,5 +1,6 @@
 """Пошук у Meilisearch Open edX (Tutor)."""
 import logging
+from functools import lru_cache
 from urllib.parse import urlparse
 
 import meilisearch
@@ -9,6 +10,16 @@ from ..models import Workspace
 from .text_utils import strip_html, truncate_text
 
 logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=8)
+def _get_meili_client(url, api_key, timeout_s):
+    """Кешований Meilisearch client на (url, key, timeout)."""
+    return meilisearch.Client(
+        url,
+        api_key or None,
+        timeout=timeout_s,
+    )
 
 OPENEDX_DEFAULT_INDEX_SUFFIXES = ('course_info', 'courseware_content')
 
@@ -230,12 +241,9 @@ def search_openedx_meilisearch(workspace, query, top_k=None, course_id=None):
     )
 
     try:
-        client = meilisearch.Client(
-            url,
-            api_key or None,
-            # Meilisearch Python SDK очікує timeout у секундах.
-            timeout=max(0.1, float(settings.MEILISEARCH_TIMEOUT_MS) / 1000.0),
-        )
+        # Meilisearch Python SDK очікує timeout у секундах.
+        timeout_s = max(0.1, float(settings.MEILISEARCH_TIMEOUT_MS) / 1000.0)
+        client = _get_meili_client(url, api_key or '', timeout_s)
     except Exception as exc:
         logger.error('Meilisearch client init failed: %s', exc)
         return []

@@ -80,7 +80,7 @@ export function buildAuthHeader(config) {
 /** Текст статусу embed-чату залежно від workspace/model. */
 export function getEmbedStatusText(config, workspace, model, initError = '') {
   if (initError) {
-    return initError;
+    return escapeHtml(initError);
   }
   if (!config) {
     return '';
@@ -95,5 +95,5 @@ export function getEmbedStatusText(config, workspace, model, initError = '') {
   if (!model) {
     return 'Модель не налаштована для цього workspace.';
   }
-  return `Модель: ${model}`;
+  return `Модель: ${escapeHtml(model)}`;
 }

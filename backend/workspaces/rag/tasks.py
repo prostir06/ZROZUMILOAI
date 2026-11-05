@@ -14,12 +14,15 @@ from django.db import close_old_connections, transaction
 logger = logging.getLogger(__name__)
 
 
-def ingest_document_by_id(document_id):
+def ingest_document_by_id(document_id, request_id='-'):
     """
     Завантажити документ з БД і виконати RAG ingest.
 
     Безпечно викликати з Celery worker або фонового потоку.
     """
+    from config.middleware import set_request_id
+
+    set_request_id(request_id)
     close_old_connections()
     try:
         from workspaces.models import WorkspaceDocument
@@ -55,10 +58,13 @@ def ingest_document_by_id(document_id):
     autoretry_for=(ConnectionError, OSError, TimeoutError),
     retry_backoff=True,
     retry_jitter=True,
+    soft_time_limit=600,
+    time_limit=660,
+    acks_late=True,
 )
-def ingest_document_task(self, document_id):
+def ingest_document_task(self, document_id, request_id='-'):
     """Celery task: індексація документа з автоматичним retry мережевих збоїв."""
-    result = ingest_document_by_id(document_id)
+    result = ingest_document_by_id(document_id, request_id=request_id)
     if result.get('ok'):
         return result
     # Бізнес-помилки ingest (bad file тощо) не ретраїмо — статус уже FAILED.
@@ -67,11 +73,15 @@ def ingest_document_task(self, document_id):
 
 def _enqueue_celery(document_id):
     """Спробувати поставити задачу в Celery; False якщо брокер недоступний."""
+    from config.middleware import get_request_id
+
+    request_id = get_request_id()
+    # Eager mode блокує HTTP — краще daemon thread у dev без Redis.
     if getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False):
-        ingest_document_task.delay(document_id)
+        _enqueue_thread(document_id, request_id=request_id)
         return True
     try:
-        ingest_document_task.delay(document_id)
+        ingest_document_task.delay(document_id, request_id=request_id)
         return True
     except Exception as exc:
         logger.warning(
@@ -82,11 +92,11 @@ def _enqueue_celery(document_id):
         return False
 
 
-def _enqueue_thread(document_id):
+def _enqueue_thread(document_id, request_id='-'):
     """Fallback: daemon thread (викликати вже після commit)."""
     thread = threading.Thread(
         target=ingest_document_by_id,
-        args=(document_id,),
+        args=(document_id, request_id),
         name=f'ingest-doc-{document_id}',
         daemon=True,
     )
@@ -98,7 +108,7 @@ def _enqueue_thread(document_id):
             document_id,
             exc,
         )
-        ingest_document_by_id(document_id)
+        ingest_document_by_id(document_id, request_id=request_id)
 
 
 def schedule_document_ingest(document_id):
@@ -119,5 +129,6 @@ def schedule_document_ingest(document_id):
             document_id,
             exc,
         )
+        # Ніколи не блокувати HTTP sync-ingest — лише Celery/thread.
         if not _enqueue_celery(document_id):
-            ingest_document_by_id(document_id)
+            _enqueue_thread(document_id)

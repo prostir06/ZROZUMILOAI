@@ -4,7 +4,7 @@ import { BaseApiClient } from './base.js';
 class ApiClient extends BaseApiClient {
   async getWorkspaces() {
     const response = await this.request('/workspaces/');
-    if (!response.ok) throw new Error('Failed to fetch workspaces');
+    if (!response.ok) throw new Error('Не вдалося отримати workspace');
     return response.json();
   }
 
@@ -19,7 +19,7 @@ class ApiClient extends BaseApiClient {
         error.name?.[0]
         || error.detail
         || Object.values(error).flat()[0]
-        || 'Failed to create workspace',
+        || 'Не вдалося створити workspace',
       );
     }
     return response.json();
@@ -36,7 +36,7 @@ class ApiClient extends BaseApiClient {
         error.name?.[0]
         || error.detail
         || Object.values(error).flat()[0]
-        || 'Failed to update workspace',
+        || 'Не вдалося оновити workspace',
       );
     }
     return response.json();
@@ -46,13 +46,13 @@ class ApiClient extends BaseApiClient {
     const response = await this.request(`/workspaces/${workspaceId}/`, {
       method: 'DELETE',
     });
-    if (!response.ok) throw new Error('Failed to delete workspace');
+    if (!response.ok) throw new Error('Не вдалося видалити workspace');
     return true;
   }
 
   async getWidgetTokens(workspaceId) {
     const response = await this.request(`/workspaces/${workspaceId}/widget-tokens/`);
-    if (!response.ok) throw new Error('Failed to fetch widget tokens');
+    if (!response.ok) throw new Error('Не вдалося отримати widget tokens');
     return response.json();
   }
 
@@ -66,7 +66,7 @@ class ApiClient extends BaseApiClient {
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || error.error || 'Failed to create widget token');
+      throw new Error(error.detail || error.error || 'Не вдалося створити widget token');
     }
     return response.json();
   }
@@ -76,13 +76,13 @@ class ApiClient extends BaseApiClient {
       `/workspaces/${workspaceId}/widget-tokens/${tokenId}/`,
       { method: 'DELETE' },
     );
-    if (!response.ok) throw new Error('Failed to delete widget token');
+    if (!response.ok) throw new Error('Не вдалося видалити widget token');
     return true;
   }
 
   async getWorkspaceDocuments(workspaceId) {
     const response = await this.request(`/workspaces/${workspaceId}/documents/`);
-    if (!response.ok) throw new Error('Failed to fetch documents');
+    if (!response.ok) throw new Error('Не вдалося отримати документи');
     return response.json();
   }
 
@@ -100,7 +100,7 @@ class ApiClient extends BaseApiClient {
       const message = error.file?.[0]
         || error.detail
         || error.error
-        || 'Failed to upload document';
+        || 'Не вдалося завантажити документ';
       throw new Error(message);
     }
 
@@ -112,7 +112,7 @@ class ApiClient extends BaseApiClient {
       `/workspaces/${workspaceId}/documents/${documentId}/`,
       { method: 'DELETE' },
     );
-    if (!response.ok) throw new Error('Failed to delete document');
+    if (!response.ok) throw new Error('Не вдалося видалити документ');
     return true;
   }
 
@@ -123,7 +123,7 @@ class ApiClient extends BaseApiClient {
     );
     if (!response.ok) {
       const error = await safeJson(response, {});
-      throw new Error(error.error || 'Failed to retry document');
+      throw new Error(error.error || 'Не вдалося повторити індексацію');
     }
     return response.json();
   }
@@ -132,7 +132,7 @@ class ApiClient extends BaseApiClient {
     const response = await this.request(`/workspaces/${workspaceId}/rag-stats/`);
     if (!response.ok) {
       const error = await safeJson(response, {});
-      throw new Error(error.error || error.detail || 'Failed to fetch RAG stats');
+      throw new Error(error.error || error.detail || 'Не вдалося отримати RAG-статистику');
     }
     return response.json();
   }
@@ -144,7 +144,7 @@ class ApiClient extends BaseApiClient {
     });
     if (!response.ok) {
       const error = await safeJson(response, {});
-      throw new Error(error.error || 'Failed to reindex documents');
+      throw new Error(error.error || 'Не вдалося переіндексувати документи');
     }
     return response.json();
   }
@@ -164,26 +164,26 @@ class ApiClient extends BaseApiClient {
     });
     if (!response.ok) {
       const error = await safeJson(response, {});
-      throw new Error(error.error || 'Failed to submit feedback');
+      throw new Error(error.error || 'Не вдалося надіслати відгук');
     }
     return response.json();
   }
 
   async getMyWorkspaces() {
     const response = await this.request('/workspaces/my/');
-    if (!response.ok) throw new Error('Failed to fetch workspaces');
+    if (!response.ok) throw new Error('Не вдалося отримати workspace');
     return response.json();
   }
 
   async getChats() {
     const response = await this.request('/chats/');
-    if (!response.ok) throw new Error('Failed to fetch chats');
+    if (!response.ok) throw new Error('Не вдалося отримати чати');
     return response.json();
   }
 
   async getChat(chatId) {
     const response = await this.request(`/chats/${chatId}/`);
-    if (!response.ok) throw new Error('Failed to fetch chat');
+    if (!response.ok) throw new Error('Не вдалося отримати чат');
     return response.json();
   }
 
@@ -194,7 +194,7 @@ class ApiClient extends BaseApiClient {
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Failed to create chat');
+      throw new Error(error.detail || 'Не вдалося створити чат');
     }
     return response.json();
   }
@@ -206,7 +206,7 @@ class ApiClient extends BaseApiClient {
     });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.detail || 'Failed to update chat');
+      throw new Error(error.detail || 'Не вдалося оновити чат');
     }
     return response.json();
   }
@@ -215,7 +215,7 @@ class ApiClient extends BaseApiClient {
     const response = await this.request(`/chats/${chatId}/`, {
       method: 'DELETE',
     });
-    if (!response.ok) throw new Error('Failed to delete chat');
+    if (!response.ok) throw new Error('Не вдалося видалити чат');
     return true;
   }
 
@@ -231,7 +231,7 @@ class ApiClient extends BaseApiClient {
     const response = await this.request('/ollama/models/');
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to fetch models');
+      throw new Error(error.error || 'Не вдалося отримати моделі');
     }
     return response.json();
   }
@@ -243,7 +243,7 @@ class ApiClient extends BaseApiClient {
     });
     if (!response.ok) {
       const error = await safeJson(response, {});
-      throw new Error(error.error || 'Failed to delete model');
+      throw new Error(error.error || 'Не вдалося видалити модель');
     }
     return safeJson(response, {});
   }
@@ -287,7 +287,7 @@ class ApiClient extends BaseApiClient {
       signal: controller.signal,
     }).then(async (response) => {
       if (!response.ok) {
-        let message = 'Failed to pull model';
+        let message = 'Не вдалося завантажити модель';
         try {
           const error = await response.json();
           message = error.error || message;
@@ -300,7 +300,7 @@ class ApiClient extends BaseApiClient {
       await this._consumeSSE(response, onProgress);
     }).catch((err) => {
       if (err.message !== 'Unauthorized') {
-        onProgress({ error: err.message || 'Failed to pull model' });
+        onProgress({ error: err.message || 'Не вдалося завантажити модель' });
       }
     });
 
@@ -311,7 +311,7 @@ class ApiClient extends BaseApiClient {
     const response = await this.request('/backups/');
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to fetch backups');
+      throw new Error(error.error || 'Не вдалося отримати резервні копії');
     }
     return response.json();
   }
@@ -320,7 +320,7 @@ class ApiClient extends BaseApiClient {
     const response = await this.request('/backups/', { method: 'POST' });
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to create backup');
+      throw new Error(error.error || 'Не вдалося створити резервну копію');
     }
     return response.json();
   }
@@ -332,7 +332,7 @@ class ApiClient extends BaseApiClient {
     );
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.error || 'Failed to delete backup');
+      throw new Error(error.error || 'Не вдалося видалити резервну копію');
     }
     return response.json();
   }
@@ -345,7 +345,7 @@ class ApiClient extends BaseApiClient {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to download backup');
+      throw new Error('Не вдалося завантажити резервну копію');
     }
 
     const blob = await response.blob();
@@ -369,7 +369,7 @@ class ApiClient extends BaseApiClient {
     const response = await this.request(`/chats/logs/?${params.toString()}`);
     if (!response.ok) {
       const error = await safeJson(response, {});
-      throw new Error(error.error || error.detail || 'Failed to fetch workspace chats');
+      throw new Error(error.error || error.detail || 'Не вдалося отримати логи чатів');
     }
     const data = await safeJson(response, {});
     // Підтримка старого формату (масив) і нового { results, count }.
@@ -390,7 +390,7 @@ class ApiClient extends BaseApiClient {
     });
     if (!response.ok) {
       const error = await safeJson(response, {});
-      throw new Error(error.error || error.detail || 'Failed to delete chat log');
+      throw new Error(error.error || error.detail || 'Не вдалося видалити чат log');
     }
     return safeJson(response, {});
   }
@@ -401,7 +401,7 @@ class ApiClient extends BaseApiClient {
     });
     if (!response.ok) {
       const error = await safeJson(response, {});
-      throw new Error(error.error || error.detail || 'Failed to clear chat logs');
+      throw new Error(error.error || error.detail || 'Не вдалося очистити логи чатів');
     }
     return safeJson(response, {});
   }
@@ -415,7 +415,7 @@ class ApiClient extends BaseApiClient {
 
     if (!response.ok) {
       const error = await safeJson(response, {});
-      throw new Error(error.error || error.detail || 'Failed to export chat logs');
+      throw new Error(error.error || error.detail || 'Не вдалося експортувати логи чатів');
     }
 
     const blob = await response.blob();

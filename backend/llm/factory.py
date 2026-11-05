@@ -20,7 +20,7 @@ def is_gemini_model(model_name):
     return base in settings.GEMINI_MODEL_NAMES
 
 
-def get_provider(provider_id, workspace=None):
+def _get_provider(provider_id, workspace=None):
     """Отримати провайдера за ідентифікатором."""
     if provider_id == Workspace.LLMProvider.GEMINI:
         return GeminiProvider(api_key=get_gemini_api_key(workspace))
@@ -37,7 +37,7 @@ def resolve_provider(workspace=None, model_name=''):
     3. Ollama — за замовчуванням
     """
     if workspace is not None:
-        return get_provider(workspace.llm_provider, workspace=workspace)
+        return _get_provider(workspace.llm_provider, workspace=workspace)
 
     if is_gemini_model(model_name):
         return GeminiProvider(api_key=get_gemini_api_key())

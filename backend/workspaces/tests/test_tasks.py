@@ -25,18 +25,28 @@ class ScheduleDocumentIngestTests(SimpleTestCase):
         callback()
         mock_thread_cls.assert_called_once()
         kwargs = mock_thread_cls.call_args.kwargs
-        self.assertEqual(kwargs['args'], (42,))
+        self.assertEqual(kwargs['args'], (42, '-'))
         self.assertTrue(kwargs['daemon'])
         mock_thread_cls.return_value.start.assert_called_once()
 
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True)
+    @patch('workspaces.rag.tasks._enqueue_thread')
+    @patch('workspaces.rag.tasks.transaction.on_commit')
+    def test_schedule_eager_uses_thread_not_sync(self, mock_on_commit, mock_thread):
+        """Eager Celery не блокує HTTP — daemon thread."""
+        schedule_document_ingest(7)
+        callback = mock_on_commit.call_args[0][0]
+        callback()
+        mock_thread.assert_called_once_with(7, request_id='-')
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=False)
     @patch('workspaces.rag.tasks.ingest_document_task.delay')
     @patch('workspaces.rag.tasks.transaction.on_commit')
     def test_schedule_uses_celery_when_available(self, mock_on_commit, mock_delay):
         schedule_document_ingest(7)
         callback = mock_on_commit.call_args[0][0]
         callback()
-        mock_delay.assert_called_once_with(7)
+        mock_delay.assert_called_once_with(7, request_id='-')
 
 
 class IngestDocumentByIdTests(SimpleTestCase):

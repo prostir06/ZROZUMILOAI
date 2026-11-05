@@ -62,3 +62,26 @@ class IngestWorkspaceDocumentTests(TestCase):
             DocumentChunk.objects.filter(document=self.document).count(),
             0,
         )
+
+    @patch('workspaces.rag.ingest.OllamaService')
+    @patch(
+        'workspaces.rag.ingest.extract_text_from_file',
+        return_value='Текст для embeddings.',
+    )
+    def test_ingest_marks_failed_when_embed_raises(self, _extract, mock_ollama_cls):
+        """Падіння Ollama embed → документ FAILED, без чанків."""
+        import requests
+
+        mock_ollama_cls.return_value.embed.side_effect = requests.RequestException(
+            'ollama down',
+        )
+        with self.assertRaises(requests.RequestException):
+            ingest_workspace_document(self.document)
+
+        self.document.refresh_from_db()
+        self.assertEqual(self.document.status, WorkspaceDocument.Status.FAILED)
+        self.assertIn('ollama down', self.document.error_message)
+        self.assertEqual(
+            DocumentChunk.objects.filter(document=self.document).count(),
+            0,
+        )

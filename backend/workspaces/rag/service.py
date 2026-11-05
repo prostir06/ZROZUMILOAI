@@ -1,35 +1,35 @@
 """
-Фасад RAG: реекспорт модулів ingest / search / fusion / format.
-
-Новий код імпортує з підмодулів; service лишається стабільним API.
+Фасад RAG: стабільний публічний API поверх підмодулів ingest / search / fusion.
 """
 import re
 from pathlib import Path
 
 from django.db.models import Count, Sum
 
-from ollama_proxy.services import OllamaService  # noqa: F401 — patches у тестах
-from .python_search import search_with_python  # noqa: F401
-from .text_extractor import extract_text_from_file  # noqa: F401
-from .vector_search import uses_pgvector  # noqa: F401
-
 from ..models import WorkspaceDocument
-from .format_context import (  # noqa: F401
-    chunk_relevance_score,
+from .format_context import (
     format_rag_context,
     sources_from_chunks,
 )
-from .fusion import RRF_K, reciprocal_rank_fusion  # noqa: F401
-from .ingest import _embed_texts_parallel, ingest_workspace_document  # noqa: F401
-from .search_context import (  # noqa: F401
-    cached_query_embedding,
+from .fusion import reciprocal_rank_fusion
+from .ingest import ingest_workspace_document
+from .search_context import (
     search_workspace_context,
     search_workspace_documents,
 )
 
-# Зворотна сумісність імен для тестів / старих імпортів.
-_cached_query_embedding = cached_query_embedding
-_chunk_relevance_score = chunk_relevance_score
+# Re-export для стабільного імпорту з tests / callers.
+__all__ = (
+    'extract_last_user_message',
+    'format_rag_context',
+    'ingest_workspace_document',
+    'reciprocal_rank_fusion',
+    'sanitize_filename',
+    'search_workspace_context',
+    'search_workspace_documents',
+    'sources_from_chunks',
+    'workspace_rag_stats',
+)
 
 
 def workspace_rag_stats(workspace):

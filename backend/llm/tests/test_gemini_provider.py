@@ -57,6 +57,23 @@ class GeminiProviderTests(SimpleTestCase):
         })
         self.assertEqual(text, 'Hello')
 
+    def test_require_gemini_text_raises_on_safety_block(self):
+        from llm.base import LLMProviderError
+        from llm.gemini_provider import require_gemini_text
+
+        with self.assertRaises(LLMProviderError):
+            require_gemini_text({
+                'candidates': [],
+                'promptFeedback': {'blockReason': 'SAFETY'},
+            })
+
+    def test_require_gemini_text_raises_on_empty(self):
+        from llm.base import LLMProviderError
+        from llm.gemini_provider import require_gemini_text
+
+        with self.assertRaises(LLMProviderError):
+            require_gemini_text({'candidates': []})
+
     def test_list_models_uses_settings(self):
         """list_models повертає моделі з налаштувань."""
         provider = GeminiProvider()

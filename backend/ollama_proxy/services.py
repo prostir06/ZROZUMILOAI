@@ -1,5 +1,6 @@
 """Клієнт HTTP API Ollama."""
 import logging
+import threading
 
 import requests
 from django.conf import settings
@@ -15,6 +16,19 @@ from .ollama_utils import (
 
 logger = logging.getLogger(__name__)
 
+_session_lock = threading.Lock()
+_shared_session = None
+
+
+def get_shared_ollama_session():
+    """Process-wide Session для keep-alive до Ollama."""
+    global _shared_session
+    if _shared_session is None:
+        with _session_lock:
+            if _shared_session is None:
+                _shared_session = requests.Session()
+    return _shared_session
+
 
 class OllamaService:
     """Обгортка над HTTP API Ollama з переіспользовуванням Session (P1)."""
@@ -22,7 +36,7 @@ class OllamaService:
     def __init__(self, base_url=None, session=None):
         # Базова URL без завершального слеша для коректної конкатенації шляхів.
         self.base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip('/')
-        self._session = session or requests.Session()
+        self._session = session or get_shared_ollama_session()
 
     def _request(self, method, path, **kwargs):
         """Виконати HTTP-запит до Ollama з логуванням помилок мережі."""

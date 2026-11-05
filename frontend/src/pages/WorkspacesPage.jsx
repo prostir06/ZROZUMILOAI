@@ -378,6 +378,7 @@ function WorkspacesPage() {
                 value={form.name}
                 onChange={handleNameChange}
                 required
+                maxLength={200}
                 placeholder="Напр. Команда підтримки"
               />
             </div>
@@ -389,6 +390,7 @@ function WorkspacesPage() {
                 value={form.system_prompt}
                 onChange={handlePromptChange}
                 rows={4}
+                maxLength={8000}
                 placeholder="Інструкції для моделі в цьому workspace..."
               />
             </div>

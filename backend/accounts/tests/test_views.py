@@ -138,3 +138,50 @@ class CurrentUserTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password('NewStrong1!'))
+
+
+class UserDetailGuardTests(APITestCase):
+    """Захист UserDetailView від self-demote / видалення останнього su."""
+
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username='admin_guard',
+            email='admin_guard@test.com',
+            password=STRONG_PASSWORD,
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def test_cannot_demote_self(self):
+        response = self.client.patch(
+            reverse('user_delete', kwargs={'user_id': self.admin.pk}),
+            {'is_staff': False},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_staff)
+
+    def test_cannot_delete_self(self):
+        response = self.client.delete(
+            reverse('user_delete', kwargs={'user_id': self.admin.pk}),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
+
+    def test_cannot_delete_last_superuser(self):
+        response = self.client.delete(
+            reverse('user_delete', kwargs={'user_id': self.admin.pk}),
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_can_delete_other_user_when_two_superusers(self):
+        other = User.objects.create_superuser(
+            username='other_su',
+            email='other_su@test.com',
+            password=STRONG_PASSWORD,
+        )
+        response = self.client.delete(
+            reverse('user_delete', kwargs={'user_id': other.pk}),
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(pk=other.pk).exists())

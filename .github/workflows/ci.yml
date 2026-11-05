@@ -27,6 +27,10 @@ jobs:
           else
             pip install -r requirements.txt
           fi
+      - name: License check (fail on GPL/AGPL)
+        run: |
+          pip install 'pip-licenses>=5.0,<6.0'
+          python -m piplicenses --from=mixed --fail-on='GNU General Public License v2 (GPLv2);GNU General Public License v3 (GPLv3);GNU Affero General Public License v3 (AGPLv3);AGPL;GPL'
       - name: Run tests
         env:
           USE_SQLITE: 'True'
@@ -99,6 +103,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: License check (fail on GPL/AGPL)
+        run: npx --yes license-checker --production --failOn 'GPL;AGPL;GPL-2.0;GPL-3.0;AGPL-3.0;GPL-2.0-only;GPL-3.0-only;AGPL-3.0-only'
       - name: Lint
         run: npm run lint
       - name: Test

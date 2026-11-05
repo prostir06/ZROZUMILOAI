@@ -114,9 +114,11 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Очікується список індексів')
         cleaned = []
         for item in value:
-            name = str(item).strip()
+            name = str(item).strip()[:100]
             if name:
                 cleaned.append(name)
+            if len(cleaned) >= 20:
+                break
         return cleaned
 
     def validate_embed_greeting(self, value):

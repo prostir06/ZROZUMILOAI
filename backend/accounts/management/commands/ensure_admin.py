@@ -24,11 +24,27 @@ class Command(BaseCommand):
         username = os.getenv('DJANGO_ADMIN_USERNAME', 'admin')
         password = os.getenv('DJANGO_ADMIN_PASSWORD', '')
         email = os.getenv('DJANGO_ADMIN_EMAIL', f'{username}@localhost')
+        insecure_passwords = {
+            'change-me-admin-password',
+            'change_me_strong_admin_password',
+            'admin',
+            'password',
+            'zrozumiloai',
+        }
 
         if not password:
             self.stdout.write(
                 self.style.WARNING(
                     'DJANGO_ADMIN_PASSWORD не задано — '
+                    'суперкористувач не створений.',
+                ),
+            )
+            return
+
+        if password.lower() in insecure_passwords:
+            self.stdout.write(
+                self.style.WARNING(
+                    'DJANGO_ADMIN_PASSWORD занадто слабкий/placeholder — '
                     'суперкористувач не створений.',
                 ),
             )

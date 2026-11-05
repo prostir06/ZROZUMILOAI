@@ -1,0 +1,31 @@
+ZrozumiloAI
+Copyright (c) 2026 ZrozumiloAI contributors
+
+This product includes software developed by third parties under the following
+licenses. The MIT License applies to ZrozumiloAI source code itself (see LICENSE).
+
+-------------------------------------------------------------------------------
+psycopg2 / psycopg2-binary
+License: LGPL-3.0 with linking exception
+Copyright: Daniele Varrazzo and contributors
+https://www.psycopg.org/
+
+-------------------------------------------------------------------------------
+psycogreen
+License: LGPL-3.0
+Copyright: Daniele Varrazzo
+https://github.com/psycopg/psycogreen
+
+-------------------------------------------------------------------------------
+caniuse-lite (build-time data used by Vite / browserslist; not shipped in the
+runtime application bundle)
+License: CC-BY-4.0
+Copyright: Alexis Deveria and contributors
+https://github.com/browserslist/caniuse-lite
+
+-------------------------------------------------------------------------------
+Runtime infrastructure images (not distributed as source of this repository):
+- PostgreSQL / pgvector — PostgreSQL License / MIT
+- Redis 7.2.x — BSD-3-Clause (pinned; Redis 7.4+ uses SSPL/RSAL)
+- Caddy — Apache-2.0
+- Ollama — MIT (model weights have separate licenses; see README)

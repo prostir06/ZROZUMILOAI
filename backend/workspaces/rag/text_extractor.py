@@ -55,6 +55,7 @@ def _extract_pdf(path):
     except ImportError as exc:
         raise ValueError('PDF не підтримується: встановіть pypdf') from exc
 
+    reader = None
     try:
         reader = PdfReader(str(path))
         parts = []
@@ -66,3 +67,11 @@ def _extract_pdf(path):
     except Exception as exc:
         logger.error('PDF extraction failed: %s', exc)
         raise ValueError(f'Не вдалося прочитати PDF: {exc}') from exc
+    finally:
+        if reader is not None:
+            try:
+                stream = getattr(reader, 'stream', None)
+                if stream is not None:
+                    stream.close()
+            except Exception:
+                pass

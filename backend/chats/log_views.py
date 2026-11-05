@@ -68,7 +68,9 @@ class WorkspaceChatLogDetailView(APIView):
 
     def patch(self, request, log_id):
         try:
-            log = WorkspaceChatLog.objects.get(pk=log_id)
+            log = WorkspaceChatLog.objects.select_related('workspace').get(
+                pk=log_id,
+            )
         except WorkspaceChatLog.DoesNotExist:
             return Response(
                 {'error': 'Запис не знайдено'},
@@ -115,7 +117,9 @@ class WorkspaceChatLogFeedbackView(APIView):
 
     def post(self, request, log_id):
         try:
-            log = WorkspaceChatLog.objects.get(pk=log_id)
+            log = WorkspaceChatLog.objects.select_related('workspace').get(
+                pk=log_id,
+            )
         except WorkspaceChatLog.DoesNotExist:
             return Response(
                 {'error': 'Запис не знайдено'},
@@ -125,8 +129,8 @@ class WorkspaceChatLogFeedbackView(APIView):
         if not request.user.is_staff:
             if log.user_id is None or log.user_id != request.user.pk:
                 return Response(
-                    {'error': 'Немає доступу до цього запису'},
-                    status=status.HTTP_403_FORBIDDEN,
+                    {'error': 'Запис не знайдено'},
+                    status=status.HTTP_404_NOT_FOUND,
                 )
 
         error = apply_feedback_fields(log, request.data)

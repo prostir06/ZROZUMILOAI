@@ -76,8 +76,18 @@ describe('getEmbedStatusText', () => {
     expect(getEmbedStatusText({}, { name: 'ws' }, 'llama3')).toBe('Модель: llama3');
   });
 
+  it('екранує HTML у model', () => {
+    expect(getEmbedStatusText({}, { name: 'ws' }, '<img src=x>')).toBe(
+      'Модель: &lt;img src=x&gt;',
+    );
+  });
+
   it('initError має пріоритет', () => {
     expect(getEmbedStatusText({}, null, '', 'Custom error')).toBe('Custom error');
+  });
+
+  it('екранує HTML у initError', () => {
+    expect(getEmbedStatusText({}, null, '', '<b>fail</b>')).toBe('&lt;b&gt;fail&lt;/b&gt;');
   });
 });
 

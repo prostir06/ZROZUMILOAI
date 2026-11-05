@@ -21,12 +21,14 @@ def get_allowed_model_names(user):
     return names
 
 
-def user_can_use_model(user, model_name):
-    """Перевірити, чи може користувач використовувати вказану модель."""
-    allowed = get_allowed_model_names(user)
-    if allowed is None:
-        return True
-    return model_name in allowed
+def get_workspace_or_404(workspace_id):
+    """Отримати Workspace за pk або NotFound (admin helpers)."""
+    from rest_framework.exceptions import NotFound
+
+    try:
+        return Workspace.objects.get(pk=int(workspace_id))
+    except (Workspace.DoesNotExist, TypeError, ValueError) as exc:
+        raise NotFound('Workspace не знайдено') from exc
 
 
 def get_user_workspaces(user):
@@ -42,7 +44,12 @@ def get_workspace_for_user(user, workspace_id):
         return None
 
     try:
-        workspace = Workspace.objects.get(pk=workspace_id)
+        workspace_pk = int(workspace_id)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError({'workspace_id': 'Workspace не знайдено'}) from exc
+
+    try:
+        workspace = Workspace.objects.get(pk=workspace_pk)
     except Workspace.DoesNotExist as exc:
         raise ValidationError({'workspace_id': 'Workspace не знайдено'}) from exc
 

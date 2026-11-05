@@ -21,7 +21,6 @@ from llm.ollama_provider import OllamaProvider
 from workspaces.services import (
     get_allowed_model_names,
     resolve_workspace_for_chat,
-    user_can_use_model,
 )
 
 from .services import OllamaService
@@ -79,16 +78,22 @@ class ModelPullView(APIView):
     permission_classes = (IsAdminUser,)
 
     def post(self, request):
-        name = request.data.get('name')
+        name = (request.data.get('name') or '').strip()
         if not name:
             return Response(
                 {'error': 'Параметр name обов\'язковий'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(name) > 200:
+            return Response(
+                {'error': 'Некоректне ім\'я моделі'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         service = OllamaService()
 
         def event_stream():
+            response = None
             try:
                 response = service.pull_model(name)
                 for line in response.iter_lines():
@@ -98,6 +103,12 @@ class ModelPullView(APIView):
             except requests.RequestException as exc:
                 payload = json.dumps({'error': str(exc)})
                 yield f'data: {payload}\n\n'
+            finally:
+                if response is not None:
+                    try:
+                        response.close()
+                    except Exception:
+                        pass
 
         from django.http import StreamingHttpResponse
         return StreamingHttpResponse(
@@ -112,10 +123,15 @@ class ModelDeleteView(APIView):
     permission_classes = (IsAdminUser,)
 
     def delete(self, request):
-        name = request.data.get('name')
+        name = (request.data.get('name') or '').strip()
         if not name:
             return Response(
                 {'error': 'Параметр name обов\'язковий'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(name) > 200:
+            return Response(
+                {'error': 'Некоректне ім\'я моделі'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -148,6 +164,11 @@ class ChatView(APIView):
                 {'error': 'Параметр model обов\'язковий'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if len(model) > 200:
+            return Response(
+                {'error': 'Некоректне ім\'я моделі'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         try:
             validate_chat_messages(messages)
@@ -157,12 +178,7 @@ class ChatView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if not user_can_use_model(request.user, model):
-            return Response(
-                {'error': 'Модель недоступна для вашого workspace'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
+        # ACL моделі перевіряє resolve_workspace_for_chat (без зайвого M2M).
         try:
             workspace = resolve_workspace_for_chat(
                 request.user,
@@ -180,6 +196,17 @@ class ChatView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        # Workspace course scope має пріоритет над клієнтським override.
+        locked_course = (
+            (workspace.meilisearch_course_id or '').strip() if workspace else ''
+        )
+        if locked_course:
+            course_id = locked_course
+        else:
+            course_id = (
+                (request.data.get('openedx_course_id') or '').strip() or None
+            )
+
         return run_chat(
             model=model,
             messages=messages,
@@ -187,5 +214,5 @@ class ChatView(APIView):
             workspace=workspace,
             user=request.user,
             prompt=extract_prompt_from_messages(messages),
-            meilisearch_course_id=request.data.get('openedx_course_id'),
+            meilisearch_course_id=course_id,
         )

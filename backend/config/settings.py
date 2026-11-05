@@ -96,7 +96,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.getenv('POSTGRES_DB', 'zrozumiloai'),
         'USER': os.getenv('POSTGRES_USER', 'zrozumiloai'),
-        'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'zrozumiloai'),
+        'PASSWORD': os.getenv('POSTGRES_PASSWORD', ''),
         'HOST': os.getenv('POSTGRES_HOST', 'db'),
         'PORT': os.getenv('POSTGRES_PORT', '5432'),
     }
@@ -247,6 +247,9 @@ if REDIS_URL:
             'LOCATION': REDIS_URL,
             'OPTIONS': {
                 'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+                'SOCKET_CONNECT_TIMEOUT': 2,
+                'SOCKET_TIMEOUT': 3,
+                'RETRY_ON_TIMEOUT': True,
             },
         },
     }
@@ -270,6 +273,11 @@ CELERY_TASK_ALWAYS_EAGER = os.getenv(
 ).lower() in ('true', '1', 'yes')
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'visibility_timeout': int(os.getenv('CELERY_VISIBILITY_TIMEOUT', '7200')),
+}
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -287,6 +295,8 @@ RAG_EMBED_CONCURRENCY = int(os.getenv('RAG_EMBED_CONCURRENCY', '4'))
 # Кеш embeddings для пошукового запиту (секунди).
 RAG_QUERY_EMBED_CACHE_TTL = int(os.getenv('RAG_QUERY_EMBED_CACHE_TTL', '300'))
 
+_LOG_FORMAT = os.getenv('DJANGO_LOG_FORMAT', 'json').strip().lower()
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -303,11 +313,14 @@ LOGGING = {
             ),
             'style': '{',
         },
+        'json': {
+            '()': 'config.middleware.JsonLogFormatter',
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'verbose',
+            'formatter': 'json' if _LOG_FORMAT == 'json' else 'verbose',
             'filters': ['request_id'],
         },
     },
@@ -331,6 +344,16 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'urllib3': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'accounts': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }
 
@@ -341,8 +364,11 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_REFERRER_POLICY = 'same-origin'
-    # Увімкніть редірект лише за reverse-proxy з TLS:
-    # SECURE_SSL_REDIRECT = os.getenv('SECURE_SSL_REDIRECT', 'False').lower() in (...)
+    # SECURE_SSL_REDIRECT — лише за reverse-proxy з TLS (Caddy/nginx).
+    SECURE_SSL_REDIRECT = os.getenv(
+        'SECURE_SSL_REDIRECT',
+        'False',
+    ).lower() in ('true', '1', 'yes')
     _hsts = os.getenv('SECURE_HSTS_SECONDS', '0')
     try:
         SECURE_HSTS_SECONDS = int(_hsts)

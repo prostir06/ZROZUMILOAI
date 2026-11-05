@@ -2,7 +2,6 @@
 import logging
 
 from rest_framework import status
-from rest_framework.exceptions import NotFound
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
@@ -12,9 +11,10 @@ from .document_serializers import (
     WorkspaceDocumentSerializer,
     WorkspaceDocumentUploadSerializer,
 )
-from .models import Workspace, WorkspaceDocument
+from .models import WorkspaceDocument
 from .rag.service import sanitize_filename, workspace_rag_stats
 from .rag.tasks import schedule_document_ingest
+from .services import get_workspace_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -98,10 +98,7 @@ class WorkspaceDocumentListCreateView(APIView):
         )
 
     def _get_workspace(self, workspace_id):
-        try:
-            return Workspace.objects.get(pk=workspace_id)
-        except Workspace.DoesNotExist as exc:
-            raise NotFound('Workspace не знайдено') from exc
+        return get_workspace_or_404(workspace_id)
 
 
 class WorkspaceDocumentDeleteView(APIView):
@@ -163,6 +160,12 @@ class WorkspaceDocumentRetryView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if document.status == WorkspaceDocument.Status.PROCESSING:
+            return Response(
+                {'error': 'Документ вже обробляється'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             document.status = WorkspaceDocument.Status.PROCESSING
             document.error_message = ''
@@ -185,13 +188,7 @@ class WorkspaceRagStatsView(APIView):
     permission_classes = (IsAdminUser,)
 
     def get(self, request, workspace_id):
-        try:
-            workspace = Workspace.objects.get(pk=workspace_id)
-        except Workspace.DoesNotExist:
-            return Response(
-                {'error': 'Workspace не знайдено'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        workspace = get_workspace_or_404(workspace_id)
         try:
             return Response(workspace_rag_stats(workspace))
         except Exception as exc:
@@ -203,20 +200,21 @@ class WorkspaceRagStatsView(APIView):
 
     def post(self, request, workspace_id):
         """Поставити всі failed документи у чергу повторно (по одному, fail-isolated)."""
-        try:
-            workspace = Workspace.objects.get(pk=workspace_id)
-        except Workspace.DoesNotExist:
-            return Response(
-                {'error': 'Workspace не знайдено'},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        workspace = get_workspace_or_404(workspace_id)
 
-        failed = list(
-            workspace.documents.filter(status=WorkspaceDocument.Status.FAILED),
+        failed_ids = list(
+            workspace.documents.filter(
+                status=WorkspaceDocument.Status.FAILED,
+            ).values_list('pk', flat=True),
         )
+
         queued = []
-        for document in failed:
+        for document_id in failed_ids:
             try:
+                document = workspace.documents.get(pk=document_id)
+                # Не чіпати вже PROCESSING (паралельний retry).
+                if document.status != WorkspaceDocument.Status.FAILED:
+                    continue
                 document.status = WorkspaceDocument.Status.PROCESSING
                 document.error_message = ''
                 document.save(
@@ -227,7 +225,7 @@ class WorkspaceRagStatsView(APIView):
             except Exception as exc:
                 logger.exception(
                     'Reindex skipped for document %s: %s',
-                    document.pk,
+                    document_id,
                     exc,
                 )
 

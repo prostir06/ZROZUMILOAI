@@ -47,6 +47,10 @@ class ApplyFeedbackFieldsTests(SimpleTestCase):
         response = apply_feedback_fields(self.log, {'needs_handoff': 'maybe'})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_rejects_needs_handoff_list(self):
+        response = apply_feedback_fields(self.log, {'needs_handoff': [False]})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 class SaveLogFeedbackTests(SimpleTestCase):
     """Збереження feedback з обробкою помилок БД."""
