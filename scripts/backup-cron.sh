@@ -5,7 +5,7 @@
 #   crontab -e
 #   15 2 * * * cd /opt/zrozumiloai && ./scripts/backup-cron.sh >> /var/log/zrozumiloai-backup.log 2>&1
 #
-# After success: copy ./backup/*.sql (or newest file) off-box (rsync/S3).
+# After success: copy ./backup/*.tar.gz (or newest file) off-box (rsync/S3).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,7 +20,7 @@ echo "[$(date -Iseconds)] created: ${FILENAME}"
 
 # Prune local files older than KEEP_DAYS (off-box copies are the source of truth).
 if [[ -d ./backup ]]; then
-  find ./backup -type f \( -name '*.sql' -o -name '*.sqlite3' -o -name '*.db' \) -mtime "+${KEEP_DAYS}" -print -delete || true
+  find ./backup -type f \( -name '*.tar.gz' -o -name '*.sql' -o -name '*.sqlite3' -o -name '*.db' \) -mtime "+${KEEP_DAYS}" -print -delete || true
 fi
 
 echo "[$(date -Iseconds)] backup done"
