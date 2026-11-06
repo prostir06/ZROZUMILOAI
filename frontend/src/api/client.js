@@ -357,6 +357,38 @@ class ApiClient extends BaseApiClient {
     window.URL.revokeObjectURL(url);
   }
 
+  async getWorkspaceAnalytics(workspaceId, { range = '30d' } = {}) {
+    const response = await this.request(
+      `/workspaces/${workspaceId}/analytics/?range=${encodeURIComponent(range)}`,
+    );
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.detail || error.error || 'Не вдалося отримати аналітику');
+    }
+    return response.json();
+  }
+
+  async exportWorkspaceAnalyticsCsv(workspaceId, { range = '30d' } = {}) {
+    const response = await this.request(
+      `/workspaces/${workspaceId}/analytics/export/?range=${encodeURIComponent(range)}`,
+    );
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.detail || error.error || 'Не вдалося експортувати аналітику');
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    const filename = match?.[1] || `workspace_${workspaceId}_analytics_${range}.csv`;
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  }
+
   async getWorkspaceChatLogs({ needsHandoff, feedback, limit = 50, offset = 0 } = {}) {
     const params = new URLSearchParams();
     params.set('limit', String(limit));

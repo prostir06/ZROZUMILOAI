@@ -1,0 +1,125 @@
+/* Analytics Dashboard Styles */
+
+.analytics-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: 100%;
+}
+
+/* KPI Grid */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+  width: 100%;
+}
+
+/* KPI Metric Card */
+.kpi-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.25rem;
+  border-radius: var(--radius-lg, 16px);
+  background: var(--color-surface, rgba(255, 255, 255, 0.55));
+  backdrop-filter: var(--glass-blur, blur(18px));
+  -webkit-backdrop-filter: var(--glass-blur, blur(18px));
+  border: 1px solid var(--color-border-subtle, rgba(13, 158, 150, 0.14));
+  box-shadow: var(--shadow-soft, 0 2px 16px rgba(20, 80, 75, 0.06));
+  transition: transform var(--transition, 0.2s ease), box-shadow var(--transition, 0.2s ease), border-color var(--transition, 0.2s ease);
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow, 0 8px 32px rgba(26, 203, 195, 0.1));
+  border-color: color-mix(in srgb, var(--color-primary, #0D9E96) 25%, transparent);
+}
+
+/* Header */
+.kpi-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.kpi-card__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #5E7A78);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.kpi-card__icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+/* Metric Value */
+.kpi-card__value {
+  font-size: 2.25rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-text, #1C3D3A);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.75rem;
+}
+
+/* Footer & Subtitles */
+.kpi-card__footer {
+  display: flex;
+  align-items: center;
+  min-height: 1.75rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #5E7A78);
+}
+
+.kpi-card__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.kpi-card__meta-count {
+  font-weight: 600;
+  color: var(--color-text, #1C3D3A);
+}
+
+/* Badges */
+.kpi-card__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  background: var(--color-primary-soft, rgba(26, 203, 195, 0.14));
+  color: var(--color-primary, #0D9E96);
+  font-weight: 500;
+}
+
+.kpi-card__badge-count {
+  font-weight: 700;
+}
+
+.kpi-card__badge--success {
+  background: rgba(22, 163, 74, 0.12);
+  color: var(--color-success, #16a34a);
+}
+
+.kpi-card__badge--danger {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--color-danger, #ef4444);
+}
+
+.kpi-card__breakdown {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Loading Skeleton state */
+.kpi-grid--loading .kpi-card {
+  opacity: 0.7;
+}

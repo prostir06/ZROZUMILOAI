@@ -10,6 +10,7 @@ import { applyThemeVars, loadThemeState, resolveThemeVars } from './themes/prese
 import './styles/index.css';
 import './styles/chat.css';
 import './styles/markdown.css';
+import './styles/analytics.css';
 
 applyThemeVars(resolveThemeVars(loadThemeState()));
 
