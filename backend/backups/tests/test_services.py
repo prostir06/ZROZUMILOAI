@@ -237,6 +237,299 @@ class BackupServiceTests(TestCase):
         self.assertTrue(path.exists())
         self.assertEqual(path.name, info['filename'])
 
+    def test_restore_archive_restores_database_and_media(self):
+        """Відновлення з .tar.gz відновлює і базу, і медіа-файли."""
+        tmp_path = Path(self.temp_dir)
+        media_dir = tmp_path / 'media'
+        target_doc = media_dir / 'workspace_documents' / '1' / 'doc.txt'
+        target_doc.parent.mkdir(parents=True)
+        target_doc.write_text('Original text', encoding='utf-8')
+
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        test_db = tmp_path / 'test.sqlite3'
+        test_db.write_bytes(b'sqlite format 3\x00')
+
+        with override_settings(
+            MEDIA_ROOT=str(media_dir),
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(test_db)}},
+        ):
+            backup_info = service.create_backup(include_media=True)
+
+            # Simulate media deletion
+            target_doc.unlink()
+            self.assertFalse(target_doc.exists())
+
+            # Restore
+            result = service.restore_backup(backup_info['filename'])
+            self.assertTrue(target_doc.exists())
+            self.assertEqual(target_doc.read_text(encoding='utf-8'), 'Original text')
+            self.assertEqual(result['filename'], backup_info['filename'])
+
+    def test_restore_backup_legacy_sqlite(self):
+        """Зворотна сумісність: restore_backup успішно відновлює legacy .sqlite3 файл."""
+        tmp_path = Path(self.temp_dir)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        legacy_dump = backup_dir / 'backup_test_legacy.sqlite3'
+        legacy_dump.write_bytes(b'legacy sqlite content')
+
+        target_db = tmp_path / 'active.sqlite3'
+        target_db.write_bytes(b'active sqlite content')
+
+        with override_settings(
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(target_db)}},
+        ):
+            info = service.restore_backup(legacy_dump.name)
+            self.assertEqual(info['filename'], legacy_dump.name)
+            self.assertEqual(target_db.read_bytes(), b'legacy sqlite content')
+
+    @override_settings(
+        DATABASES={
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': 'test_pg',
+                'USER': 'safe_user',
+            },
+        },
+    )
+    def test_restore_backup_legacy_sql_postgresql(self):
+        """Зворотна сумісність: restore_backup успішно відновлює legacy .sql файл."""
+        tmp_path = Path(self.temp_dir)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        legacy_dump = backup_dir / 'backup_test_legacy.sql'
+        legacy_dump.write_text('-- legacy pg dump\n', encoding='utf-8')
+
+        with patch.object(service, '_run_psql') as mock_psql:
+            info = service.restore_backup(legacy_dump.name)
+            self.assertEqual(info['filename'], legacy_dump.name)
+            mock_psql.assert_called_once()
+
+    @override_settings(
+        DATABASES={
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': 'test_pg',
+                'USER': 'safe_user',
+            },
+        },
+    )
+    def test_restore_archive_postgresql(self):
+        """restore_backup розпаковує dump.sql з .tar.gz та виконує restore PostgreSQL."""
+        import io
+        import tarfile
+
+        tmp_path = Path(self.temp_dir)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        archive_path = backup_dir / 'backup_test_archive.tar.gz'
+        with tarfile.open(archive_path, 'w:gz') as tar:
+            dump_bytes = b'-- postgresql dump in archive\n'
+            dump_info = tarfile.TarInfo(name='dump.sql')
+            dump_info.size = len(dump_bytes)
+            tar.addfile(dump_info, io.BytesIO(dump_bytes))
+
+            manifest = b'{"version":"1.0","format":"tar.gz","engine":"postgresql","dump_file":"dump.sql","has_media":false}'
+            m_info = tarfile.TarInfo(name='manifest.json')
+            m_info.size = len(manifest)
+            tar.addfile(m_info, io.BytesIO(manifest))
+
+        with patch.object(service, '_run_psql') as mock_psql:
+            info = service.restore_backup(archive_path.name)
+            self.assertEqual(info['filename'], archive_path.name)
+            mock_psql.assert_called_once()
+
+    def test_restore_archive_path_traversal_prevention(self):
+        """Розпакування блокує спроби path traversal (..) у членах архіву."""
+        import io
+        import tarfile
+
+        tmp_path = Path(self.temp_dir)
+        media_dir = tmp_path / 'media'
+        media_dir.mkdir(parents=True)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        malicious_archive = backup_dir / 'backup_malicious.tar.gz'
+        outside_file = tmp_path / 'outside_target.txt'
+
+        with tarfile.open(malicious_archive, 'w:gz') as tar:
+            dump_bytes = b'sqlite format 3\x00'
+            dump_info = tarfile.TarInfo(name='dump.sqlite3')
+            dump_info.size = len(dump_bytes)
+            tar.addfile(dump_info, io.BytesIO(dump_bytes))
+
+            evil_bytes = b'malicious content'
+            evil_info = tarfile.TarInfo(name='media/../../outside_target.txt')
+            evil_info.size = len(evil_bytes)
+            tar.addfile(evil_info, io.BytesIO(evil_bytes))
+
+        with override_settings(MEDIA_ROOT=str(media_dir)):
+            with self.assertRaises(ValueError) as ctx:
+                service.restore_backup(malicious_archive.name)
+            self.assertIn('Небезпечний шлях', str(ctx.exception))
+            self.assertFalse(outside_file.exists())
+
+    def test_restore_archive_rejects_symlinks(self):
+        """Розпакування блокує члени архіву, які є символьними або жорсткими посиланнями."""
+        import io
+        import tarfile
+
+        tmp_path = Path(self.temp_dir)
+        media_dir = tmp_path / 'media'
+        media_dir.mkdir(parents=True)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        archive_path = backup_dir / 'backup_symlink.tar.gz'
+        with tarfile.open(archive_path, 'w:gz') as tar:
+            dump_bytes = b'sqlite format 3\x00'
+            dump_info = tarfile.TarInfo(name='dump.sqlite3')
+            dump_info.size = len(dump_bytes)
+            tar.addfile(dump_info, io.BytesIO(dump_bytes))
+
+            sym_info = tarfile.TarInfo(name='media/workspace_documents/link.txt')
+            sym_info.type = tarfile.SYMTYPE
+            sym_info.linkname = '/etc/passwd'
+            tar.addfile(sym_info)
+
+        with override_settings(MEDIA_ROOT=str(media_dir)):
+            with self.assertRaises(ValueError) as ctx:
+                service.restore_backup(archive_path.name)
+            self.assertIn('Небезпечний тип', str(ctx.exception))
+
+    def test_restore_archive_cleans_up_temp_dir(self):
+        """Тимчасова робоча тека розпакування видаляється навіть у разі збою."""
+        tmp_path = Path(self.temp_dir)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        test_db = tmp_path / 'test.sqlite3'
+        test_db.write_bytes(b'sqlite format 3\x00')
+
+        with override_settings(
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(test_db)}},
+        ):
+            backup_info = service.create_backup(include_media=True)
+
+            with patch.object(service, '_restore_sqlite', side_effect=RuntimeError('Restore error')):
+                with self.assertRaises(RuntimeError):
+                    service.restore_backup(backup_info['filename'])
+
+            # Перевіряємо відсутність залишкових тимчасових тек .tmp_restore_
+            tmp_restore_dirs = [p for p in backup_dir.glob('.tmp_restore_*')]
+            self.assertEqual(tmp_restore_dirs, [])
+
+    def test_restore_latest_backup_selects_and_restores_tar_gz(self):
+        """restore_latest_backup() успішно знаходить та відновлює найновіший .tar.gz архів."""
+        tmp_path = Path(self.temp_dir)
+        media_dir = tmp_path / 'media'
+        target_doc = media_dir / 'workspace_documents' / '1' / 'doc.txt'
+        target_doc.parent.mkdir(parents=True)
+        target_doc.write_text('Restored via latest', encoding='utf-8')
+
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        test_db = tmp_path / 'test.sqlite3'
+        test_db.write_bytes(b'sqlite format 3\x00')
+
+        with override_settings(
+            MEDIA_ROOT=str(media_dir),
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(test_db)}},
+        ):
+            backup_info = service.create_backup(include_media=True)
+            target_doc.unlink()
+
+            res = service.restore_latest_backup()
+            self.assertIsNotNone(res)
+            self.assertEqual(res['filename'], backup_info['filename'])
+            self.assertTrue(target_doc.exists())
+            self.assertEqual(target_doc.read_text(encoding='utf-8'), 'Restored via latest')
+
+    def test_restore_latest_backup_returns_none_when_empty(self):
+        """restore_latest_backup() повертає None, якщо сумісних бекапів немає."""
+        backup_dir = Path(self.temp_dir) / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+        self.assertIsNone(service.restore_latest_backup())
+
+    def test_find_latest_backup_filters_by_engine(self):
+        """find_latest_backup знаходить тільки бекапи, сумісні з поточним DB engine."""
+        import io
+        import tarfile
+
+        tmp_path = Path(self.temp_dir)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        # Створюємо PG архів
+        pg_archive = backup_dir / 'backup_pg_20260101_120000.tar.gz'
+        with tarfile.open(pg_archive, 'w:gz') as tar:
+            m_bytes = b'{"version":"1.0","format":"tar.gz","engine":"postgresql","dump_file":"dump.sql"}'
+            m_info = tarfile.TarInfo(name='manifest.json')
+            m_info.size = len(m_bytes)
+            tar.addfile(m_info, io.BytesIO(m_bytes))
+            d_bytes = b'-- pg dump'
+            d_info = tarfile.TarInfo(name='dump.sql')
+            d_info.size = len(d_bytes)
+            tar.addfile(d_info, io.BytesIO(d_bytes))
+
+        # Створюємо legacy PG .sql
+        pg_sql = backup_dir / 'backup_pg_20260101_130000.sql'
+        pg_sql.write_text('-- pg sql', encoding='utf-8')
+
+        # За замовчуванням у тестах рушій SQLite
+        latest_sqlite = service.find_latest_backup()
+        self.assertIsNone(latest_sqlite)
+
+        # Додаємо SQLite архів
+        sqlite_archive = backup_dir / 'backup_sqlite_20260101_140000.tar.gz'
+        with tarfile.open(sqlite_archive, 'w:gz') as tar:
+            m_bytes = b'{"version":"1.0","format":"tar.gz","engine":"sqlite","dump_file":"dump.sqlite3"}'
+            m_info = tarfile.TarInfo(name='manifest.json')
+            m_info.size = len(m_bytes)
+            tar.addfile(m_info, io.BytesIO(m_bytes))
+            d_bytes = b'sqlite format 3\x00'
+            d_info = tarfile.TarInfo(name='dump.sqlite3')
+            d_info.size = len(d_bytes)
+            tar.addfile(d_info, io.BytesIO(d_bytes))
+
+        latest_sqlite = service.find_latest_backup()
+        self.assertIsNotNone(latest_sqlite)
+        self.assertEqual(latest_sqlite.name, sqlite_archive.name)
+
+    def test_file_info_reads_manifest_once(self):
+        """_file_info зчитує маніфест лише один раз, не відкриваючи архів двічі."""
+        tmp_path = Path(self.temp_dir)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        test_db = tmp_path / 'test.sqlite3'
+        test_db.write_bytes(b'sqlite format 3\x00')
+
+        with override_settings(
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(test_db)}},
+        ):
+            backup_info = service.create_backup(include_media=False)
+            archive_path = backup_dir / backup_info['filename']
+
+            # Якщо це .tar.gz (або створюємо явний .tar.gz)
+            if not archive_path.name.endswith('.tar.gz'):
+                info = service.create_backup(include_media=True)
+                archive_path = backup_dir / info['filename']
+
+            with patch.object(service, '_read_manifest', wraps=service._read_manifest) as mock_manifest:
+                service._file_info(archive_path)
+                # _read_manifest має викликатися щонайбільше 1 раз
+                self.assertEqual(mock_manifest.call_count, 1)
+
+
+
 
 
 
