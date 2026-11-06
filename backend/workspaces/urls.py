@@ -1,7 +1,10 @@
 """URL routes for workspaces app."""
 from django.urls import path
 
-from chats.analytics_views import WorkspaceAnalyticsView
+from chats.analytics_views import (
+    WorkspaceAnalyticsExportView,
+    WorkspaceAnalyticsView,
+)
 from .views import MyWorkspacesView, WorkspaceDetailView, WorkspaceListCreateView
 from .document_views import (
     WorkspaceDocumentDeleteView,
@@ -53,5 +56,10 @@ urlpatterns = [
         '<int:workspace_id>/analytics/',
         WorkspaceAnalyticsView.as_view(),
         name='workspace_analytics',
+    ),
+    path(
+        '<int:workspace_id>/analytics/export/',
+        WorkspaceAnalyticsExportView.as_view(),
+        name='workspace_analytics_export',
     ),
 ]
