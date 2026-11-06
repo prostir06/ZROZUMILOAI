@@ -1,6 +1,14 @@
 # Локально: :80 (HTTP). Продакшен: chat.example.com (авто HTTPS).
+#
+# Rate-limit плагін не входить у stock caddy:2-alpine — захист чату/віджета
+# через DRF throttle (WIDGET_CHAT_RATE / USER_CHAT_RATE у prod overlay).
 {$CADDY_SITE_ADDRESS::80} {
 	encode gzip zstd
+
+	# Обмеження тіла запиту (чат + типовий upload документів ≤10MB з запасом).
+	request_body {
+		max_size 12MB
+	}
 
 	header {
 		X-Content-Type-Options nosniff
@@ -12,6 +20,26 @@
 	}
 
 	root * /srv
+
+	handle /api/widget/* {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+			transport http {
+				read_timeout 600s
+				write_timeout 600s
+			}
+		}
+	}
+
+	handle /api/ollama/chat/* {
+		reverse_proxy backend:8000 {
+			flush_interval -1
+			transport http {
+				read_timeout 600s
+				write_timeout 600s
+			}
+		}
+	}
 
 	handle /api/* {
 		reverse_proxy backend:8000 {

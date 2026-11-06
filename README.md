@@ -56,8 +56,16 @@ docker compose up --build -d
 1. Скопіюйте `.env.example` → `.env` і задайте унікальні `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, паролі БД, `GEMINI_API_KEY`.
 2. Не комітьте `.env`, реальні widget tokens, backup з продакшен-даними. Якщо token потрапив у git — revoke у Workspaces і створіть новий.
 3. `docker-compose.yml` вимагає `DJANGO_SECRET_KEY` і `POSTGRES_PASSWORD` з `.env` (без слабких fallback). При `DJANGO_DEBUG=False` placeholder-секрети **відхиляються**.
-4. Для продакшену використовуйте `docker compose -f docker-compose.yml -f docker-compose.prod.yml`.
+4. Для продакшену використовуйте `docker compose -f docker-compose.yml -f docker-compose.prod.yml` (resource limits, жорсткіші concurrency defaults).
 5. Workspace API keys (Gemini / Meilisearch) шифруються at rest (`FIELD_ENCRYPTION_KEY`).
+
+### Продакшен (один VPS)
+
+- Мінімум: **16 GB RAM**, 4+ vCPU (Ollama + панель на одному хості).
+- Overlay: `docker-compose.prod.yml` — `mem_limit`/`cpus`, `OLLAMA_NUM_PARALLEL=1`, Gunicorn/Celery caps, Redis password.
+- Remote LLM пізніше: лише `OLLAMA_BASE_URL` у `.env`.
+- Ops: [docs/ops/vps-runbook.md](docs/ops/vps-runbook.md) (deploy, backup cron, restore drill, overload).
+- Observability: `/api/health/` + JSON logs + зовнішній uptime ping (**без** Prometheus на цьому VPS).
 
 Завантажте модель:
 
