@@ -64,6 +64,10 @@ class WorkspaceChatLog(models.Model):
         ordering = ('-created_at',)
         verbose_name = 'Workspace chat log'
         verbose_name_plural = 'Workspace chat logs'
+        indexes = [
+            models.Index(fields=['workspace', 'created_at']),
+            models.Index(fields=['workspace', 'needs_handoff']),
+        ]
 
     def __str__(self):
         return f'{self.sent_by} @ {self.workspace.name}'
