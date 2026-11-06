@@ -69,6 +69,9 @@ export function useChatScroll(options = {}, maybeEndRef) {
     ? messagesCount
     : (Array.isArray(messagesCount) ? messagesCount.length : 0);
 
+  const messagesCountRef = useRef(normalizedCount);
+  messagesCountRef.current = normalizedCount;
+
   const checkScrollPosition = useCallback(() => {
     const container = containerRef?.current;
     if (!container) {
@@ -76,8 +79,8 @@ export function useChatScroll(options = {}, maybeEndRef) {
     }
     const atBottom = isNearBottom(container, threshold);
     isAtBottomRef.current = atBottom;
-    setShowScrollButton(!atBottom && normalizedCount > 0);
-  }, [containerRef, threshold, normalizedCount]);
+    setShowScrollButton(!atBottom && messagesCountRef.current > 0);
+  }, [containerRef, threshold]);
 
   const scrollToBottom = useCallback((behavior = 'smooth') => {
     if (endRef?.current?.scrollIntoView) {

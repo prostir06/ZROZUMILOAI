@@ -1155,6 +1155,128 @@ textarea {
   outline-offset: 2px;
 }
 
+.chat-message-row--user {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  align-self: flex-end;
+  max-width: 85%;
+}
+
+.chat-message__avatar--user {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--chat-user-start) 0%, var(--chat-user-end) 100%);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.75rem;
+  user-select: none;
+}
+
+.chat-citations {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--color-border-subtle);
+}
+
+.chat-citations__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.chat-citation {
+  font-size: 0.8125rem;
+}
+
+.chat-citation__summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.chat-citation__summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-citation__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm, 6px);
+  background: rgba(13, 158, 150, 0.08);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  transition: all var(--transition, 0.15s ease);
+}
+
+.chat-citation[open] .chat-citation__badge,
+.chat-citation__badge:hover {
+  background: rgba(13, 158, 150, 0.16);
+}
+
+.chat-citation__name {
+  font-weight: 500;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-citation__score {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.3rem;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.chat-citation__content {
+  margin-top: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.03);
+  border-left: 2px solid var(--color-primary);
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.chat-citation__content p {
+  margin: 0;
+}
+
+.chat-model-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.chat-model-selector__provider-badge {
+  text-transform: uppercase;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+}
+
+.chat-input__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  align-self: flex-end;
+}
+
+.chat-input__send-icon {
+  flex-shrink: 0;
+}
+
 .chat-input {
   display: flex;
   gap: 0.75rem;

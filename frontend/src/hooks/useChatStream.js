@@ -94,7 +94,11 @@ export function useChatStream(initialCallbacks = {}) {
         const pendingText = streamPendingRef.current;
         streamPendingRef.current = '';
         if (pendingText && onChunk) {
-          onChunk(pendingText);
+          try {
+            onChunk(pendingText);
+          } catch (cbErr) {
+            console.error('Error in onChunk callback during immediate flush:', cbErr);
+          }
         }
         return;
       }
@@ -103,7 +107,11 @@ export function useChatStream(initialCallbacks = {}) {
         const pendingText = streamPendingRef.current;
         streamPendingRef.current = '';
         if (pendingText && onChunk) {
-          onChunk(pendingText);
+          try {
+            onChunk(pendingText);
+          } catch (cbErr) {
+            console.error('Error in onChunk callback during rAF:', cbErr);
+          }
         }
       });
     };
