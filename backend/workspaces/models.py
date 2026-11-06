@@ -159,6 +159,33 @@ def _embedding_field():
     )
 
 
+def _document_chunk_indexes(engine=None):
+    """Індекси для DocumentChunk: workspace завжди, HnswIndex тільки для PostgreSQL."""
+    if engine is None:
+        from django.conf import settings as django_settings
+
+        engine = django_settings.DATABASES['default']['ENGINE']
+
+    indexes = [
+        models.Index(fields=['workspace']),
+    ]
+    if 'sqlite' in engine:
+        return indexes
+
+    from pgvector.django import HnswIndex
+
+    indexes.append(
+        HnswIndex(
+            name='chunk_embedding_hnsw_idx',
+            fields=['embedding'],
+            m=16,
+            ef_construction=64,
+            opclasses=['vector_cosine_ops'],
+        ),
+    )
+    return indexes
+
+
 class DocumentChunk(models.Model):
     """Фрагмент документа з embedding для векторного пошуку."""
 
@@ -178,9 +205,7 @@ class DocumentChunk(models.Model):
 
     class Meta:
         ordering = ('document', 'chunk_index')
-        indexes = [
-            models.Index(fields=['workspace']),
-        ]
+        indexes = _document_chunk_indexes()
         verbose_name = 'Фрагмент документа'
         verbose_name_plural = 'Фрагменти документів'
 
