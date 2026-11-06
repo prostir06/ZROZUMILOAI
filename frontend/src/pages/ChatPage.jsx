@@ -4,7 +4,11 @@ import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useChats } from '../context/ChatContext';
 import { useWorkspaces } from '../context/WorkspaceContext';
-import { formatBoldText } from '../utils/formatMessage';
+import { useChatScroll } from '../hooks/useChatScroll';
+import { useChatStream } from '../hooks/useChatStream';
+import ChatInput from '../components/chat/ChatInput';
+import ChatMessage from '../components/chat/ChatMessage';
+import ModelSelector from '../components/chat/ModelSelector';
 import { buildChatTitle } from '../utils/chat';
 import { applyStreamChunk } from '../utils/streamMessages';
 
@@ -14,28 +18,30 @@ function ChatPage() {
   const { isAdmin } = useAuth();
   const { refreshChats } = useChats();
   const { workspaces } = useWorkspaces();
+
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
   const [messages, setMessages] = useState([]);
   const [title, setTitle] = useState('Новий чат');
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [streaming, setStreaming] = useState(false);
   const [loadingChat, setLoadingChat] = useState(!!chatId);
+
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
-  const isAtBottomRef = useRef(true);
   const skipSaveRef = useRef(false);
   const localChatIdRef = useRef(null);
-  const streamAbortRef = useRef(null);
-  const streamRafRef = useRef(null);
-  const streamPendingRef = useRef(null);
-  const [showScrollButton, setShowScrollButton] = useState(false);
-
-  const SCROLL_BOTTOM_THRESHOLD = 80;
 
   const workspaceLocked = !isAdmin;
+
+  const { streaming, loading, startStream, abortStream } = useChatStream();
+
+  const { isAtBottomRef, showScrollButton, scrollToBottom } = useChatScroll({
+    containerRef: messagesContainerRef,
+    endRef: messagesEndRef,
+    messagesCount: messages.length,
+    isStreaming: streaming,
+  });
 
   const activeWorkspace = useMemo(
     () => workspaces.find((ws) => String(ws.id) === String(selectedWorkspaceId)),
@@ -119,49 +125,6 @@ function ChatPage() {
     }
   }, [availableModels, selectedModel]);
 
-  const checkScrollPosition = useCallback(() => {
-    const container = messagesContainerRef.current;
-    if (!container) {
-      return;
-    }
-    const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
-    const atBottom = distance <= SCROLL_BOTTOM_THRESHOLD;
-    isAtBottomRef.current = atBottom;
-    setShowScrollButton(!atBottom && messages.length > 0);
-  }, [messages.length]);
-
-  const scrollToBottom = useCallback((behavior = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
-  }, []);
-
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) {
-      return undefined;
-    }
-    container.addEventListener('scroll', checkScrollPosition, { passive: true });
-    return () => container.removeEventListener('scroll', checkScrollPosition);
-  }, [checkScrollPosition]);
-
-  useEffect(() => () => {
-    try {
-      streamAbortRef.current?.abort();
-    } catch {
-      /* ignore */
-    }
-    if (streamRafRef.current) {
-      cancelAnimationFrame(streamRafRef.current);
-      streamRafRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isAtBottomRef.current) {
-      scrollToBottom(streaming ? 'auto' : 'smooth');
-    }
-    checkScrollPosition();
-  }, [messages, streaming, scrollToBottom, checkScrollPosition]);
-
   useEffect(() => {
     if (!chatId) {
       setMessages([]);
@@ -211,14 +174,14 @@ function ChatPage() {
     if (messages.length === 0) return undefined;
 
     const timer = setTimeout(() => {
-      // P0: не оновлюємо sidebar на кожен autosave — лише зберігаємо чат.
+      // P0: do not refresh sidebar on each autosave — persist chat payload only.
       api.updateChat(chatId, {
         title,
         model: selectedModel,
         workspace: selectedWorkspaceId ? Number(selectedWorkspaceId) : null,
         messages,
       }).catch(() => {
-        /* тихий retry наступним debounce; UI статус можна додати пізніше */
+        /* silent retry on next debounce */
       });
     }, 500);
 
@@ -233,176 +196,106 @@ function ChatPage() {
     streaming,
   ]);
 
-  /** Оновити лише останнє assistant-повідомлення (з throttle через rAF). */
-  const patchLastAssistant = useCallback((contentOrError, { isError = false } = {}) => {
-    streamPendingRef.current = { contentOrError, isError };
-    if (streamRafRef.current) {
-      return;
-    }
-    streamRafRef.current = requestAnimationFrame(() => {
-      streamRafRef.current = null;
-      const pending = streamPendingRef.current;
-      if (!pending) {
-        return;
+  const handleSelectWorkspace = useCallback((value) => {
+    setSelectedWorkspaceId(value);
+    if (value) {
+      navigate(`/workspace/${value}`, { replace: true });
+      const ws = workspaces.find((w) => String(w.id) === String(value));
+      if (ws?.model_names?.[0]) {
+        setSelectedModel(ws.model_names[0]);
       }
-      streamPendingRef.current = null;
-      setMessages((prev) => {
-        if (!prev.length) {
-          return prev;
-        }
-        const last = prev[prev.length - 1];
-        if (last.role !== 'assistant') {
-          return prev;
-        }
-        const nextContent = pending.isError
-          ? `Помилка: ${pending.contentOrError}`
-          : last.content + pending.contentOrError;
-        if (nextContent === last.content) {
-          return prev;
-        }
-        return [...prev.slice(0, -1), { ...last, content: nextContent }];
-      });
-    });
-  }, []);
+    } else {
+      navigate('/', { replace: true });
+    }
+  }, [navigate, workspaces]);
 
   const handleSend = async (event) => {
-    event.preventDefault();
+    event?.preventDefault?.();
     if (!input.trim() || !selectedModel || loading) return;
 
     if (workspaceLocked && !selectedWorkspaceId) {
       return;
     }
 
-    // Скасувати попередній стрім, якщо ще триває.
-    try {
-      streamAbortRef.current?.abort();
-    } catch {
-      /* ignore */
-    }
-    const abortController = new AbortController();
-    streamAbortRef.current = abortController;
-
     const userMessage = { role: 'user', content: input.trim() };
     const newMessages = [...messages, userMessage];
     const chatTitle = title === 'Новий чат' ? buildChatTitle(userMessage.content) : title;
     const workspaceId = selectedWorkspaceId ? Number(selectedWorkspaceId) : null;
 
-    setMessages(newMessages);
+    setMessages([...newMessages, { role: 'assistant', content: '' }]);
     setInput('');
     setTitle(chatTitle);
-    setLoading(true);
-    setStreaming(true);
-
-    const assistantMessage = { role: 'assistant', content: '' };
-    setMessages([...newMessages, assistantMessage]);
 
     let activeChatId = chatId;
 
-    try {
-      if (!activeChatId) {
-        const created = await api.createChat({
-          title: chatTitle,
-          model: selectedModel,
-          workspace: workspaceId,
-          messages: newMessages,
-        });
-        activeChatId = String(created.id);
-        localChatIdRef.current = activeChatId;
-        skipSaveRef.current = true;
-        navigate(`/chat/${created.id}`, { replace: true });
-        refreshChats();
-      }
+    await startStream({
+      apiCall: async (signal, handleChunk) => {
+        if (!activeChatId) {
+          const created = await api.createChat({
+            title: chatTitle,
+            model: selectedModel,
+            workspace: workspaceId,
+            messages: newMessages,
+          });
+          activeChatId = String(created.id);
+          localChatIdRef.current = activeChatId;
+          skipSaveRef.current = true;
+          navigate(`/chat/${created.id}`, { replace: true });
+          refreshChats();
+        }
 
-      await api.chatStream(
-        selectedModel,
-        newMessages,
-        (chunk) => {
-          // Текст — через rAF; meta (sources/logId) — окремо без повторного content.
-          if (chunk.message?.content) {
-            patchLastAssistant(chunk.message.content);
-          }
-          if (chunk.error) {
-            patchLastAssistant(chunk.error, { isError: true });
-          }
-          if (
-            chunk.log_id != null
-            || typeof chunk.needs_handoff === 'boolean'
-          ) {
-            setMessages((prev) => applyStreamChunk(prev, chunk, { metaOnly: true }));
-          }
-        },
-        workspaceId,
-        { signal: abortController.signal },
-      );
-    } catch (err) {
-      if (err?.name === 'AbortError') {
-        return;
-      }
-      patchLastAssistant(err.message || 'Помилка чату', { isError: true });
-      // Форсувати негайне застосування pending після помилки.
-      if (streamRafRef.current) {
-        cancelAnimationFrame(streamRafRef.current);
-        streamRafRef.current = null;
-      }
-      setMessages((prev) => {
-        if (!prev.length) return prev;
-        const last = prev[prev.length - 1];
-        if (last.role !== 'assistant') return prev;
-        return [
-          ...prev.slice(0, -1),
-          { ...last, content: `Помилка: ${err.message}` },
-        ];
-      });
-    } finally {
-      setLoading(false);
-      setStreaming(false);
-      skipSaveRef.current = false;
-      streamAbortRef.current = null;
-      // Один refresh sidebar після завершення стріму (не на кожен chunk/autosave).
-      if (activeChatId) {
-        refreshChats();
-      }
-    }
+        await api.chatStream(
+          selectedModel,
+          newMessages,
+          handleChunk,
+          workspaceId,
+          { signal },
+        );
+      },
+      onChunk: (textChunk) => {
+        setMessages((prev) => {
+          if (!prev.length) return prev;
+          const last = prev[prev.length - 1];
+          if (last.role !== 'assistant') return prev;
+          return [
+            ...prev.slice(0, -1),
+            { ...last, content: last.content + textChunk },
+          ];
+        });
+        if (isAtBottomRef.current) {
+          scrollToBottom('auto');
+        }
+      },
+      onSources: (sources) => {
+        setMessages((prev) => applyStreamChunk(prev, { sources }, { metaOnly: true }));
+      },
+      onMeta: (meta) => {
+        setMessages((prev) => applyStreamChunk(prev, meta, { metaOnly: true }));
+      },
+      onError: (err) => {
+        setMessages((prev) => {
+          if (!prev.length) return prev;
+          const last = prev[prev.length - 1];
+          if (last.role !== 'assistant') return prev;
+          return [
+            ...prev.slice(0, -1),
+            { ...last, content: `Помилка: ${err.message || 'Помилка чату'}` },
+          ];
+        });
+      },
+      onDone: () => {
+        skipSaveRef.current = false;
+        if (activeChatId) {
+          refreshChats();
+        }
+      },
+    });
   };
 
-  const flushStreamPending = useCallback(() => {
-    if (streamRafRef.current) {
-      cancelAnimationFrame(streamRafRef.current);
-      streamRafRef.current = null;
-    }
-    const pending = streamPendingRef.current;
-    streamPendingRef.current = null;
-    if (!pending) {
-      return;
-    }
-    setMessages((prev) => {
-      if (!prev.length) {
-        return prev;
-      }
-      const last = prev[prev.length - 1];
-      if (last.role !== 'assistant') {
-        return prev;
-      }
-      const nextContent = pending.isError
-        ? `Помилка: ${pending.contentOrError}`
-        : last.content + pending.contentOrError;
-      if (nextContent === last.content) {
-        return prev;
-      }
-      return [...prev.slice(0, -1), { ...last, content: nextContent }];
-    });
-  }, []);
-
   const handleStopGeneration = useCallback(() => {
-    try {
-      streamAbortRef.current?.abort();
-    } catch {
-      /* AbortController.abort() не повинен кидати — захист від нестандартних поліфілів */
-    }
-    flushStreamPending();
-    setLoading(false);
-    setStreaming(false);
-  }, [flushStreamPending]);
+    abortStream();
+    skipSaveRef.current = false;
+  }, [abortStream]);
 
   const handleFeedback = useCallback(async (msg, feedback) => {
     if (!msg?.logId) return;
@@ -479,67 +372,16 @@ function ChatPage() {
           <p>{headerSubtitle}</p>
         </div>
         <div className="chat-controls">
-          {isAdmin ? (
-            <>
-              <select
-                value={selectedWorkspaceId}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setSelectedWorkspaceId(value);
-                  if (value) {
-                    navigate(`/workspace/${value}`, { replace: true });
-                    const workspace = workspaces.find((ws) => String(ws.id) === value);
-                    if (workspace?.model_names?.[0]) {
-                      setSelectedModel(workspace.model_names[0]);
-                    }
-                  } else {
-                    navigate('/', { replace: true });
-                  }
-                }}
-                className="select"
-                aria-label="Оберіть workspace"
-              >
-                <option value="">Без workspace</option>
-                {workspaces.map((ws) => (
-                  <option key={ws.id} value={ws.id}>{ws.name}</option>
-                ))}
-              </select>
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="select"
-                aria-label="Оберіть модель"
-              >
-                {models.length === 0 && <option value="">Немає моделей</option>}
-                {models.map((m) => (
-                  <option key={m.name} value={m.name}>{m.name}</option>
-                ))}
-              </select>
-            </>
-          ) : (
-            <>
-              {activeWorkspace && (
-                <span className="chat-controls__label">{activeWorkspace.name}</span>
-              )}
-              {workspaceModels.length > 1 ? (
-                <select
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  className="select"
-                  aria-label="Оберіть модель"
-                >
-                  {availableModels.length === 0 && <option value="">Немає моделей</option>}
-                  {availableModels.map((m) => (
-                    <option key={m.name} value={m.name}>{m.name}</option>
-                  ))}
-                </select>
-              ) : (
-                selectedModel && (
-                  <span className="chat-controls__label">{selectedModel}</span>
-                )
-              )}
-            </>
-          )}
+          <ModelSelector
+            models={models}
+            selectedModel={selectedModel}
+            onSelectModel={setSelectedModel}
+            workspaces={workspaces}
+            selectedWorkspaceId={selectedWorkspaceId}
+            onSelectWorkspace={handleSelectWorkspace}
+            isAdmin={isAdmin}
+            workspaceLocked={workspaceLocked}
+          />
           <button type="button" className="btn btn--ghost" onClick={handleClear}>
             {chatId ? 'Видалити' : 'Очистити'}
           </button>
@@ -569,96 +411,20 @@ function ChatPage() {
               <p>Напишіть повідомлення, щоб почати розмову</p>
             </div>
           )}
-          {messages.map((msg, index) => {
-            const isPendingAssistant = (
-              streaming
-              && index === messages.length - 1
-              && msg.role === 'assistant'
-              && !msg.content.trim()
-            );
-
-            if (msg.role === 'assistant') {
-              return (
-                <div key={`${msg.role}-${index}`} className="chat-message-row chat-message-row--assistant">
-                  <img
-                    src="/zrozumilo-assistant.png"
-                    alt=""
-                    className="chat-message__avatar"
-                    width={28}
-                    height={28}
-                  />
-                  {isPendingAssistant ? (
-                    <div className="chat-typing" aria-label="Помічник друкує">
-                      <span /><span /><span />
-                    </div>
-                  ) : (
-                    <div className={`chat-message chat-message--${msg.role}`}>
-                      <div className="chat-message__role">Помічник</div>
-                      <div className="chat-message__content">
-                        {formatBoldText(msg.content)}
-                      </div>
-                      {(msg.needsHandoff || msg.logId) && !streaming && (
-                        <div className="chat-feedback">
-                          {msg.needsHandoff && (
-                            <span className="chat-feedback__hint">
-                              Низька впевненість — можна звернутися до підтримки
-                            </span>
-                          )}
-                          {msg.logId && (
-                            <>
-                              <button
-                                type="button"
-                                className={`btn btn--ghost btn--sm${msg.feedback === 'up' ? ' is-active' : ''}`}
-                                onClick={() => handleFeedback(msg, 'up')}
-                                aria-label="Корисна відповідь"
-                                aria-pressed={msg.feedback === 'up'}
-                              >
-                                👍
-                              </button>
-                              <button
-                                type="button"
-                                className={`btn btn--ghost btn--sm${msg.feedback === 'down' ? ' is-active' : ''}`}
-                                onClick={() => handleFeedback(msg, 'down')}
-                                aria-label="Некорисна відповідь"
-                                aria-pressed={msg.feedback === 'down'}
-                              >
-                                👎
-                              </button>
-                              {!msg.needsHandoff && (
-                                <button
-                                  type="button"
-                                  className="btn btn--ghost btn--sm"
-                                  onClick={() => handleRequestHandoff(msg)}
-                                  aria-label="Запросити допомогу людини"
-                                >
-                                  До людини
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            }
-
-            return (
-              <div
-                key={`${msg.role}-${index}`}
-                className={`chat-message chat-message--${msg.role}`}
-              >
-                <div className="chat-message__role">Ви</div>
-                <div className="chat-message__content">{msg.content}</div>
-              </div>
-            );
-          })}
+          {messages.map((msg, index) => (
+            <ChatMessage
+              key={`${msg.role}-${index}`}
+              message={msg}
+              onFeedback={handleFeedback}
+              onRequestHandoff={handleRequestHandoff}
+              isStreaming={streaming && index === messages.length - 1 && msg.role === 'assistant'}
+            />
+          ))}
           {streaming && messages[messages.length - 1]?.role !== 'assistant' && (
             <div className="chat-message-row chat-message-row--assistant">
               <img
                 src="/zrozumilo-assistant.png"
-                alt=""
+                alt="Помічник"
                 className="chat-message__avatar"
                 width={28}
                 height={28}
@@ -685,45 +451,15 @@ function ChatPage() {
           </button>
         )}
 
-        <form className="chat-input" onSubmit={handleSend}>
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Введіть повідомлення..."
-            aria-label="Текст повідомлення"
-            rows={2}
-            maxLength={16000}
-            disabled={!selectedModel || loading || (workspaceLocked && !selectedWorkspaceId)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend(e);
-              }
-            }}
-          />
-          <button
-            type="submit"
-            className="btn btn--primary"
-            disabled={
-              !input.trim()
-              || !selectedModel
-              || loading
-              || (workspaceLocked && !selectedWorkspaceId)
-            }
-          >
-            Надіслати
-          </button>
-          {streaming && (
-            <button
-              type="button"
-              className="btn btn--ghost"
-              onClick={handleStopGeneration}
-              aria-label="Зупинити генерацію відповіді"
-            >
-              Зупинити
-            </button>
-          )}
-        </form>
+        <ChatInput
+          input={input}
+          setInput={setInput}
+          onSubmit={handleSend}
+          onStop={handleStopGeneration}
+          streaming={streaming}
+          loading={loading}
+          disabled={!selectedModel || (workspaceLocked && !selectedWorkspaceId)}
+        />
       </div>
     </div>
   );
