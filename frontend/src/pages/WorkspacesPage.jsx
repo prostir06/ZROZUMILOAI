@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
+import AnalyticsSection from './workspaces/AnalyticsSection';
 import DocumentsRagSection from './workspaces/DocumentsRagSection';
 import MeilisearchSection from './workspaces/MeilisearchSection';
 import WidgetTokensSection from './workspaces/WidgetTokensSection';
@@ -343,6 +344,17 @@ function WorkspacesPage() {
     }
   };
 
+  const handleUploadMaterial = () => {
+    const section = document.getElementById('documents-rag-section');
+    if (section) {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    const input = document.getElementById('workspace_document_upload');
+    if (input) {
+      input.focus();
+    }
+  };
+
   const widgetEmbedSnippet = newWidgetToken
     ? `<script src="${window.location.origin}/widget.js" data-widget-token="${newWidgetToken}" data-title="Підтримка"></script>`
     : '';
@@ -557,6 +569,13 @@ function WorkspacesPage() {
               onRetry={handleRetryDocument}
               onDelete={handleDeleteDocument}
               onReindexFailed={handleReindexFailed}
+            />
+          )}
+
+          {formMode === 'edit' && (
+            <AnalyticsSection
+              workspaceId={editingId}
+              onUploadMaterial={handleUploadMaterial}
             />
           )}
         </section>

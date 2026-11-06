@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api/client';
 import { truncateText } from '../utils/text.js';
 
@@ -110,6 +111,13 @@ function WorkspaceChatsPage() {
           </p>
         </div>
         <div className="page__actions">
+          <Link
+            to="/admin/workspaces"
+            className="btn btn--secondary"
+            title="Перейти до аналітики та прогалин знань у Workspaces"
+          >
+            📊 Аналітика курсів
+          </Link>
           <div className="dropdown" ref={exportRef}>
             <button
               type="button"

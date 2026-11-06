@@ -18,7 +18,11 @@ export default function DocumentsRagSection({
   onReindexFailed,
 }) {
   return (
-    <div className="form workspaces-section workspaces-section--rag" style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border-subtle)' }}>
+    <div
+      id="documents-rag-section"
+      className="form workspaces-section workspaces-section--rag"
+      style={{ marginTop: '1.5rem', paddingTop: '1.5rem', borderTop: '1px solid var(--color-border-subtle)' }}
+    >
       <h4 className="section__title">Документи (RAG)</h4>
       <p className="auth-card__subtitle" style={{ marginBottom: '1rem' }}>
         Завантажте TXT, MD або PDF. При чаті модель отримує релевантні фрагменти з цих документів.
