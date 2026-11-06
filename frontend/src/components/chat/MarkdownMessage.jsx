@@ -24,9 +24,9 @@ function SafeLink({ href = '', children, ...props }) {
   return (
     <a
       href={safeHref}
+      {...props}
       target="_blank"
       rel="noopener noreferrer"
-      {...props}
     >
       {children}
     </a>
