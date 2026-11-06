@@ -1,5 +1,7 @@
 """Unit-тести для BackupService."""
+import io
 import shutil
+import tarfile
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -527,6 +529,80 @@ class BackupServiceTests(TestCase):
                 service._file_info(archive_path)
                 # _read_manifest має викликатися щонайбільше 1 раз
                 self.assertEqual(mock_manifest.call_count, 1)
+
+    def test_pack_archive_places_manifest_first(self):
+        """manifest.json записується першим елементом у .tar.gz для швидкого читання."""
+        tmp_path = Path(self.temp_dir)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        test_db = tmp_path / 'test.sqlite3'
+        test_db.write_bytes(b'sqlite format 3\x00')
+
+        with override_settings(
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(test_db)}},
+        ):
+            backup_info = service.create_backup(include_media=True)
+            archive_path = backup_dir / backup_info['filename']
+
+            with tarfile.open(archive_path, 'r:gz') as tar:
+                members = tar.getmembers()
+                self.assertGreater(len(members), 0)
+                self.assertEqual(members[0].name, 'manifest.json')
+
+    def test_restore_archive_sanitizes_dump_file_path_traversal(self):
+        """Небезпечний dump_file у маніфесті (наприклад ../../payload.sqlite3) санітизується."""
+        tmp_path = Path(self.temp_dir)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        malicious_archive = backup_dir / 'backup_malicious_20260101_150000.tar.gz'
+        with tarfile.open(malicious_archive, 'w:gz') as tar:
+            m_bytes = b'{"version":"1.0","format":"tar.gz","engine":"sqlite","dump_file":"../../payload.sqlite3"}'
+            m_info = tarfile.TarInfo(name='manifest.json')
+            m_info.size = len(m_bytes)
+            tar.addfile(m_info, io.BytesIO(m_bytes))
+            d_bytes = b'sqlite format 3\x00'
+            d_info = tarfile.TarInfo(name='dump.sqlite3')
+            d_info.size = len(d_bytes)
+            tar.addfile(d_info, io.BytesIO(d_bytes))
+
+        test_db = tmp_path / 'db.sqlite3'
+        test_db.write_bytes(b'original')
+
+        with override_settings(
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(test_db)}},
+        ):
+            # Має успішно відновитися через fallback до dump.sqlite3, не створюючи файлів поза tmp
+            service.restore_backup(malicious_archive.name)
+            self.assertEqual(test_db.read_bytes(), b'sqlite format 3\x00')
+
+    def test_restore_archive_rejects_non_file_dump(self):
+        """Елемент дампа, який не є звичайним файлом (наприклад директорія), відхиляється."""
+        tmp_path = Path(self.temp_dir)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        bad_archive = backup_dir / 'backup_bad_dump_20260101_160000.tar.gz'
+        with tarfile.open(bad_archive, 'w:gz') as tar:
+            m_bytes = b'{"version":"1.0","format":"tar.gz","engine":"sqlite","dump_file":"dump.sqlite3"}'
+            m_info = tarfile.TarInfo(name='manifest.json')
+            m_info.size = len(m_bytes)
+            tar.addfile(m_info, io.BytesIO(m_bytes))
+            dir_info = tarfile.TarInfo(name='dump.sqlite3')
+            dir_info.type = tarfile.DIRTYPE
+            tar.addfile(dir_info)
+
+        test_db = tmp_path / 'db.sqlite3'
+        test_db.write_bytes(b'original')
+
+        with override_settings(
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(test_db)}},
+        ):
+            with self.assertRaises(RuntimeError) as ctx:
+                service.restore_backup(bad_archive.name)
+            self.assertIn('не є файлом', str(ctx.exception))
+
 
 
 

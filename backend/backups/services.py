@@ -163,38 +163,45 @@ class BackupService:
                 workspace_docs = candidate
                 has_media = True
 
+        files_list = ['manifest.json', dump_arcname]
+        if workspace_docs is not None:
+            files_list.append('media/workspace_documents')
+
+        # Prepare manifest metadata in advance so it is written as the first entry in the tar stream
+        manifest_data = {
+            'version': '1.0',
+            'format': 'tar.gz',
+            'engine': self._engine_type(),
+            'dump_file': dump_arcname,
+            'created_at': datetime.now().isoformat(),
+            'has_media': has_media,
+            'files': files_list,
+        }
+        manifest_bytes = json.dumps(manifest_data, indent=2, ensure_ascii=False).encode('utf-8')
+        manifest_info = tarfile.TarInfo(name='manifest.json')
+        manifest_info.size = len(manifest_bytes)
+        manifest_info.mtime = int(datetime.now().timestamp())
+
         try:
             with tarfile.open(archive_path, 'w:gz') as tar:
-                # 1. Add database dump
+                # 1. Add manifest.json first (allows fast O(1) reads without decompressing dump or media)
+                tar.addfile(manifest_info, io.BytesIO(manifest_bytes))
+
+                # 2. Add database dump
                 tar.add(str(db_dump_path), arcname=dump_arcname)
 
-                # 2. Add media workspace_documents if present
+                # 3. Add media workspace_documents if present
                 if workspace_docs is not None:
                     tar.add(str(workspace_docs), arcname='media/workspace_documents')
 
-                # 3. Add manifest.json
-                manifest_data = {
-                    'version': '1.0',
-                    'format': 'tar.gz',
-                    'engine': self._engine_type(),
-                    'dump_file': dump_arcname,
-                    'created_at': datetime.now().isoformat(),
-                    'has_media': has_media,
-                    'files': tar.getnames() + ['manifest.json'],
-                }
-                manifest_bytes = json.dumps(manifest_data, indent=2, ensure_ascii=False).encode('utf-8')
-                manifest_info = tarfile.TarInfo(name='manifest.json')
-                manifest_info.size = len(manifest_bytes)
-                manifest_info.mtime = int(datetime.now().timestamp())
-                tar.addfile(manifest_info, io.BytesIO(manifest_bytes))
-
             return self._file_info(archive_path, has_media=has_media)
-        except Exception:
+        except Exception as exc:
+            logger.error('Failed to pack backup archive %s: %s', archive_path, exc, exc_info=True)
             if archive_path.exists():
                 try:
                     archive_path.unlink()
-                except OSError:
-                    pass
+                except OSError as unlink_err:
+                    logger.warning('Failed to remove partial archive %s: %s', archive_path, unlink_err)
             raise
 
     def _read_manifest(self, filepath):
@@ -205,19 +212,10 @@ class BackupService:
                 manifest_file = tar.extractfile('manifest.json')
                 if manifest_file:
                     return json.load(manifest_file)
-        except (tarfile.TarError, json.JSONDecodeError, KeyError, OSError):
+        except (tarfile.TarError, json.JSONDecodeError, KeyError, OSError) as exc:
+            logger.debug('Cannot read manifest from %s: %s', filepath, exc)
             return None
         return None
-
-    def _inspect_archive_has_media(self, filepath):
-        manifest = self._read_manifest(filepath)
-        if manifest and isinstance(manifest, dict) and 'has_media' in manifest:
-            return bool(manifest['has_media'])
-        try:
-            with tarfile.open(filepath, 'r:gz') as tar:
-                return any(name.startswith('media/') for name in tar.getnames())
-        except (tarfile.TarError, OSError):
-            return False
 
     def _file_info(self, filepath, has_media=None):
         stat = filepath.stat()
@@ -408,24 +406,33 @@ class BackupService:
 
                 manifest = None
                 try:
-                    manifest_file = tar.extractfile('manifest.json')
-                    if manifest_file:
-                        manifest = json.load(manifest_file)
-                except Exception:
+                    if 'manifest.json' in member_names:
+                        manifest_file = tar.extractfile('manifest.json')
+                        if manifest_file:
+                            manifest = json.load(manifest_file)
+                except (tarfile.TarError, json.JSONDecodeError, KeyError, OSError) as exc:
+                    logger.warning('Failed to parse manifest in %s: %s', backup_path.name, exc)
                     manifest = None
 
                 dump_filename = None
                 if manifest and isinstance(manifest, dict) and 'dump_file' in manifest:
-                    dump_filename = manifest['dump_file']
-                elif 'dump.sql' in member_names:
-                    dump_filename = 'dump.sql'
-                elif 'dump.sqlite3' in member_names:
-                    dump_filename = 'dump.sqlite3'
-                elif 'dump.db' in member_names:
-                    dump_filename = 'dump.db'
+                    raw_dump_name = manifest['dump_file']
+                    sanitized_name = Path(str(raw_dump_name)).name
+                    if sanitized_name and sanitized_name in member_names:
+                        dump_filename = sanitized_name
 
-                if not dump_filename or dump_filename not in member_names:
-                    raise RuntimeError('Архів не містить дампа бази даних')
+                if not dump_filename:
+                    for fallback in ('dump.sql', 'dump.sqlite3', 'dump.db'):
+                        if fallback in member_names:
+                            dump_filename = fallback
+                            break
+
+                if not dump_filename:
+                    raise RuntimeError('Архів не містить валідного дампа бази даних')
+
+                dump_member = tar.getmember(dump_filename)
+                if not dump_member.isfile():
+                    raise RuntimeError(f'Елемент {dump_filename} не є файлом')
 
                 if dump_filename.endswith('.sql') and engine_type != 'postgresql':
                     raise RuntimeError(f"Дамп {dump_filename} не підтримується для рушія {engine_type}")
@@ -562,8 +569,8 @@ class BackupService:
         finally:
             try:
                 combined.unlink(missing_ok=True)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.warning('Failed to remove temp SQL restore file %s: %s', combined, exc)
 
     def _restore_sqlite(self, filepath):
         db_path = Path(settings.DATABASES['default']['NAME'])
@@ -577,5 +584,5 @@ class BackupService:
             if tmp_path.exists():
                 try:
                     tmp_path.unlink()
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.warning('Failed to remove temp SQLite restore file %s: %s', tmp_path, exc)
