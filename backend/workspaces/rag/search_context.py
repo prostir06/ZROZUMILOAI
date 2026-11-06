@@ -10,6 +10,7 @@ from ollama_proxy.services import OllamaService
 from ..models import Workspace
 from .fusion import reciprocal_rank_fusion
 from .python_search import search_with_python
+from .text_search import search_with_fulltext
 from .vector_search import search_with_pgvector, uses_pgvector
 
 logger = logging.getLogger(__name__)
@@ -84,29 +85,47 @@ def _search_hybrid_lists(workspace, query, top_k, course_id):
 
 
 def search_workspace_documents(workspace, query, top_k=None):
-    """Знайти найрелевантніші фрагменти документів workspace."""
+    """
+    Знайти найрелевантніші фрагменти документів workspace.
+
+    Об'єднує векторний пошук (pgvector / python) та повнотекстовий пошук
+    через Reciprocal Rank Fusion (RRF).
+    """
     if not settings.RAG_ENABLED or not workspace or not query or not query.strip():
         return []
 
     top_k = top_k or settings.RAG_TOP_K
     query_text = query.strip()
 
+    vector_results = []
     try:
         query_vector = cached_query_embedding(
             workspace_id=workspace.pk,
             query=query_text,
         )
+        if query_vector:
+            if uses_pgvector():
+                vector_results = search_with_pgvector(workspace, query_vector, top_k) or []
+            else:
+                vector_results = search_with_python(workspace, query_vector, top_k) or []
     except Exception as exc:
-        logger.error('RAG query embedding failed: %s', exc)
-        return []
+        logger.error('RAG vector search failed: %s', exc)
+        vector_results = []
 
+    text_results = []
     try:
-        if uses_pgvector():
-            return search_with_pgvector(workspace, query_vector, top_k)
-        return search_with_python(workspace, query_vector, top_k)
+        text_results = search_with_fulltext(workspace, query_text, top_k=top_k) or []
     except Exception as exc:
-        logger.error('RAG search failed: %s', exc)
-        return []
+        logger.error('RAG fulltext search failed: %s', exc)
+        text_results = []
+
+    if vector_results and text_results:
+        return reciprocal_rank_fusion([vector_results, text_results], top_k=top_k)
+    if vector_results:
+        return vector_results[:top_k]
+    if text_results:
+        return text_results[:top_k]
+    return []
 
 
 def cached_query_embedding(workspace_id, query):

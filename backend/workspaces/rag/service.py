@@ -17,6 +17,7 @@ from .search_context import (
     search_workspace_context,
     search_workspace_documents,
 )
+from .text_search import search_with_fulltext
 
 # Re-export для стабільного імпорту з tests / callers.
 __all__ = (
@@ -25,6 +26,7 @@ __all__ = (
     'ingest_workspace_document',
     'reciprocal_rank_fusion',
     'sanitize_filename',
+    'search_with_fulltext',
     'search_workspace_context',
     'search_workspace_documents',
     'sources_from_chunks',
