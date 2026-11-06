@@ -8,6 +8,8 @@ import { ThemeProvider } from './context/ThemeContext';
 import { WorkspaceProvider } from './context/WorkspaceContext';
 import { applyThemeVars, loadThemeState, resolveThemeVars } from './themes/presets';
 import './styles/index.css';
+import './styles/chat.css';
+import './styles/markdown.css';
 
 applyThemeVars(resolveThemeVars(loadThemeState()));
 
