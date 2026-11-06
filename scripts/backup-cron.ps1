@@ -33,4 +33,4 @@ if (Test-Path $backupDir) {
     }
 }
 
-Write-Host "[$(Get-Date -Format o)] backup done — copy ./backup off-box"
+Write-Host "[$(Get-Date -Format o)] backup done - copy ./backup off-box"

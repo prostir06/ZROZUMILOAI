@@ -1,5 +1,6 @@
 """Restore database from backup when FORCE_DB_RESTORE=1."""
 import os
+import tarfile
 
 from django.core.management.base import BaseCommand
 
@@ -51,7 +52,7 @@ class Command(BaseCommand):
                 restored = service.restore_backup(filename)
             else:
                 restored = service.restore_latest_backup()
-        except (RuntimeError, FileNotFoundError, ValueError) as exc:
+        except (RuntimeError, FileNotFoundError, ValueError, tarfile.TarError, OSError) as exc:
             self.stderr.write(self.style.ERROR(str(exc)))
             raise SystemExit(1) from exc
 

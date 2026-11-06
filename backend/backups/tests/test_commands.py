@@ -158,3 +158,20 @@ class BackupCommandsTests(TestCase):
             ):
                 with self.assertRaises(SystemExit):
                     call_command('restore_backup', 'nonexistent.sqlite3', stdout=out, stderr=err)
+
+    def test_restore_backup_corrupted_tar_file_raises_system_exit(self):
+        """restore_backup <corrupted.tar.gz> exits cleanly with SystemExit(1)."""
+        corrupted = self.backup_dir / 'backup_corrupted_20260101_100000_000000.tar.gz'
+        corrupted.write_bytes(b'not a valid tar file content')
+
+        out = io.StringIO()
+        err = io.StringIO()
+        with patch.dict(os.environ, {'FORCE_DB_RESTORE': '1'}, clear=False):
+            with override_settings(
+                BACKUP_DIR=str(self.backup_dir),
+                DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(self.test_db)}},
+            ):
+                with self.assertRaises(SystemExit) as ctx:
+                    call_command('restore_backup', corrupted.name, stdout=out, stderr=err)
+                self.assertEqual(ctx.exception.code, 1)
+        self.assertTrue(len(err.getvalue()) > 0)
