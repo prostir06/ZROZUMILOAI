@@ -21,12 +21,40 @@ from chats.services import (
     log_workspace_chat_exchange,
 )
 from workspaces.rag.service import extract_last_user_message
-from workspaces.services import get_ollama_options, prepare_chat_messages
+from workspaces.services import (
+    get_gemini_api_key,
+    get_ollama_options,
+    prepare_chat_messages,
+)
 
 from .base import LLMProviderError
 from .factory import resolve_provider
+from .gemini_provider import GeminiProvider
+from .ollama_provider import OllamaProvider
 
 logger = logging.getLogger(__name__)
+
+
+def get_fallback_provider(workspace, primary_provider):
+    """
+    Повернути (GeminiProvider, fallback_model) або None, якщо fallback неможливий.
+
+    Активується тільки коли primary_provider є OllamaProvider і налаштовано
+    ключ Gemini (у workspace або системних налаштуваннях).
+    """
+    if not isinstance(primary_provider, OllamaProvider):
+        return None
+
+    api_key = get_gemini_api_key(workspace)
+    if not api_key:
+        return None
+
+    fallback_model = getattr(settings, 'GEMINI_FALLBACK_MODEL', None)
+    if not fallback_model:
+        model_names = getattr(settings, 'GEMINI_MODEL_NAMES', None) or []
+        fallback_model = model_names[0] if model_names else 'gemini-1.5-flash'
+
+    return GeminiProvider(api_key=api_key), fallback_model
 
 
 def _provider_error_response(exc, *, stream=False):
@@ -121,8 +149,12 @@ def run_chat(
         def event_stream():
             accumulated = []
             response = None
+            fallback_used = False
+            active_model = model
+
             if sources:
                 yield f'data: {json.dumps({"sources": sources})}\n\n'
+
             try:
                 response = provider.chat(
                     model,
@@ -130,6 +162,60 @@ def run_chat(
                     stream=True,
                     options=options,
                 )
+            except (LLMProviderError, requests.RequestException) as exc:
+                fallback = get_fallback_provider(workspace, provider)
+                if fallback:
+                    fallback_provider, fallback_model = fallback
+                    logger.warning(
+                        'Ollama error (%s); falling back to Gemini (%s) for workspace=%s',
+                        exc,
+                        fallback_model,
+                        getattr(workspace, 'pk', None),
+                    )
+                    active_model = fallback_model
+                    fallback_used = True
+                    yield f'data: {json.dumps({"provider_fallback": True, "fallback_model": fallback_model})}\n\n'
+                    try:
+                        response = fallback_provider.chat(
+                            fallback_model,
+                            prepared_messages,
+                            stream=True,
+                            options=options,
+                        )
+                    except (LLMProviderError, requests.RequestException) as fb_exc:
+                        logger.warning(
+                            'Streaming LLM error (workspace=%s, model=%s): %s',
+                            getattr(workspace, 'pk', None),
+                            active_model,
+                            fb_exc,
+                        )
+                        yield _provider_error_response(fb_exc, stream=True)
+                        return
+                    except Exception:
+                        logger.exception('Unexpected streaming chat error')
+                        yield _provider_error_response(
+                            LLMProviderError('Внутрішня помилка чату'),
+                            stream=True,
+                        )
+                        return
+                else:
+                    logger.warning(
+                        'Streaming LLM error (workspace=%s, model=%s): %s',
+                        getattr(workspace, 'pk', None),
+                        model,
+                        exc,
+                    )
+                    yield _provider_error_response(exc, stream=True)
+                    return
+            except Exception:
+                logger.exception('Unexpected streaming chat error')
+                yield _provider_error_response(
+                    LLMProviderError('Внутрішня помилка чату'),
+                    stream=True,
+                )
+                return
+
+            try:
                 for line in response.iter_lines():
                     if not line:
                         continue
@@ -144,7 +230,7 @@ def run_chat(
                 logger.warning(
                     'Streaming LLM error (workspace=%s, model=%s): %s',
                     getattr(workspace, 'pk', None),
-                    model,
+                    active_model,
                     exc,
                 )
                 yield _provider_error_response(exc, stream=True)
@@ -162,10 +248,13 @@ def run_chat(
                     response=''.join(accumulated),
                     needs_handoff=needs_handoff,
                 )
+                meta = {'needs_handoff': needs_handoff}
                 if log:
-                    yield (
-                        f'data: {json.dumps({"log_id": log.pk, "needs_handoff": needs_handoff})}\n\n'
-                    )
+                    meta['log_id'] = log.pk
+                if fallback_used:
+                    meta['provider_fallback'] = True
+                if log or fallback_used:
+                    yield f'data: {json.dumps(meta)}\n\n'
             finally:
                 if response is not None and hasattr(response, 'close'):
                     try:
@@ -178,6 +267,7 @@ def run_chat(
             content_type='text/event-stream',
         )
 
+    fallback_used = False
     try:
         parsed = provider.chat(
             model,
@@ -186,7 +276,33 @@ def run_chat(
             options=options,
         )
     except (LLMProviderError, requests.RequestException) as exc:
-        return _provider_error_response(exc, stream=False)
+        fallback = get_fallback_provider(workspace, provider)
+        if fallback:
+            fallback_provider, fallback_model = fallback
+            logger.warning(
+                'Ollama error (%s); falling back to Gemini (%s) for workspace=%s',
+                exc,
+                fallback_model,
+                getattr(workspace, 'pk', None),
+            )
+            try:
+                parsed = fallback_provider.chat(
+                    fallback_model,
+                    prepared_messages,
+                    stream=False,
+                    options=options,
+                )
+                fallback_used = True
+            except (LLMProviderError, requests.RequestException) as fb_exc:
+                return _provider_error_response(fb_exc, stream=False)
+            except Exception:
+                logger.exception('Unexpected fallback chat error')
+                return _provider_error_response(
+                    LLMProviderError('Внутрішня помилка чату'),
+                    stream=False,
+                )
+        else:
+            return _provider_error_response(exc, stream=False)
     except Exception:
         logger.exception('Unexpected chat error')
         return _provider_error_response(
@@ -198,6 +314,8 @@ def run_chat(
         parsed = dict(parsed)
         parsed['sources'] = sources
         parsed['needs_handoff'] = needs_handoff
+        if fallback_used:
+            parsed['provider_fallback'] = True
 
     log = log_workspace_chat_exchange(
         workspace=workspace,
