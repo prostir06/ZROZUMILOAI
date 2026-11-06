@@ -4,7 +4,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS = {'.txt', '.md', '.markdown', '.pdf'}
+ALLOWED_EXTENSIONS = {'.txt', '.md', '.markdown', '.pdf', '.docx', '.html', '.htm'}
 MAX_EXTRACTED_CHARS = 500_000
 
 
@@ -24,6 +24,10 @@ def extract_text_from_file(file_path):
 
     if suffix == '.pdf':
         text = _extract_pdf(path)
+    elif suffix == '.docx':
+        text = _extract_docx(path)
+    elif suffix in {'.html', '.htm'}:
+        text = _extract_html(path)
     else:
         text = _extract_plain_text(path)
 
@@ -75,3 +79,82 @@ def _extract_pdf(path):
                     stream.close()
             except Exception:
                 pass
+
+
+def _extract_docx(path):
+    """Витягнути текст із DOCX через python-docx."""
+    try:
+        import docx
+    except ImportError as exc:
+        raise ValueError('DOCX не підтримується: встановіть python-docx') from exc
+
+    try:
+        doc = docx.Document(str(path))
+    except Exception as exc:
+        logger.error('DOCX loading failed for %s: %s', path, exc)
+        raise ValueError(f'Не вдалося прочитати DOCX: {exc}') from exc
+
+    parts = []
+    for p in doc.paragraphs:
+        try:
+            p_text = p.text.strip()
+            if p_text:
+                parts.append(p_text)
+        except Exception as exc:
+            logger.warning('Failed to extract paragraph from %s: %s', path, exc)
+
+    for table in doc.tables:
+        try:
+            for row in table.rows:
+                try:
+                    cells = [cell.text.strip() for cell in row.cells]
+                    if any(cells):
+                        parts.append(' | '.join(cells))
+                except Exception as exc:
+                    logger.warning('Failed to extract row from table in %s: %s', path, exc)
+        except Exception as exc:
+            logger.warning('Failed to extract table from %s: %s', path, exc)
+
+    return '\n\n'.join(parts)
+
+
+def _extract_html(path):
+    """Витягнути текст із HTML через BeautifulSoup."""
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError as exc:
+        raise ValueError('HTML не підтримується: встановіть beautifulsoup4') from exc
+
+    try:
+        raw_text = path.read_text(encoding='utf-8')
+    except UnicodeDecodeError:
+        try:
+            raw_text = path.read_text(encoding='cp1251')
+        except Exception as exc:
+            logger.error('HTML read failed for %s: %s', path, exc)
+            raise ValueError(f'Не вдалося прочитати HTML: {exc}') from exc
+    except OSError as exc:
+        logger.error('Cannot read HTML file %s: %s', path, exc)
+        raise ValueError(f'Не вдалося прочитати файл: {exc}') from exc
+
+    try:
+        soup = BeautifulSoup(raw_text, 'html.parser')
+        for tag in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript']):
+            tag.decompose()
+        extracted = soup.get_text(separator='\n')
+    except Exception as exc:
+        logger.error('HTML parsing failed for %s: %s', path, exc)
+        raise ValueError(f'Не вдалося розібрати HTML: {exc}') from exc
+
+    lines = [line.strip() for line in extracted.splitlines()]
+    collapsed = []
+    prev_empty = False
+    for line in lines:
+        if line:
+            collapsed.append(line)
+            prev_empty = False
+        elif not prev_empty:
+            collapsed.append('')
+            prev_empty = True
+
+    return '\n'.join(collapsed).strip()
