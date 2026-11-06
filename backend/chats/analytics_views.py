@@ -68,6 +68,8 @@ class WorkspaceAnalyticsExportView(APIView):
             )
 
         range_param = request.query_params.get('range', '30d')
+        if range_param not in ('today', '7d', '30d', 'all'):
+            range_param = '30d'
         csv_text = build_analytics_csv(workspace, date_range=range_param)
 
         slug = (
