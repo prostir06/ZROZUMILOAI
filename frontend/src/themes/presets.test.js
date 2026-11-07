@@ -28,8 +28,11 @@ describe('resolveThemeVars', () => {
     expect(vars['--color-primary']).toBe(THEME_PRESETS.light.vars['--color-primary']);
   });
 
-  it('мапить legacy openai на gemini', () => {
-    const vars = resolveThemeVars({ type: 'preset', presetId: 'openai' });
-    expect(vars['--color-primary']).toBe(THEME_PRESETS.gemini.vars['--color-primary']);
+  it('мапить збережені presetId openai і gemini на blue', () => {
+    const fromOpenAI = resolveThemeVars({ type: 'preset', presetId: 'openai' });
+    const fromGemini = resolveThemeVars({ type: 'preset', presetId: 'gemini' });
+    expect(fromOpenAI['--color-primary']).toBe(THEME_PRESETS.blue.vars['--color-primary']);
+    expect(fromGemini['--color-primary']).toBe(THEME_PRESETS.blue.vars['--color-primary']);
+    expect(THEME_PRESETS.blue.name).not.toMatch(/gemini/i);
   });
 });

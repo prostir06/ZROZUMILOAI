@@ -259,9 +259,9 @@ export const THEME_PRESETS = {
       '--chat-user-end': 'rgba(147, 51, 234, 0.92)',
     },
   },
-  gemini: {
-    id: 'gemini',
-    name: 'Google Gemini',
+  blue: {
+    id: 'blue',
+    name: 'Синій',
     preview: ['#F0F4F9', '#1A73E8', '#FFFFFF'],
     vars: {
       ...baseStructure,
@@ -467,8 +467,9 @@ export function resolveThemeVars(state) {
   if (state.type === 'custom' && Object.keys(state.custom).length > 0) {
     vars = buildCustomVars(state.custom);
   } else {
+    const legacyBlue = state.presetId === 'openai' || state.presetId === 'gemini';
     const preset = THEME_PRESETS[state.presetId]
-      || THEME_PRESETS[state.presetId === 'openai' ? 'gemini' : DEFAULT_PRESET_ID]
+      || (legacyBlue ? THEME_PRESETS.blue : undefined)
       || THEME_PRESETS[DEFAULT_PRESET_ID];
     vars = { ...preset.vars };
   }

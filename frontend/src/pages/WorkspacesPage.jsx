@@ -11,9 +11,6 @@ const emptyForm = {
   temperature: 0.7,
   user_ids: [],
   model_name: '',
-  llm_provider: 'ollama',
-  gemini_api_key: '',
-  gemini_api_key_set: false,
   search_source: 'internal',
   meilisearch_url: '',
   meilisearch_api_key: '',
@@ -42,7 +39,7 @@ function WorkspacesPage() {
   const [ragStats, setRagStats] = useState(null);
 
   const providerModels = models.filter(
-    (model) => (model.provider || 'ollama') === form.llm_provider,
+    (model) => (model.provider || 'ollama') === 'ollama',
   );
 
   const loadData = useCallback(async () => {
@@ -148,9 +145,6 @@ function WorkspacesPage() {
       temperature: workspace.temperature ?? 0.7,
       user_ids: workspace.users.map((user) => user.id),
       model_name: workspace.model_names?.[0] || '',
-      llm_provider: workspace.llm_provider || 'ollama',
-      gemini_api_key: '',
-      gemini_api_key_set: Boolean(workspace.gemini_api_key_set),
       search_source: workspace.search_source || 'internal',
       meilisearch_url: workspace.meilisearch_url || '',
       meilisearch_api_key: '',
@@ -193,23 +187,6 @@ function WorkspacesPage() {
     setForm((prev) => ({ ...prev, model_name: event.target.value }));
   };
 
-  const handleProviderChange = (event) => {
-    const llm_provider = event.target.value;
-    setForm((prev) => {
-      const nextModels = models.filter(
-        (model) => (model.provider || 'ollama') === llm_provider,
-      );
-      const modelStillValid = nextModels.some(
-        (model) => model.name === prev.model_name,
-      );
-      return {
-        ...prev,
-        llm_provider,
-        model_name: modelStillValid ? prev.model_name : '',
-      };
-    });
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
@@ -220,7 +197,6 @@ function WorkspacesPage() {
       temperature: form.temperature,
       user_ids: form.user_ids,
       model_names: form.model_name ? [form.model_name] : [],
-      llm_provider: form.llm_provider,
       search_source: form.search_source,
       meilisearch_url: form.meilisearch_url.trim(),
       meilisearch_index_prefix: form.meilisearch_index_prefix.trim(),
@@ -236,9 +212,6 @@ function WorkspacesPage() {
 
     if (form.meilisearch_api_key.trim()) {
       payload.meilisearch_api_key = form.meilisearch_api_key.trim();
-    }
-    if (form.gemini_api_key.trim()) {
-      payload.gemini_api_key = form.gemini_api_key.trim();
     }
 
     try {
@@ -483,57 +456,9 @@ function WorkspacesPage() {
               </div>
 
               <div className="form__group">
-                <label htmlFor="workspace_llm_provider">LLM провайдер</label>
-                <select
-                  id="workspace_llm_provider"
-                  value={form.llm_provider}
-                  onChange={handleProviderChange}
-                >
-                  <option value="ollama">Ollama (локально)</option>
-                  <option value="gemini">Google Gemini (API)</option>
-                </select>
-              </div>
-
-              {form.llm_provider === 'gemini' && (
-                <div className="form__group">
-                  <label htmlFor="workspace_gemini_api_key">Gemini API key</label>
-                  <input
-                    id="workspace_gemini_api_key"
-                    type="password"
-                    value={form.gemini_api_key}
-                    onChange={(e) => setForm((prev) => ({
-                      ...prev,
-                      gemini_api_key: e.target.value,
-                    }))}
-                    placeholder={
-                      formMode === 'edit' && form.gemini_api_key_set
-                        ? 'Залиште порожнім, щоб не змінювати'
-                        : 'Ключ з Google AI Studio'
-                    }
-                    autoComplete="new-password"
-                  />
-                  <p className="auth-card__subtitle">
-                    Отримайте ключ на{' '}
-                    <a
-                      href="https://aistudio.google.com/apikey"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      aistudio.google.com
-                    </a>
-                    . Альтернатива — глобальний <code>GEMINI_API_KEY</code> у .env.
-                  </p>
-                </div>
-              )}
-
-              <div className="form__group">
                 <label htmlFor="workspace_model">Модель</label>
                 {providerModels.length === 0 ? (
-                  <p className="empty-state">
-                    {form.llm_provider === 'gemini'
-                      ? 'Немає моделей Gemini у налаштуваннях сервера'
-                      : 'Немає встановлених моделей Ollama'}
-                  </p>
+                  <p className="empty-state">Немає встановлених моделей Ollama</p>
                 ) : (
                   <select
                     id="workspace_model"
@@ -612,7 +537,6 @@ function WorkspacesPage() {
                   <th>Температура</th>
                   <th>Користувачі</th>
                   <th>Модель</th>
-                  <th>Провайдер</th>
                   <th>Оновлено</th>
                   <th>Дії</th>
                 </tr>
@@ -628,7 +552,6 @@ function WorkspacesPage() {
                         : '—'}
                     </td>
                     <td>{workspace.model_names?.[0] || '—'}</td>
-                    <td>{workspace.llm_provider === 'gemini' ? 'Gemini' : 'Ollama'}</td>
                     <td>
                       {new Date(workspace.updated_at).toLocaleString('uk-UA')}
                     </td>
