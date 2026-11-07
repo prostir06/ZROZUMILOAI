@@ -57,7 +57,7 @@ class RunChatTests(TestCase):
         """LLMProviderError → HTTP 503 з повідомленням."""
         mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
         provider = MagicMock()
-        provider.chat.side_effect = LLMProviderError('Gemini недоступний')
+        provider.chat.side_effect = LLMProviderError('Ollama недоступний')
         mock_resolve.return_value = provider
 
         response = run_chat(
@@ -70,7 +70,29 @@ class RunChatTests(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
-        self.assertEqual(response.data['error'], 'Gemini недоступний')
+        self.assertEqual(response.data['error'], 'Ollama недоступний')
+
+    @patch('llm.chat.resolve_provider')
+    @patch('llm.chat.prepare_chat_messages')
+    def test_provider_error_does_not_call_a_second_provider(self, mock_prepare, mock_resolve):
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
+        provider = MagicMock()
+        provider.chat.side_effect = LLMProviderError('Ollama недоступний')
+        mock_resolve.return_value = provider
+
+        response = run_chat(
+            model='llama3',
+            messages=[{'role': 'user', 'content': 'Hi'}],
+            stream=False,
+            workspace=self.workspace,
+            user=self.user,
+            prompt='Hi',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data['error'], 'Ollama недоступний')
+        self.assertNotIn('provider_fallback', response.data)
+        provider.chat.assert_called_once()
 
     @patch('llm.chat.resolve_provider')
     @patch('llm.chat.prepare_chat_messages')

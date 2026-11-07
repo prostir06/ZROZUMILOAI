@@ -3,7 +3,6 @@ import logging
 
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from .crypto import decrypt_secret
 from .models import Workspace
 
 logger = logging.getLogger(__name__)
@@ -175,25 +174,4 @@ def get_ollama_options(workspace):
         temperature = 0.7
     return {'temperature': temperature}
 
-
-def get_gemini_api_key(workspace=None):
-    """
-    API ключ Gemini: спочатку workspace, потім глобальний з .env.
-
-    Ключ workspace може бути зашифрований (enc:v1:...); розшифровуємо
-    перед передачею у провайдер.
-    """
-    from django.conf import settings
-
-    if workspace and workspace.gemini_api_key:
-        try:
-            return decrypt_secret(workspace.gemini_api_key).strip()
-        except Exception as exc:
-            logger.warning(
-                'Failed to decrypt gemini_api_key for workspace %s: %s',
-                getattr(workspace, 'pk', None),
-                exc,
-            )
-            return workspace.gemini_api_key.strip()
-    return (settings.GEMINI_API_KEY or '').strip()
 
