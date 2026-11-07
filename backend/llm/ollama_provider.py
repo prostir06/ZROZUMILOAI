@@ -13,7 +13,7 @@ class OllamaProvider(BaseLLMProvider):
     Обгортка над OllamaService.
 
     Усі помилки мапляться в LLMProviderError, щоб run_chat мав єдиний контракт
-    відповіді незалежно від провайдера (Ollama чи Gemini).
+    відповіді провайдера Ollama.
     """
 
     provider_id = 'ollama'

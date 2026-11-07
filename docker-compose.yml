@@ -85,8 +85,6 @@ services:
       MEILISEARCH_INDEX_PREFIX: ${MEILISEARCH_INDEX_PREFIX:-tutor_}
       MEILISEARCH_TIMEOUT_MS: ${MEILISEARCH_TIMEOUT_MS:-5000}
       MEILISEARCH_MAX_CHUNK_CHARS: ${MEILISEARCH_MAX_CHUNK_CHARS:-1200}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL_NAMES: ${GEMINI_MODEL_NAMES:-gemini-2.0-flash,gemini-2.5-flash-lite}
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
     volumes:
       - ./backup:/backup
@@ -130,7 +128,6 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       CELERY_TASK_ALWAYS_EAGER: "False"
       RAG_EMBED_MODEL: ${RAG_EMBED_MODEL:-nomic-embed-text}
-      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
       BACKUP_DIR: /backup
     volumes:

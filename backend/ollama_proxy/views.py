@@ -16,7 +16,6 @@ from accounts.throttling import ClientIPScopedRateThrottle
 from chats.services import extract_prompt_from_messages
 from llm.chat import run_chat
 from llm.factory import list_all_models
-from llm.gemini_provider import GeminiProvider
 from llm.ollama_provider import OllamaProvider
 from workspaces.services import (
     get_allowed_model_names,
@@ -33,7 +32,6 @@ class OllamaHealthView(APIView):
 
     def get(self, request):
         ollama = OllamaProvider()
-        gemini = GeminiProvider()
         ollama_ok = ollama.health()
         return Response({
             'connected': ollama_ok,
@@ -41,10 +39,6 @@ class OllamaHealthView(APIView):
             'ollama': {
                 'connected': ollama_ok,
                 'base_url': ollama.base_url,
-            },
-            'gemini': {
-                'configured': bool(gemini.api_key),
-                'connected': gemini.health(),
             },
         })
 

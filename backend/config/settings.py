@@ -194,16 +194,6 @@ OLLAMA_BASE_URL = os.getenv(
     'http://localhost:11434',
 )
 
-GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_MODEL_NAMES = [
-    name.strip()
-    for name in os.getenv(
-        'GEMINI_MODEL_NAMES',
-        'gemini-2.0-flash,gemini-2.5-flash-lite',
-    ).split(',')
-    if name.strip()
-]
-
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_ROOT.mkdir(parents=True, exist_ok=True)

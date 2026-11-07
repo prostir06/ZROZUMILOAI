@@ -132,7 +132,7 @@ def cached_query_embedding(workspace_id, query):
     """
     Embed запиту з коротким кешем (Redis/FileBased).
 
-    Gemini-workspaces також використовують Ollama для embeddings.
+    Embeddings завжди йдуть через Ollama.
     """
     embed_model = settings.RAG_EMBED_MODEL
     digest = hashlib.sha256(query.encode('utf-8')).hexdigest()

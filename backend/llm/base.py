@@ -6,7 +6,7 @@ class LLMProviderError(Exception):
 
 
 class BaseLLMProvider:
-    """Спільний контракт для Ollama, Gemini та інших провайдерів."""
+    """Спільний контракт провайдера чату."""
 
     provider_id = ''
 
