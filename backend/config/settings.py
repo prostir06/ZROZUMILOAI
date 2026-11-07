@@ -193,6 +193,8 @@ OLLAMA_BASE_URL = os.getenv(
     'OLLAMA_BASE_URL',
     'http://localhost:11434',
 )
+OLLAMA_ADMISSION_LIMIT = 1
+OLLAMA_ADMISSION_TTL_SECONDS = int(os.getenv('OLLAMA_ADMISSION_TTL_SECONDS', '180'))
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
