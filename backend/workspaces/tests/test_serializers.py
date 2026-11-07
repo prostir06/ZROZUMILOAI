@@ -9,47 +9,39 @@ User = get_user_model()
 
 
 @override_settings(
-    GEMINI_API_KEY='',
-    GEMINI_MODEL_NAMES=['gemini-2.0-flash'],
     MEILISEARCH_URL='',
     MEILISEARCH_API_KEY='',
 )
 class WorkspaceSerializerTests(TestCase):
-    """Валідація Gemini, Meilisearch та model_names."""
+    """Валідація провайдера, Meilisearch та model_names."""
 
     def setUp(self):
         self.user = User.objects.create_user(username='admin', password='pass')
 
-    def test_gemini_requires_api_key_with_model(self):
-        """Gemini провайдер без ключа відхиляється при виборі моделі."""
+    def test_rejects_gemini_provider(self):
         serializer = WorkspaceSerializer(data={
-            'name': 'Gemini WS',
-            'llm_provider': Workspace.LLMProvider.GEMINI,
-            'model_names': ['gemini-2.0-flash'],
+            'name': 'Local',
+            'llm_provider': 'gemini',
+            'model_names': ['llama3.2'],
+        })
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('llm_provider', serializer.errors)
+
+    def test_rejects_gemini_api_key_even_when_blank(self):
+        serializer = WorkspaceSerializer(data={
+            'name': 'Local',
+            'model_names': ['llama3.2'],
+            'gemini_api_key': '',
         })
         self.assertFalse(serializer.is_valid())
         self.assertIn('gemini_api_key', serializer.errors)
 
-    def test_gemini_accepts_workspace_key(self):
-        """Ключ у payload проходить валідацію."""
+    def test_ollama_workspace_without_provider_is_valid(self):
         serializer = WorkspaceSerializer(data={
-            'name': 'Gemini WS',
-            'llm_provider': Workspace.LLMProvider.GEMINI,
-            'model_names': ['gemini-2.0-flash'],
-            'gemini_api_key': 'secret-key',
+            'name': 'Local',
+            'model_names': ['llama3.2'],
         })
         self.assertTrue(serializer.is_valid(), serializer.errors)
-
-    def test_gemini_rejects_non_gemini_model(self):
-        """Для Gemini дозволені лише моделі з GEMINI_MODEL_NAMES."""
-        serializer = WorkspaceSerializer(data={
-            'name': 'Bad model',
-            'llm_provider': Workspace.LLMProvider.GEMINI,
-            'model_names': ['llama3'],
-            'gemini_api_key': 'secret-key',
-        })
-        self.assertFalse(serializer.is_valid())
-        self.assertIn('model_names', serializer.errors)
 
     def test_single_model_limit(self):
         """Workspace приймає лише одну модель."""

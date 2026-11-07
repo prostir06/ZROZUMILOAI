@@ -42,12 +42,6 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         allow_blank=True,
     )
     meilisearch_api_key_set = serializers.SerializerMethodField()
-    gemini_api_key = serializers.CharField(
-        write_only=True,
-        required=False,
-        allow_blank=True,
-    )
-    gemini_api_key_set = serializers.SerializerMethodField()
 
     class Meta:
         model = Workspace
@@ -58,8 +52,6 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             'temperature',
             'model_names',
             'llm_provider',
-            'gemini_api_key',
-            'gemini_api_key_set',
             'search_source',
             'meilisearch_url',
             'meilisearch_api_key',
@@ -78,9 +70,6 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
     def get_meilisearch_api_key_set(self, obj):
         return bool(obj.meilisearch_api_key)
-
-    def get_gemini_api_key_set(self, obj):
-        return bool(obj.gemini_api_key)
 
     def validate_model_names(self, value):
         cleaned = []
@@ -148,42 +137,19 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         return cleaned
 
     def validate(self, attrs):
+        initial = getattr(self, 'initial_data', {}) or {}
+        if 'gemini_api_key' in initial:
+            raise serializers.ValidationError({
+                'gemini_api_key': 'Gemini більше не підтримується',
+            })
         llm_provider = attrs.get(
             'llm_provider',
             getattr(self.instance, 'llm_provider', Workspace.LLMProvider.OLLAMA),
         )
-        if llm_provider == Workspace.LLMProvider.GEMINI:
-            gemini_api_key = attrs.get('gemini_api_key')
-            from django.conf import settings as django_settings
-
-            has_key = (
-                (bool(gemini_api_key) if gemini_api_key is not None else False)
-                or bool(getattr(self.instance, 'gemini_api_key', ''))
-                or bool(django_settings.GEMINI_API_KEY)
-            )
-            model_names = attrs.get(
-                'model_names',
-                getattr(self.instance, 'model_names', []),
-            )
-            if model_names and not has_key:
-                raise serializers.ValidationError({
-                    'gemini_api_key': (
-                        'API key Gemini обовʼязковий для цього провайдера'
-                    ),
-                })
-            if model_names:
-                from llm.factory import is_gemini_model
-
-                invalid = [
-                    name for name in model_names
-                    if not is_gemini_model(name)
-                ]
-                if invalid:
-                    raise serializers.ValidationError({
-                        'model_names': (
-                            'Для Gemini оберіть модель зі списку Gemini'
-                        ),
-                    })
+        if llm_provider != Workspace.LLMProvider.OLLAMA:
+            raise serializers.ValidationError({
+                'llm_provider': 'Підтримується лише Ollama',
+            })
 
         source = attrs.get(
             'search_source',
@@ -227,27 +193,13 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
             instance.meilisearch_api_key = encrypt_secret(api_key)
 
-    def _apply_gemini_api_key(self, instance, api_key):
-        """Зберегти Gemini key у зашифрованому вигляді (або очистити)."""
-        if api_key is not None:
-            from .crypto import encrypt_secret
-
-            instance.gemini_api_key = encrypt_secret(api_key)
-
     def create(self, validated_data):
         users = validated_data.pop('users', [])
         api_key = validated_data.pop('meilisearch_api_key', None)
-        gemini_api_key = validated_data.pop('gemini_api_key', None)
         workspace = Workspace.objects.create(**validated_data)
         self._apply_api_key(workspace, api_key)
-        self._apply_gemini_api_key(workspace, gemini_api_key)
-        update_fields = []
         if api_key is not None:
-            update_fields.append('meilisearch_api_key')
-        if gemini_api_key is not None:
-            update_fields.append('gemini_api_key')
-        if update_fields:
-            workspace.save(update_fields=update_fields)
+            workspace.save(update_fields=['meilisearch_api_key'])
         if users:
             workspace.users.set(users)
         return workspace
@@ -255,11 +207,9 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         users = validated_data.pop('users', None)
         api_key = validated_data.pop('meilisearch_api_key', None)
-        gemini_api_key = validated_data.pop('gemini_api_key', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         self._apply_api_key(instance, api_key)
-        self._apply_gemini_api_key(instance, gemini_api_key)
         instance.save()
         if users is not None:
             instance.users.set(users)
