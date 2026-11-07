@@ -59,6 +59,12 @@
       return;
     }
 
+    if (widgetToken && /[^\x00-\x7F]/.test(widgetToken)) {
+      console.warn(
+        '[ZrozumiloAI] data-widget-token містить не-ASCII символи. Будь ласка, замініть кириличний плейсхолдер на реальний токен з адмін-панелі Workspaces.',
+      );
+    }
+
     const parsedZIndex = Number(script.dataset.zIndex);
     const zIndex = Number.isFinite(parsedZIndex) ? parsedZIndex : 999999;
 

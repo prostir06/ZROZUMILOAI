@@ -9,6 +9,7 @@ import {
   escapeHtml,
   formatMessageContent,
   getEmbedStatusText,
+  isIso88591,
   safeJson,
   sanitizeColor,
 } from './utils.js';
@@ -375,13 +376,20 @@ function appendToLastAssistant(text) {
 /** HTTP-запит до backend API. */
 async function apiRequest(path, options = {}) {
   try {
+    const authHeader = getAuthHeader();
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(authHeader ? { Authorization: authHeader } : {}),
+      ...options.headers,
+    };
+    for (const [key, value] of Object.entries(headers)) {
+      if (!isIso88591(key) || !isIso88591(value)) {
+        delete headers[key];
+      }
+    }
     const response = await fetch(`${config.apiUrl}${path}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: getAuthHeader(),
-        ...options.headers,
-      },
+      headers,
     });
     return response;
   } catch (error) {
@@ -394,6 +402,12 @@ async function initWorkspace() {
   initError = '';
 
   if (config.widgetToken) {
+    if (!isIso88591(config.widgetToken)) {
+      initError = 'Некоректний токен: токен містить неприпустимі не-ASCII символи. Будь ласка, замініть кириличний плейсхолдер у data-widget-token на дійсний токен із панелі Workspaces.';
+      workspace = null;
+      model = '';
+      return;
+    }
     const response = await apiRequest('/widget/config/');
     if (!response.ok) {
       const error = await safeJson(response);
@@ -412,6 +426,13 @@ async function initWorkspace() {
     if (!workspace) {
       initError = 'Widget token недійсний або workspace недоступний.';
     }
+    return;
+  }
+
+  if (config.apiKey && !isIso88591(config.apiKey)) {
+    initError = 'Некоректний API-ключ: містить неприпустимі не-ASCII символи.';
+    workspace = null;
+    model = '';
     return;
   }
 

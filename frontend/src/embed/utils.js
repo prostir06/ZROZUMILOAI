@@ -63,16 +63,33 @@ export async function safeJson(response, fallback = {}) {
   }
 }
 
+/** Перевірка, що рядок містить лише ISO-8859-1 (ByteString) символи (код <= 255). */
+export function isIso88591(str) {
+  if (typeof str !== 'string') return true;
+  for (let i = 0; i < str.length; i++) {
+    if (str.charCodeAt(i) > 255) return false;
+  }
+  return true;
+}
+
 /** Текст Authorization для widget token або API key. */
 export function buildAuthHeader(config) {
   if (!config) {
     return '';
   }
   if (config.widgetToken) {
-    return `Widget-Token ${config.widgetToken}`;
+    const token = String(config.widgetToken).trim();
+    if (!isIso88591(token)) {
+      return '';
+    }
+    return `Widget-Token ${token}`;
   }
   if (config.apiKey) {
-    return `Api-Key ${config.apiKey}`;
+    const key = String(config.apiKey).trim();
+    if (!isIso88591(key)) {
+      return '';
+    }
+    return `Api-Key ${key}`;
   }
   return '';
 }

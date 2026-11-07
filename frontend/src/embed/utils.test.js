@@ -7,6 +7,7 @@ import {
   formatBoldTextHtml,
   formatMessageContent,
   getEmbedStatusText,
+  isIso88591,
   sanitizeColor,
   sanitizeTitle,
   truncateText,
@@ -52,6 +53,19 @@ describe('truncateText', () => {
   });
 });
 
+describe('isIso88591', () => {
+  it('повертає true для ASCII рядків', () => {
+    expect(isIso88591('wt_abc-123_XYZ')).toBe(true);
+    expect(isIso88591('Authorization: Bearer token')).toBe(true);
+  });
+
+  it('повертає false для кирилиці та символів > 255', () => {
+    expect(isIso88591('wt_ВАШ_TOKEN')).toBe(false);
+    expect(isIso88591('Підтримка')).toBe(false);
+    expect(isIso88591('👋')).toBe(false);
+  });
+});
+
 describe('buildAuthHeader', () => {
   it('widget token', () => {
     expect(buildAuthHeader({ widgetToken: 'wt_abc' })).toBe('Widget-Token wt_abc');
@@ -63,6 +77,11 @@ describe('buildAuthHeader', () => {
 
   it('без config — порожній рядок', () => {
     expect(buildAuthHeader(null)).toBe('');
+  });
+
+  it('відхиляє не-ISO-8859-1 токени (наприклад кириличні плейсхолдери)', () => {
+    expect(buildAuthHeader({ widgetToken: 'wt_ВАШ_TOKEN' })).toBe('');
+    expect(buildAuthHeader({ apiKey: 'ключ' })).toBe('');
   });
 });
 
