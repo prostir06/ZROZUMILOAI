@@ -89,14 +89,13 @@ describe('MarkdownMessage', () => {
 
   it('handles clipboard writeText rejection in copyToClipboard and logs error', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const origClipboard = navigator.clipboard;
-    Object.defineProperty(navigator, 'clipboard', {
-      value: {
-        writeText: vi.fn().mockRejectedValue(new Error('Permission denied')),
-      },
-      configurable: true,
-      writable: true,
-    });
+    if (typeof globalThis.navigator === 'undefined') {
+      globalThis.navigator = {};
+    }
+    const origClipboard = globalThis.navigator.clipboard;
+    globalThis.navigator.clipboard = {
+      writeText: vi.fn().mockRejectedValue(new Error('Permission denied')),
+    };
 
     try {
       const result = await copyToClipboard('const a = 1;');
@@ -106,36 +105,27 @@ describe('MarkdownMessage', () => {
         expect.any(Error),
       );
     } finally {
-      Object.defineProperty(navigator, 'clipboard', {
-        value: origClipboard,
-        configurable: true,
-        writable: true,
-      });
+      globalThis.navigator.clipboard = origClipboard;
       errorSpy.mockRestore();
     }
   });
 
   it('copies text successfully via copyToClipboard', async () => {
-    const origClipboard = navigator.clipboard;
+    if (typeof globalThis.navigator === 'undefined') {
+      globalThis.navigator = {};
+    }
+    const origClipboard = globalThis.navigator.clipboard;
     const writeMock = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(navigator, 'clipboard', {
-      value: {
-        writeText: writeMock,
-      },
-      configurable: true,
-      writable: true,
-    });
+    globalThis.navigator.clipboard = {
+      writeText: writeMock,
+    };
 
     try {
       const result = await copyToClipboard('test copy');
       expect(result).toBe(true);
       expect(writeMock).toHaveBeenCalledWith('test copy');
     } finally {
-      Object.defineProperty(navigator, 'clipboard', {
-        value: origClipboard,
-        configurable: true,
-        writable: true,
-      });
+      globalThis.navigator.clipboard = origClipboard;
     }
   });
 });
