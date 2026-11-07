@@ -7,14 +7,17 @@
 
 - Чат з AI-помічником (streaming) через Ollama або Gemini
 - Workspaces — ізоляція моделей, system prompt, temperature, LLM-провайдера
-- **RAG** — завантаження документів (TXT, MD, PDF); індексація через Celery/Redis
+- **RAG** — завантаження документів (**TXT, MD, PDF, DOCX, HTML**); структурний chunking та індексація через Celery/Redis
+- **Гібридний пошук (Hybrid Search)** — RRF (Reciprocal Rank Fusion) об'єднання векторного пошуку (pgvector HNSW) та повнотекстового пошуку PostgreSQL FTS
+- **LLM Fallback & Resilience** — автоматичний fallback на резервного провайдера/модель (Ollama ↔ Gemini 2.0) при недоступності основної моделі
+- **Аналітика та Knowledge Gaps** — дашборд запитів, відстеження прогалин у знаннях з чергою резолюції для викладачів, експорт у CSV/JSON
 - **Feedback / handoff** — 👍/👎 на відповіді, ескалація при низькій релевантності RAG
 - **Meilisearch / hybrid** — пошук у Open edX (Tutor) разом із локальним RAG (RRF)
 - Збережені чати на сервері (історія діалогів)
-- Embed-віджет для сторонніх сайтів (Widget-Token, course-scoped)
+- Embed-віджет для сторонніх сайтів (Widget-Token, course-scoped, кастомізація логотипу, заголовка та кольорів)
 - Перегляд моделей (фільтр за workspace); pull/delete — лише адміністратор
 - Реєстрація та авторизація (JWT + API-ключі)
-- Адмін-панель: користувачі, workspaces, моделі, резервні копії БД
+- Адмін-панель: користувачі, workspaces, аналітика, моделі, резервні копії БД
 - Налаштування зовнішнього вигляду (теми)
 - Адаптивний інтерфейс (мобільні, планшети, десктоп)
 - Docker Compose: Ollama, PostgreSQL (pgvector), Redis, Celery worker, Django, Caddy
@@ -163,13 +166,16 @@ API-ключ генерується автоматично при реєстра
 | GET/PATCH/DELETE | `/api/workspaces/<id>/` | admin | Перегляд / редагування / видалення |
 | GET/POST | `/api/workspaces/<id>/documents/` | admin | Список / завантаження документів (RAG) |
 | DELETE | `/api/workspaces/<id>/documents/<doc_id>/` | admin | Видалити документ |
+| GET | `/api/workspaces/<id>/analytics/overview/` | teacher/admin | Загальна статистика, тренди, популярні теми |
+| GET | `/api/workspaces/<id>/analytics/export/` | teacher/admin | Експорт аналітики у CSV або JSON |
+| GET/PATCH | `/api/workspaces/<id>/knowledge-gaps/` | teacher/admin | Черга прогалин знань та статус резолюції |
 
 ### RAG (документи workspace)
 
-1. Адмін завантажує `.txt`, `.md` або `.pdf` у workspace (адмінка → Workspaces → редагування).
-2. Backend індексує текст: chunking + embeddings через Ollama (`RAG_EMBED_MODEL`, за замовчуванням `nomic-embed-text`).
-3. Вектори зберігаються в **PostgreSQL + pgvector** (HNSW-індекс, cosine-пошук).
-4. При кожному повідомленні в чаті (в т.ч. widget) у system prompt додаються найрелевантніші фрагменти.
+1. Адмін завантажує `.txt`, `.md`, `.pdf`, `.docx` або `.html` у workspace (адмінка → Workspaces → редагування).
+2. Backend індексує текст: структурний chunking (із збереженням заголовків та метаданих) + embeddings через Ollama (`RAG_EMBED_MODEL`, за замовчуванням `nomic-embed-text`).
+3. Вектори зберігаються в **PostgreSQL + pgvector** (HNSW-індекс, cosine-пошук), а текстові поля індексуються через GIN-індекс PostgreSQL FTS.
+4. При кожному повідомленні в чаті (в т.ч. widget) виконується гібридний пошук (RRF) і у system prompt додаються найрелевантніші фрагменти.
 
 **Важливо:** навіть якщо workspace використовує **Gemini** для чату, embeddings для RAG усе одно йдуть через **Ollama** (`nomic-embed-text`). Без запущеного Ollama ingest документів і RAG-контекст не працюватимуть.
 

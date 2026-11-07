@@ -49,6 +49,13 @@ backup/*
 !backup/.gitkeep
 *.sql
 
+# Logs
+*.log
+logs/
+
+# Agent / Tooling local artifacts
+.superpowers/
+
 # Local secrets / overrides
 .env.local
 .env.*.local
