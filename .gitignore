@@ -55,6 +55,7 @@ logs/
 
 # Agent / Tooling local artifacts
 .superpowers/
+.worktrees
 
 # Local secrets / overrides
 .env.local
