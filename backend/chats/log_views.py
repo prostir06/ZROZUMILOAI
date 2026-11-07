@@ -6,6 +6,17 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from llm.admission import (
+    OLLAMA_BUSY_CODE,
+    OLLAMA_BUSY_MESSAGE,
+    RETRY_AFTER_SECONDS,
+    OllamaBusy,
+    acquire_ollama_slot,
+    release_ollama_slot,
+)
+from llm.base import LLMProviderError
+from llm.ollama_provider import OllamaProvider
+
 from .export_service import (
     build_export_response,
     build_export_timestamp,
@@ -15,8 +26,24 @@ from .export_service import (
 from .feedback import ALLOWED_FEEDBACK, apply_feedback_fields, save_log_feedback
 from .models import WorkspaceChatLog
 from .serializers import WorkspaceChatLogSerializer
+from .table_analysis import analyze_chat_table, pick_chat_model
 
 logger = logging.getLogger(__name__)
+
+
+def filtered_chat_logs(params):
+    """Та сама вибірка, що в таблиці Chats Info."""
+    logs = WorkspaceChatLog.objects.select_related('workspace', 'user')
+    needs_handoff = params.get('needs_handoff')
+    if needs_handoff in (True, '1', 'true', 'yes'):
+        logs = logs.filter(needs_handoff=True)
+    elif needs_handoff in (False, '0', 'false', 'no'):
+        logs = logs.filter(needs_handoff=False)
+
+    feedback = params.get('feedback')
+    if feedback is not None and feedback in ALLOWED_FEEDBACK:
+        logs = logs.filter(feedback=feedback)
+    return logs
 
 
 class WorkspaceChatLogListView(APIView):
@@ -26,17 +53,7 @@ class WorkspaceChatLogListView(APIView):
 
     def get(self, request):
         try:
-            logs = WorkspaceChatLog.objects.select_related('workspace', 'user')
-
-            needs_handoff = request.query_params.get('needs_handoff')
-            if needs_handoff in ('1', 'true', 'yes'):
-                logs = logs.filter(needs_handoff=True)
-            elif needs_handoff in ('0', 'false', 'no'):
-                logs = logs.filter(needs_handoff=False)
-
-            feedback = request.query_params.get('feedback')
-            if feedback is not None and feedback in ALLOWED_FEEDBACK:
-                logs = logs.filter(feedback=feedback)
+            logs = filtered_chat_logs(request.query_params)
 
             try:
                 limit = min(max(int(request.query_params.get('limit', 50)), 1), 200)
@@ -142,6 +159,54 @@ class WorkspaceChatLogFeedbackView(APIView):
             return error
 
         return Response(WorkspaceChatLogSerializer(log).data)
+
+
+class WorkspaceChatLogAnalysisView(APIView):
+    """Дашборд: локальна модель аналізує поточну таблицю чатів."""
+
+    permission_classes = (IsAdminUser,)
+
+    def post(self, request):
+        logs = filtered_chat_logs(request.data)
+        if logs.count() == 0:
+            return Response(analyze_chat_table(logs, provider=None, model=''))
+
+        provider = OllamaProvider()
+        try:
+            listed = provider.list_models().get('models', [])
+        except Exception as exc:
+            logger.warning('Ollama models unavailable for table analysis: %s', exc, exc_info=True)
+            return Response(
+                {'error': 'Ollama недоступний'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        model = pick_chat_model(listed)
+        if not model:
+            return Response(
+                {'error': 'Немає локальної чат-моделі'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        token = None
+        try:
+            token = acquire_ollama_slot()
+            data = analyze_chat_table(logs, provider, model)
+        except OllamaBusy:
+            return Response(
+                {'error': OLLAMA_BUSY_MESSAGE, 'code': OLLAMA_BUSY_CODE},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+                headers={'Retry-After': RETRY_AFTER_SECONDS},
+            )
+        except LLMProviderError as exc:
+            logger.warning('Chat table analysis failed: %s', exc, exc_info=True)
+            return Response(
+                {'error': 'Не вдалося проаналізувати таблицю'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        finally:
+            release_ollama_slot(token)
+        return Response(data)
 
 
 class WorkspaceChatLogClearView(APIView):

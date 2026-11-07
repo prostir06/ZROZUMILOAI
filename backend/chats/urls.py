@@ -2,6 +2,7 @@
 from django.urls import path
 
 from .log_views import (
+    WorkspaceChatLogAnalysisView,
     WorkspaceChatLogClearView,
     WorkspaceChatLogDetailView,
     WorkspaceChatLogExportView,
@@ -15,6 +16,11 @@ urlpatterns = [
     path('logs/', WorkspaceChatLogListView.as_view(), name='workspace_chat_logs'),
     path('logs/clear/', WorkspaceChatLogClearView.as_view(), name='workspace_chat_logs_clear'),
     path('logs/export/', WorkspaceChatLogExportView.as_view(), name='workspace_chat_logs_export'),
+    path(
+        'logs/analysis/',
+        WorkspaceChatLogAnalysisView.as_view(),
+        name='workspace_chat_logs_analysis',
+    ),
     path(
         'logs/<int:log_id>/feedback/',
         WorkspaceChatLogFeedbackView.as_view(),

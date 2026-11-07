@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../api/client';
+import ChatTableAnalysis from '../components/analytics/ChatTableAnalysis';
+import { formatChatError } from '../utils/chatError.js';
 import { truncateText } from '../utils/text.js';
 
 const EXPORT_FORMATS = [
@@ -23,6 +24,10 @@ function WorkspaceChatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [exportOpen, setExportOpen] = useState(false);
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
   const exportRef = useRef(null);
 
   const loadLogs = useCallback(async () => {
@@ -91,6 +96,35 @@ function WorkspaceChatsPage() {
     }
   };
 
+  const loadAnalysis = useCallback(async () => {
+    setAnalysisLoading(true);
+    setAnalysisError('');
+    try {
+      const payload = {};
+      if (handoffFilter === 'yes') payload.needs_handoff = true;
+      if (handoffFilter === 'no') payload.needs_handoff = false;
+      if (feedbackFilter !== 'all') payload.feedback = feedbackFilter;
+      setAnalysis(await api.analyzeWorkspaceChatLogs(payload));
+    } catch (err) {
+      console.error('Failed to analyze chat table:', err);
+      setAnalysis(null);
+      setAnalysisError(
+        err?.code === 'ollama_busy'
+          ? formatChatError(err)
+          : (err.message || 'Не вдалося проаналізувати таблицю'),
+      );
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }, [feedbackFilter, handoffFilter]);
+
+  useEffect(() => {
+    if (!analysisOpen) {
+      return;
+    }
+    loadAnalysis();
+  }, [analysisOpen, loadAnalysis]);
+
   const handleExport = async (format) => {
     setExportOpen(false);
     setError('');
@@ -115,13 +149,14 @@ function WorkspaceChatsPage() {
           </p>
         </div>
         <div className="page__actions">
-          <Link
-            to="/admin/workspaces"
+          <button
+            type="button"
             className="btn btn--secondary"
-            title="Перейти до аналітики та прогалин знань у Workspaces"
+            aria-expanded={analysisOpen}
+            onClick={() => setAnalysisOpen((open) => !open)}
           >
-            📊 Аналітика курсів
-          </Link>
+            Аналітика курсів
+          </button>
           <div className="dropdown" ref={exportRef}>
             <button
               type="button"
@@ -160,6 +195,15 @@ function WorkspaceChatsPage() {
       </header>
 
       {error && <div className="alert alert--error" role="alert">{error}</div>}
+
+      {analysisOpen && (
+        <ChatTableAnalysis
+          analysis={analysis}
+          loading={analysisLoading}
+          error={analysisError}
+          onRefresh={loadAnalysis}
+        />
+      )}
 
       <section className="section">
         <div className="form__row" style={{ marginBottom: '1rem', gap: '1rem' }}>

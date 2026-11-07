@@ -281,3 +281,51 @@
   padding: 1.5rem 1rem;
   text-align: center;
 }
+
+.chat-analysis {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding: 1.25rem;
+  border: 1px solid var(--color-border-subtle, rgba(13, 158, 150, 0.14));
+  border-radius: var(--radius-lg, 16px);
+  background: var(--color-surface, rgba(255, 255, 255, 0.55));
+}
+
+.chat-analysis__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.chat-analysis__title {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.chat-analysis__model,
+.chat-analysis__summary {
+  margin: 0.35rem 0 0;
+  color: var(--color-text-muted, #5e7a78);
+}
+
+.chat-analysis__summary {
+  color: var(--color-text, #1c3d3a);
+  line-height: 1.5;
+}
+
+.chat-analysis__subtitle {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.chat-analysis__list {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.chat-analysis__list li + li {
+  margin-top: 0.35rem;
+}

@@ -394,6 +394,20 @@ class ApiClient extends BaseApiClient {
     window.URL.revokeObjectURL(url);
   }
 
+  async analyzeWorkspaceChatLogs(payload = {}) {
+    const response = await this.request('/chats/logs/analysis/', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    const data = await safeJson(response, {});
+    if (!response.ok) {
+      const err = new Error(data.error || data.detail || 'Не вдалося проаналізувати таблицю');
+      err.code = data.code || '';
+      throw err;
+    }
+    return data;
+  }
+
   async getWorkspaceChatLogs({ needsHandoff, feedback, limit = 50, offset = 0 } = {}) {
     const params = new URLSearchParams();
     params.set('limit', String(limit));

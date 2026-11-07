@@ -87,4 +87,24 @@ def normalize_ollama_options(options):
         except (TypeError, ValueError) as exc:
             raise ValidationError({'temperature': 'Некоректне значення temperature'}) from exc
 
+    num_predict = options.get('num_predict')
+    if num_predict is not None:
+        try:
+            limit = int(num_predict)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({'num_predict': 'Некоректне значення num_predict'}) from exc
+        if limit < 1 or limit > 2048:
+            raise ValidationError({'num_predict': 'num_predict має бути від 1 до 2048'})
+        normalized['num_predict'] = limit
+
+    num_ctx = options.get('num_ctx')
+    if num_ctx is not None:
+        try:
+            context = int(num_ctx)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError({'num_ctx': 'Некоректне значення num_ctx'}) from exc
+        if context < 256 or context > 8192:
+            raise ValidationError({'num_ctx': 'num_ctx має бути від 256 до 8192'})
+        normalized['num_ctx'] = context
+
     return normalized or None
