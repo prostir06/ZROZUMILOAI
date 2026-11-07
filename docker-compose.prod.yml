@@ -47,7 +47,7 @@ services:
       # Кампусні дефолти (не беруться з локального .env з PARALLEL=4).
       # На VPS ≥16GB можна підняти до 2 через перезапис тут або PROD_* нижче.
       OLLAMA_NUM_PARALLEL: ${PROD_OLLAMA_NUM_PARALLEL:-1}
-      OLLAMA_MAX_QUEUE: ${PROD_OLLAMA_MAX_QUEUE:-64}
+      OLLAMA_MAX_QUEUE: ${PROD_OLLAMA_MAX_QUEUE:-1}
 
   backend:
     mem_limit: 1g

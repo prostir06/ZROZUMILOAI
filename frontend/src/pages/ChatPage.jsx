@@ -10,6 +10,7 @@ import ChatInput from '../components/chat/ChatInput';
 import ChatMessage from '../components/chat/ChatMessage';
 import ModelSelector from '../components/chat/ModelSelector';
 import { buildChatTitle } from '../utils/chat';
+import { formatChatError } from '../utils/chatError';
 import { applyStreamChunk } from '../utils/streamMessages';
 
 function ChatPage() {
@@ -286,7 +287,7 @@ function ChatPage() {
           if (last.role !== 'assistant') return prev;
           return [
             ...prev.slice(0, -1),
-            { ...last, content: `Помилка: ${err.message || 'Помилка чату'}` },
+            { ...last, content: formatChatError(err) },
           ];
         });
       },

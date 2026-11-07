@@ -265,13 +265,17 @@ class ApiClient extends BaseApiClient {
 
     if (!response.ok) {
       let message = 'Chat stream failed';
+      let code = '';
       try {
         const error = await response.json();
         message = error.error || message;
+        code = error.code || '';
       } catch {
         /* ignore */
       }
-      throw new Error(message);
+      const err = new Error(message);
+      err.code = code;
+      throw err;
     }
 
     await this._consumeSSE(response, onChunk, signal);

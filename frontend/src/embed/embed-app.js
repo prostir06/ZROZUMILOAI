@@ -1,6 +1,7 @@
 /**
  * Embed-чат у iframe: отримує конфіг від widget.js, спілкується з API.
  */
+import { formatChatError } from '../utils/chatError.js';
 import './embed.css';
 import {
   buildAuthHeader,
@@ -483,8 +484,9 @@ async function chatStream(chatMessages, onChunk) {
 
   if (!response.ok) {
     const error = await safeJson(response);
-    const message = error.error || error.detail || 'Помилка чату';
-    throw new Error(message);
+    const err = new Error(error.error || error.detail || 'Помилка чату');
+    err.code = error.code || '';
+    throw err;
   }
 
   if (!response.body) {
@@ -580,7 +582,7 @@ async function handleSend(text) {
     console.error('[ZrozumiloAI Embed] Streaming error:', err);
     messages = messages.map((msg, index) => {
       if (index === messages.length - 1 && msg.role === 'assistant') {
-        return { ...msg, content: `Помилка: ${err.message}` };
+        return { ...msg, content: formatChatError(err) };
       }
       return msg;
     });
