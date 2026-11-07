@@ -11,6 +11,7 @@ import {
   formatMessageContent,
   getEmbedStatusText,
   isIso88591,
+  readEmbedFeedbackClick,
   safeJson,
   sanitizeColor,
 } from './utils.js';
@@ -200,6 +201,8 @@ function render() {
   });
 
   attachFaqHandlers();
+  // render() замінює DOM, тож кліки feedback треба вішати заново.
+  attachFeedbackHandlers();
 
   if (messages.length === 0 && model) {
     updateGreetingElement();
@@ -314,20 +317,16 @@ function updateMessages() {
     container.scrollTop = container.scrollHeight;
   }
 
-  container.querySelectorAll('.embed__feedback').forEach((block) => {
+  attachFeedbackHandlers(container);
+}
+
+/** Кліки 👍 / 👎 / «До людини» після кожного оновлення списку. */
+function attachFeedbackHandlers(container = root?.querySelector('#embed-messages')) {
+  container?.querySelectorAll('.embed__feedback').forEach((block) => {
     block.onclick = (event) => {
-      const btn = event.target.closest('[data-feedback],[data-handoff]');
-      if (!btn) return;
-      const logId = Number(block.getAttribute('data-log-id'));
-      if (!logId) return;
-      const payload = {};
-      if (btn.hasAttribute('data-feedback')) {
-        payload.feedback = btn.getAttribute('data-feedback');
-      }
-      if (btn.hasAttribute('data-handoff')) {
-        payload.needs_handoff = true;
-      }
-      submitEmbedFeedback(logId, payload);
+      const parsed = readEmbedFeedbackClick(event.target, block);
+      if (!parsed) return;
+      submitEmbedFeedback(parsed.logId, parsed.payload);
     };
   });
 }

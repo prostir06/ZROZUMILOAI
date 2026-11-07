@@ -58,7 +58,8 @@ export { truncateText } from '../utils/text.js';
 export async function safeJson(response, fallback = {}) {
   try {
     return await response.json();
-  } catch {
+  } catch (err) {
+    console.warn('[ZrozumiloAI Embed] JSON parse failed:', err);
     return fallback;
   }
 }
@@ -113,4 +114,30 @@ export function getEmbedStatusText(config, workspace, model, initError = '') {
     return 'Модель не налаштована для цього workspace.';
   }
   return `Модель: ${escapeHtml(model)}`;
+}
+
+/**
+ * Розбір кліку по feedback-кнопці embed.
+ * Повертає null, якщо клік не по кнопці або немає log id.
+ */
+export function readEmbedFeedbackClick(target, block) {
+  const btn = target?.closest?.('[data-feedback],[data-handoff]');
+  if (!btn || !block) {
+    return null;
+  }
+  const logId = Number(block.getAttribute('data-log-id'));
+  if (!logId) {
+    return null;
+  }
+  const payload = {};
+  if (btn.hasAttribute('data-feedback')) {
+    payload.feedback = btn.getAttribute('data-feedback');
+  }
+  if (btn.hasAttribute('data-handoff')) {
+    payload.needs_handoff = true;
+  }
+  if (!payload.feedback && !payload.needs_handoff) {
+    return null;
+  }
+  return { logId, payload };
 }

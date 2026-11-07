@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   buildAuthHeader,
@@ -8,6 +8,8 @@ import {
   formatMessageContent,
   getEmbedStatusText,
   isIso88591,
+  readEmbedFeedbackClick,
+  safeJson,
   sanitizeColor,
   sanitizeTitle,
   truncateText,
@@ -127,6 +129,51 @@ describe('sanitizeTitle', () => {
 
   it('повертає значення за замовчуванням', () => {
     expect(sanitizeTitle('')).toBe('Підтримка');
+  });
+});
+
+describe('safeJson', () => {
+  it('логає зіпсований JSON і повертає fallback', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const response = {
+      json: async () => {
+        throw new Error('bad json');
+      },
+    };
+
+    await expect(safeJson(response, { error: 'fallback' })).resolves.toEqual({
+      error: 'fallback',
+    });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+});
+
+describe('readEmbedFeedbackClick', () => {
+  function button(attrs) {
+    return {
+      hasAttribute: (name) => Object.prototype.hasOwnProperty.call(attrs, name),
+      getAttribute: (name) => attrs[name] ?? null,
+      closest: () => button(attrs),
+    };
+  }
+
+  function block(logId) {
+    return { getAttribute: () => logId };
+  }
+
+  it('читає оцінку вниз', () => {
+    expect(readEmbedFeedbackClick(button({ 'data-feedback': 'down' }), block('12')))
+      .toEqual({ logId: 12, payload: { feedback: 'down' } });
+  });
+
+  it('читає запит людини', () => {
+    expect(readEmbedFeedbackClick(button({ 'data-handoff': '1' }), block('4')))
+      .toEqual({ logId: 4, payload: { needs_handoff: true } });
+  });
+
+  it('ігнорує клік без log id', () => {
+    expect(readEmbedFeedbackClick(button({ 'data-feedback': 'up' }), block(''))).toBeNull();
   });
 });
 
