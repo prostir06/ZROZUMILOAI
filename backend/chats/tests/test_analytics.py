@@ -221,10 +221,16 @@ class WorkspaceAnalyticsServiceTests(APITestCase):
         analytics = get_workspace_analytics(self.workspace, date_range='7d')
         timeline = analytics['timeline']
         self.assertEqual(len(timeline), 2)
-        self.assertEqual(timeline[0]['date'], day1.strftime('%Y-%m-%d'))
+        self.assertEqual(
+            timeline[0]['date'],
+            timezone.localtime(day1).strftime('%Y-%m-%d'),
+        )
         self.assertEqual(timeline[0]['total_queries'], 2)
         self.assertEqual(timeline[0]['handoffs'], 1)
-        self.assertEqual(timeline[1]['date'], day2.strftime('%Y-%m-%d'))
+        self.assertEqual(
+            timeline[1]['date'],
+            timezone.localtime(day2).strftime('%Y-%m-%d'),
+        )
         self.assertEqual(timeline[1]['total_queries'], 1)
         self.assertEqual(timeline[1]['handoffs'], 0)
 
