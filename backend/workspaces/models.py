@@ -28,7 +28,6 @@ class Workspace(models.Model):
 
     class LLMProvider(models.TextChoices):
         OLLAMA = 'ollama', 'Ollama'
-        GEMINI = 'gemini', 'Google Gemini'
 
     name = models.CharField(max_length=200, unique=True)
     system_prompt = models.TextField(blank=True, default='')
@@ -42,7 +41,6 @@ class Workspace(models.Model):
         choices=LLMProvider.choices,
         default=LLMProvider.OLLAMA,
     )
-    gemini_api_key = models.TextField(blank=True, default='')
     search_source = models.CharField(
         max_length=20,
         choices=SearchSource.choices,
