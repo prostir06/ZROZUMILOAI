@@ -80,7 +80,8 @@ export class BaseApiClient {
       const data = await response.json();
       localStorage.setItem('access_token', data.access);
       return true;
-    } catch {
+    } catch (err) {
+      console.error('Token refresh request failed:', err);
       return false;
     }
   }

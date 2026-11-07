@@ -1,7 +1,12 @@
 """Допоміжні функції контролю доступу до workspace та підготовки чату."""
+import logging
+
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
+from .crypto import decrypt_secret
 from .models import Workspace
+
+logger = logging.getLogger(__name__)
 
 
 def get_allowed_model_names(user):
@@ -180,12 +185,15 @@ def get_gemini_api_key(workspace=None):
     """
     from django.conf import settings
 
-    from .crypto import decrypt_secret
-
     if workspace and workspace.gemini_api_key:
         try:
             return decrypt_secret(workspace.gemini_api_key).strip()
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                'Failed to decrypt gemini_api_key for workspace %s: %s',
+                getattr(workspace, 'pk', None),
+                exc,
+            )
             return workspace.gemini_api_key.strip()
     return (settings.GEMINI_API_KEY or '').strip()
 

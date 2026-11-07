@@ -115,8 +115,12 @@ class WidgetChatView(APIView):
         try:
             widget_token.last_used_at = timezone.now()
             widget_token.save(update_fields=['last_used_at'])
-        except DatabaseError:
-            pass
+        except DatabaseError as exc:
+            logger.warning(
+                'Failed to update last_used_at for token %s: %s',
+                getattr(widget_token, 'pk', '?'),
+                exc,
+            )
 
         # Token/workspace course scope має пріоритет над клієнтським override.
         locked_course = (
@@ -213,7 +217,8 @@ class WidgetTokenDeleteView(APIView):
 
         try:
             token.delete()
-        except DatabaseError:
+        except DatabaseError as exc:
+            logger.exception('Failed to delete widget token %s: %s', token_id, exc)
             return Response(
                 {'error': 'Не вдалося видалити token'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -250,7 +255,8 @@ class WidgetFeedbackView(APIView):
                 {'error': 'Запис не знайдено'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        except DatabaseError:
+        except DatabaseError as exc:
+            logger.exception('Database error retrieving log %s: %s', log_id, exc)
             return Response(
                 {'error': 'Помилка бази даних'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

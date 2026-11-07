@@ -31,6 +31,7 @@ function PasswordPage() {
         new_password_confirm: '',
       });
     } catch (err) {
+      console.error('Password change failed:', err);
       setError(err.message || 'Не вдалося змінити пароль');
     } finally {
       setLoading(false);

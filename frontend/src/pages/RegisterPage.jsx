@@ -34,6 +34,7 @@ function RegisterPage() {
         navigate('/login');
       }
     } catch (err) {
+      console.error('Registration failed:', err);
       setError(err.message || 'Перевірте правильність введених даних');
     } finally {
       setLoading(false);

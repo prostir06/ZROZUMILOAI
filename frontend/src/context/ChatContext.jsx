@@ -19,7 +19,8 @@ export function ChatProvider({ children }) {
     try {
       const data = await api.getChats();
       setChats(data);
-    } catch {
+    } catch (err) {
+      console.error('Failed to load user chats:', err);
       setChats([]);
     } finally {
       setLoading(false);

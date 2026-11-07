@@ -55,11 +55,20 @@ function DashboardPage() {
       setLoadError('');
       try {
         const [healthData, modelsData, apiHealthData, logsData] = await Promise.all([
-          api.getOllamaHealth().catch(() => null),
-          api.getModels().catch(() => ({ models: [] })),
+          api.getOllamaHealth().catch((err) => {
+            console.error('Failed to load Ollama health for dashboard:', err);
+            return null;
+          }),
+          api.getModels().catch((err) => {
+            console.error('Failed to load models list for dashboard:', err);
+            return { models: [] };
+          }),
           fetchJsonSafe('/api/health/'),
           api.getWorkspaceChatLogs({ needsHandoff: true, limit: 1 })
-            .catch(() => ({ count: null })),
+            .catch((err) => {
+              console.error('Failed to load handoff count for dashboard:', err);
+              return { count: null };
+            }),
         ]);
         if (cancelled) {
           return;
@@ -71,6 +80,7 @@ function DashboardPage() {
           typeof logsData?.count === 'number' ? logsData.count : null,
         );
       } catch (err) {
+        console.error('Failed to load dashboard data:', err);
         if (!cancelled) {
           setLoadError(err?.message || 'Не вдалося завантажити панель');
         }

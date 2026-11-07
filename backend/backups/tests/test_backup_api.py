@@ -48,3 +48,53 @@ class BackupApiAclTests(APITestCase):
         )
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_download_value_error_returns_400(self):
+        """ValueError на get_backup_path повертає 400 Bad Request."""
+        from unittest.mock import patch
+        self.client.force_authenticate(user=self.admin)
+        url = reverse(
+            'backup_download',
+            kwargs={'filename': 'bad_backup.sql'},
+        )
+        with patch(
+            'backups.views.BackupService.get_backup_path',
+            side_effect=ValueError('Path traversal forbidden'),
+        ):
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('error', response.data)
+
+    def test_delete_value_error_returns_400(self):
+        """ValueError на delete_backup повертає 400 Bad Request."""
+        from unittest.mock import patch
+        self.client.force_authenticate(user=self.admin)
+        url = reverse(
+            'backup_delete',
+            kwargs={'filename': 'bad_backup.sql'},
+        )
+        with patch(
+            'backups.views.BackupService.delete_backup',
+            side_effect=ValueError('Path traversal forbidden'),
+        ):
+            response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('error', response.data)
+
+    def test_delete_os_error_returns_500(self):
+        """OSError на delete_backup повертає 500 та логується."""
+        from unittest.mock import patch
+        self.client.force_authenticate(user=self.admin)
+        url = reverse(
+            'backup_delete',
+            kwargs={'filename': 'test.sql'},
+        )
+        with patch(
+            'backups.views.BackupService.delete_backup',
+            side_effect=OSError('Permission denied'),
+        ):
+            response = self.client.delete(url)
+        self.assertEqual(
+            response.status_code,
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

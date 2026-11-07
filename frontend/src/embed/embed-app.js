@@ -493,8 +493,8 @@ async function chatStream(chatMessages, onChunk) {
       try {
         const data = JSON.parse(line.slice(6));
         onChunk(data);
-      } catch {
-        /* пропускаємо пошкоджені SSE-чанки */
+      } catch (err) {
+        console.warn('[ZrozumiloAI Embed] Invalid SSE JSON chunk:', err);
       }
     }
   }
@@ -556,6 +556,7 @@ async function handleSend(text) {
       }
     });
   } catch (err) {
+    console.error('[ZrozumiloAI Embed] Streaming error:', err);
     messages = messages.map((msg, index) => {
       if (index === messages.length - 1 && msg.role === 'assistant') {
         return { ...msg, content: `Помилка: ${err.message}` };

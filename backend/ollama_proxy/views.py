@@ -107,8 +107,8 @@ class ModelPullView(APIView):
                 if response is not None:
                     try:
                         response.close()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug('Error closing pull stream response: %s', exc)
 
         from django.http import StreamingHttpResponse
         return StreamingHttpResponse(

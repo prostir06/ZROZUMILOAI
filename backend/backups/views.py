@@ -55,7 +55,17 @@ class BackupDownloadView(APIView):
                 as_attachment=True,
                 filename=filename,
             )
-        except (ValueError, FileNotFoundError):
+        except ValueError as exc:
+            logger.warning(
+                'Invalid backup filename or path traversal attempt (%s): %s',
+                filename,
+                exc,
+            )
+            return Response(
+                {'error': 'Некоректне ім\'я файлу резервної копії'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except FileNotFoundError:
             return Response(
                 {'error': 'Файл резервної копії не знайдено'},
                 status=status.HTTP_404_NOT_FOUND,
@@ -78,7 +88,17 @@ class BackupDeleteView(APIView):
         try:
             result = service.delete_backup(filename)
             return Response(result)
-        except (ValueError, FileNotFoundError):
+        except ValueError as exc:
+            logger.warning(
+                'Invalid backup filename or path traversal attempt (%s): %s',
+                filename,
+                exc,
+            )
+            return Response(
+                {'error': 'Некоректне ім\'я файлу резервної копії'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except FileNotFoundError:
             return Response(
                 {'error': 'Файл резервної копії не знайдено'},
                 status=status.HTTP_404_NOT_FOUND,

@@ -259,8 +259,8 @@ def run_chat(
                 if response is not None and hasattr(response, 'close'):
                     try:
                         response.close()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug('Error closing stream response: %s', exc)
 
         return StreamingHttpResponse(
             event_stream(),

@@ -26,7 +26,8 @@ function UsersPage() {
     try {
       const data = await api.getUsers();
       setUsers(data);
-    } catch {
+    } catch (err) {
+      console.error('Failed to load users:', err);
       setError('Не вдалося завантажити користувачів');
     } finally {
       setLoading(false);
@@ -99,6 +100,7 @@ function UsersPage() {
       resetForm();
       loadUsers();
     } catch (err) {
+      console.error('Failed to save user:', err);
       setError(err.message || 'Помилка збереження користувача');
     }
   };
@@ -114,6 +116,7 @@ function UsersPage() {
       }
       loadUsers();
     } catch (err) {
+      console.error('Failed to delete user:', err);
       setError(err.message || 'Помилка видалення користувача');
     }
   };
@@ -121,8 +124,9 @@ function UsersPage() {
   const handleCopyKey = async (key) => {
     try {
       await navigator.clipboard.writeText(key);
-    } catch {
-      /* clipboard unavailable */
+    } catch (err) {
+      // Clipboard API may be disabled or blocked by browser permissions
+      console.error('Failed to copy API key to clipboard:', err);
     }
   };
 

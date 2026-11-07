@@ -19,6 +19,7 @@ function LoginPage() {
       await login(username, password);
       navigate('/');
     } catch (err) {
+      console.error('Login failed:', err);
       setError(err.message || 'Помилка входу');
     } finally {
       setLoading(false);

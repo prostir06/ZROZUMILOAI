@@ -154,8 +154,8 @@ class CustomTokenObtainPairView(TokenObtainPairView):
             try:
                 user = User.objects.select_related('api_key').get(username=username)
                 response.data['user'] = UserSerializer(user).data
-            except User.DoesNotExist:
-                pass
+            except User.DoesNotExist as exc:
+                logger.warning('User logged in but User object lookup failed for %s: %s', username, exc)
         else:
             logger.warning('Login failed: user=%s status=%s', username or '?', response.status_code)
         return response

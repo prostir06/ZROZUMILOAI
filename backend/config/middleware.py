@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 # Thread-local сховище request_id для поточного запиту.
 _request_context = threading.local()
+logger = logging.getLogger(__name__)
 
 
 def get_request_id():
@@ -70,7 +71,8 @@ class RequestIdMiddleware:
         try:
             incoming = (request.META.get(self.HEADER) or '').strip()
             request_id = incoming or str(uuid.uuid4())
-        except Exception:
+        except Exception as exc:
+            logger.debug('Failed to extract request ID from header: %s', exc)
             request_id = str(uuid.uuid4())
 
         _request_context.request_id = request_id
@@ -84,8 +86,8 @@ class RequestIdMiddleware:
 
         try:
             response[self.RESPONSE_HEADER] = request_id
-        except Exception:
+        except Exception as exc:
             # Деякі streaming-відповіді можуть не підтримувати __setitem__.
-            pass
+            logger.debug('Could not attach %s header to response: %s', self.RESPONSE_HEADER, exc)
 
         return response

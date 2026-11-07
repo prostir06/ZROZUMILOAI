@@ -58,7 +58,26 @@ class WidgetFeedbackApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['feedback'], 'up')
         self.log.refresh_from_db()
-        self.assertEqual(self.log.feedback, 'up')
+
+    def test_feedback_database_error_returns_500(self):
+        """DatabaseError при збереженні відгуку повертає 500 та логується."""
+        from unittest.mock import patch
+        from django.db import DatabaseError
+
+        with patch(
+            'chats.feedback.save_log_feedback',
+            side_effect=DatabaseError('DB write error'),
+        ):
+            response = self.client.post(
+                self.url,
+                {'feedback': 'up'},
+                format='json',
+                **self._auth(),
+            )
+        self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        self.assertIn('error', response.data)
+        self.log.refresh_from_db()
+        self.assertEqual(self.log.feedback, '')
 
     def test_invalid_feedback_returns_400_json(self):
         """Невалідний feedback → 400 з JSON error."""

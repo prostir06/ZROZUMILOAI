@@ -34,6 +34,7 @@ function ModelsPage() {
       const data = await api.getModels();
       setModels(data.models || []);
     } catch (err) {
+      console.error('Failed to load models:', err);
       setError(err.message);
       setModels([]);
     } finally {
@@ -82,6 +83,7 @@ function ModelsPage() {
       await api.deleteModel(name);
       loadModels();
     } catch (err) {
+      console.error('Failed to delete model:', err);
       setError(err.message);
     }
   };

@@ -299,6 +299,7 @@ class ApiClient extends BaseApiClient {
       }
       await this._consumeSSE(response, onProgress);
     }).catch((err) => {
+      console.error('Model pull stream error:', err);
       if (err.message !== 'Unauthorized') {
         onProgress({ error: err.message || 'Не вдалося завантажити модель' });
       }

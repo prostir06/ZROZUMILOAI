@@ -72,8 +72,8 @@ class BackupService:
             if temp_dump.exists():
                 try:
                     temp_dump.unlink()
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.warning('Failed to remove temp dump file %s: %s', temp_dump, exc)
 
     def _dump_postgresql(self, target_filepath):
         db = settings.DATABASES['default']
@@ -232,7 +232,8 @@ class BackupService:
                 try:
                     with tarfile.open(filepath, 'r:gz') as tar:
                         has_media = any(name.startswith('media/') for name in tar.getnames())
-                except (tarfile.TarError, OSError):
+                except (tarfile.TarError, OSError) as exc:
+                    logger.debug('Could not inspect media entries in %s: %s', filepath.name, exc)
                     has_media = False
         else:
             if has_media is None:
@@ -318,7 +319,8 @@ class BackupService:
                         return 'dump.sql' in names
                     if engine_type == 'sqlite':
                         return any(n in names for n in ('dump.sqlite3', 'dump.db'))
-            except (tarfile.TarError, OSError):
+            except (tarfile.TarError, OSError) as exc:
+                logger.debug('Compatibility check error for %s: %s', path.name, exc)
                 return False
             return False
 
@@ -347,7 +349,8 @@ class BackupService:
                     and self._is_compatible_backup(path, engine_type)
                 ):
                     candidates.append(path)
-            except OSError:
+            except OSError as exc:
+                logger.warning('Failed to inspect backup candidate %s: %s', path.name, exc)
                 continue
 
         if not candidates:

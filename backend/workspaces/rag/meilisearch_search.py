@@ -101,7 +101,12 @@ def resolve_meilisearch_credentials(workspace):
     )
     try:
         api_key = decrypt_secret(raw_key) if raw_key else ''
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            'Failed to decrypt meilisearch_api_key for workspace %s: %s',
+            getattr(workspace, 'pk', None),
+            exc,
+        )
         api_key = raw_key or ''
     return url, api_key
 

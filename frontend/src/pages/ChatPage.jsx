@@ -68,7 +68,10 @@ function ChatPage() {
   }, [models, activeWorkspace, isAdmin, workspaceModels]);
 
   useEffect(() => {
-    api.getModels().catch(() => ({ models: [] })).then((modelsData) => {
+    api.getModels().catch((err) => {
+      console.error('Failed to load models for chat:', err);
+      return { models: [] };
+    }).then((modelsData) => {
       setModels(modelsData.models || []);
     });
   }, []);
@@ -158,7 +161,10 @@ function ChatPage() {
           setSelectedWorkspaceId(String(data.workspace));
         }
       })
-      .catch(() => navigate('/', { replace: true }))
+      .catch((err) => {
+        console.error('Failed to load chat history:', err);
+        navigate('/', { replace: true });
+      })
       .finally(() => {
         setLoadingChat(false);
         setTimeout(() => {
@@ -180,8 +186,9 @@ function ChatPage() {
         model: selectedModel,
         workspace: selectedWorkspaceId ? Number(selectedWorkspaceId) : null,
         messages,
-      }).catch(() => {
-        /* silent retry on next debounce */
+      }).catch((err) => {
+        // Warning level: will retry naturally on next message/state debounce
+        console.warn('Autosave chat failed (will retry on next debounce):', err);
       });
     }, 500);
 
@@ -305,6 +312,7 @@ function ChatPage() {
         item.logId === msg.logId ? { ...item, feedback } : item
       )));
     } catch (err) {
+      console.error('Failed to submit chat feedback:', err);
       window.alert(err.message || 'Не вдалося зберегти відгук');
     }
   }, []);
@@ -317,6 +325,7 @@ function ChatPage() {
         item.logId === msg.logId ? { ...item, needsHandoff: true } : item
       )));
     } catch (err) {
+      console.error('Failed to request handoff:', err);
       window.alert(err.message || 'Не вдалося надіслати запит до підтримки');
     }
   }, []);
@@ -332,8 +341,8 @@ function ChatPage() {
         } else {
           navigate('/', { replace: true });
         }
-      } catch {
-        /* ignore */
+      } catch (err) {
+        console.error('Failed to delete chat:', err);
       }
       return;
     }

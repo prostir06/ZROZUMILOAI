@@ -22,8 +22,8 @@ export async function consumeSSE(response, onChunk, options = {}) {
   const abort = () => {
     try {
       reader.cancel();
-    } catch {
-      /* ignore */
+    } catch (cancelErr) {
+      console.debug('Reader cancel error:', cancelErr);
     }
   };
 
@@ -58,8 +58,8 @@ export async function consumeSSE(response, onChunk, options = {}) {
         try {
           const data = JSON.parse(line.slice(6));
           onChunk(data);
-        } catch {
-          /* пропускаємо пошкоджені SSE-чанки */
+        } catch (err) {
+          console.warn('Failed to parse SSE JSON chunk:', err);
         }
       }
     }

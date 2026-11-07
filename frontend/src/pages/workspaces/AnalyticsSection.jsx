@@ -38,6 +38,7 @@ export default function AnalyticsSection({
         const data = await api.getWorkspaceAnalytics(workspaceId, { range: selectedRange });
         setAnalytics(data);
       } catch (err) {
+        console.error('Failed to load workspace analytics:', err);
         setError(err.message || 'Не вдалося завантажити аналітику');
       } finally {
         setLoading(false);
@@ -64,6 +65,7 @@ export default function AnalyticsSection({
     try {
       await api.exportWorkspaceAnalyticsCsv(workspaceId, { range });
     } catch (err) {
+      console.error('Failed to export workspace analytics CSV:', err);
       setError(err.message || 'Не вдалося експортувати аналітику у CSV');
     } finally {
       setExporting(false);

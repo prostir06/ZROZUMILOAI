@@ -34,6 +34,22 @@ function SafeLink({ href = '', children, ...props }) {
 }
 
 /**
+ * Safely copy text to clipboard with error logging.
+ */
+export async function copyToClipboard(text) {
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error('Failed to copy code to clipboard:', err);
+    return false;
+  }
+}
+
+/**
  * Custom pre / code block component with language badge and copy-to-clipboard button.
  */
 function CodeBlock({ children, ...props }) {
@@ -52,19 +68,15 @@ function CodeBlock({ children, ...props }) {
   const codeText = extractText(children);
 
   const handleCopy = useCallback(async () => {
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(codeText);
-        setCopied(true);
-        if (timerRef.current) {
-          clearTimeout(timerRef.current);
-        }
-        timerRef.current = setTimeout(() => {
-          setCopied(false);
-        }, 2000);
+    const ok = await copyToClipboard(codeText);
+    if (ok) {
+      setCopied(true);
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
       }
-    } catch (_err) {
-      // Graceful fallback if clipboard API is unavailable
+      timerRef.current = setTimeout(() => {
+        setCopied(false);
+      }, 2000);
     }
   }, [codeText]);
 
@@ -124,8 +136,9 @@ export default function MarkdownMessage({ content, isStreaming = false }) {
       </div>
     );
   } catch (_error) {
+    console.error('Failed to parse markdown message:', _error);
     return <span className="markdown-fallback">{text}</span>;
   }
 }
 
-export { MarkdownMessage };
+export { MarkdownMessage, CodeBlock };

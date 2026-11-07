@@ -77,8 +77,8 @@ def _extract_pdf(path):
                 stream = getattr(reader, 'stream', None)
                 if stream is not None:
                     stream.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug('Error closing PDF reader stream: %s', exc)
 
 
 def _extract_docx(path):

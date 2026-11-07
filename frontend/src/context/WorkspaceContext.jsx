@@ -19,7 +19,8 @@ export function WorkspaceProvider({ children }) {
     try {
       const data = await api.getMyWorkspaces();
       setWorkspaces(data);
-    } catch {
+    } catch (err) {
+      console.error('Failed to load user workspaces:', err);
       setWorkspaces([]);
     } finally {
       setLoading(false);

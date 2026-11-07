@@ -27,6 +27,7 @@ function BackupPage() {
       const data = await api.getBackups();
       setBackups(data.backups || []);
     } catch (err) {
+      console.error('Failed to load backups:', err);
       setError(err.message || 'Не вдалося завантажити список');
     } finally {
       setLoading(false);
@@ -46,6 +47,7 @@ function BackupPage() {
       setSuccess(`Резервну копію створено: ${backup.filename}`);
       loadBackups();
     } catch (err) {
+      console.error('Failed to create backup:', err);
       setError(err.message || 'Помилка створення backup');
     } finally {
       setCreating(false);
@@ -56,6 +58,7 @@ function BackupPage() {
     try {
       await api.downloadBackup(filename);
     } catch (err) {
+      console.error('Failed to download backup:', err);
       setError(err.message || 'Помилка завантаження');
     }
   };
@@ -67,6 +70,7 @@ function BackupPage() {
       await api.deleteBackup(filename);
       loadBackups();
     } catch (err) {
+      console.error('Failed to delete backup:', err);
       setError(err.message || 'Помилка видалення');
     }
   };

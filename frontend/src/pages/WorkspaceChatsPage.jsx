@@ -41,6 +41,7 @@ function WorkspaceChatsPage() {
       setLogs(data.results || []);
       setTotal(data.count || 0);
     } catch (err) {
+      console.error('Failed to load workspace chat logs:', err);
       setError(err.message || 'Не вдалося завантажити чати');
     } finally {
       setLoading(false);
@@ -70,6 +71,7 @@ function WorkspaceChatsPage() {
       setLogs((prev) => prev.filter((item) => item.id !== logId));
       setTotal((prev) => Math.max(0, prev - 1));
     } catch (err) {
+      console.error('Failed to delete workspace chat log:', err);
       setError(err.message || 'Помилка видалення');
     }
   };
@@ -84,6 +86,7 @@ function WorkspaceChatsPage() {
       setTotal(0);
       setOffset(0);
     } catch (err) {
+      console.error('Failed to clear workspace chat logs:', err);
       setError(err.message || 'Помилка очищення');
     }
   };
@@ -94,6 +97,7 @@ function WorkspaceChatsPage() {
     try {
       await api.exportWorkspaceChatLogs(format);
     } catch (err) {
+      console.error('Failed to export workspace chat logs:', err);
       setError(err.message || 'Помилка експорту');
     }
   };

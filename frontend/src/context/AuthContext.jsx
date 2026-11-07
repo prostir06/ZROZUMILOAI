@@ -11,7 +11,10 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     api.getAuthConfig()
       .then((config) => setAllowRegistration(config.allow_registration))
-      .catch(() => setAllowRegistration(true));
+      .catch((err) => {
+        console.error('Failed to load auth config:', err);
+        setAllowRegistration(true);
+      });
   }, []);
 
   useEffect(() => {
@@ -21,7 +24,8 @@ export function AuthProvider({ children }) {
       if (stored) {
         try {
           setUser(JSON.parse(stored));
-        } catch {
+        } catch (err) {
+          console.error('Failed to parse cached user from localStorage:', err);
           localStorage.removeItem('user');
         }
       }
@@ -30,7 +34,8 @@ export function AuthProvider({ children }) {
           setUser(data);
           localStorage.setItem('user', JSON.stringify(data));
         })
-        .catch(() => {
+        .catch((err) => {
+          console.error('Failed to verify current user session:', err);
           api.clearTokens();
           setUser(null);
         })

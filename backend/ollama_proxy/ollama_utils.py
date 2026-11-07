@@ -14,8 +14,8 @@ def parse_ollama_error(response):
         body = response.json()
         if isinstance(body, dict):
             return body.get('error') or body.get('message') or response.text[:500]
-    except (ValueError, json.JSONDecodeError):
-        pass
+    except (ValueError, json.JSONDecodeError) as exc:
+        logger.debug('Ollama error response is not JSON: %s', exc)
     text = (response.text or '').strip()
     return text[:500] if text else f'HTTP {response.status_code}'
 

@@ -198,8 +198,8 @@ class GeminiProvider(BaseLLMProvider):
         if response.status_code >= 400:
             try:
                 response.read()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug('Failed to read error response body: %s', exc)
             raise LLMProviderError(self._error_message(response))
         return GeminiStreamResponse(response)
 
@@ -223,8 +223,8 @@ class GeminiProvider(BaseLLMProvider):
             message = error.get('message')
             if message:
                 return message
-        except (ValueError, AttributeError):
-            pass
+        except (ValueError, AttributeError) as exc:
+            logger.debug('Failed to parse JSON error from Gemini response: %s', exc)
         return f'Gemini API помилка: HTTP {response.status_code}'
 
 
@@ -238,8 +238,8 @@ class GeminiStreamResponse:
         """Закрити underlying HTTP response (TCP leak prevention)."""
         try:
             self._response.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug('Error closing Gemini stream response: %s', exc)
 
     def iter_lines(self, decode_unicode=False):
         del decode_unicode

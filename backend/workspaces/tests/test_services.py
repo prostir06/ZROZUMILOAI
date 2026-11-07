@@ -126,3 +126,15 @@ class WorkspaceServicesTests(TestCase):
     def test_get_gemini_api_key_falls_back_to_settings(self):
         """Без ключа workspace використовується GEMINI_API_KEY."""
         self.assertEqual(get_gemini_api_key(self.workspace), 'global-key')
+
+    def test_get_gemini_api_key_handles_decryption_failure(self):
+        """При збої дешифрування повертається сирий ключ та логується warning."""
+        from unittest.mock import patch
+        self.workspace.gemini_api_key = 'raw-key-data'
+        self.workspace.save()
+
+        with patch('workspaces.services.decrypt_secret', side_effect=ValueError('Cipher error')):
+            with self.assertLogs('workspaces.services', level='WARNING') as cm:
+                key = get_gemini_api_key(self.workspace)
+        self.assertEqual(key, 'raw-key-data')
+        self.assertTrue(any('Failed to decrypt gemini_api_key' in log for log in cm.output))

@@ -51,12 +51,16 @@ function WorkspacesPage() {
       const [workspacesData, usersData, modelsData] = await Promise.all([
         api.getWorkspaces(),
         api.getUsers(),
-        api.getModels().catch(() => ({ models: [] })),
+        api.getModels().catch((err) => {
+          console.error('Failed to load models for workspaces form:', err);
+          return { models: [] };
+        }),
       ]);
       setWorkspaces(workspacesData);
       setUsers(usersData);
       setModels(modelsData.models || []);
-    } catch {
+    } catch (err) {
+      console.error('Failed to load workspaces data:', err);
       setError('Не вдалося завантажити дані');
     } finally {
       setLoading(false);
@@ -83,7 +87,8 @@ function WorkspacesPage() {
     try {
       const tokens = await api.getWidgetTokens(workspaceId);
       setWidgetTokens(tokens);
-    } catch {
+    } catch (err) {
+      console.error('Failed to load widget tokens:', err);
       setWidgetTokens([]);
     }
   };
@@ -92,11 +97,15 @@ function WorkspacesPage() {
     try {
       const [docs, stats] = await Promise.all([
         api.getWorkspaceDocuments(workspaceId),
-        api.getWorkspaceRagStats(workspaceId).catch(() => null),
+        api.getWorkspaceRagStats(workspaceId).catch((err) => {
+          console.error('Failed to load RAG stats:', err);
+          return null;
+        }),
       ]);
       setDocuments(docs);
       setRagStats(stats);
-    } catch {
+    } catch (err) {
+      console.error('Failed to load workspace documents:', err);
       setDocuments([]);
       setRagStats(null);
     }
@@ -241,6 +250,7 @@ function WorkspacesPage() {
       resetForm();
       loadData();
     } catch (err) {
+      console.error('Failed to save workspace:', err);
       setError(err.message || 'Помилка збереження workspace');
     }
   };
@@ -256,6 +266,7 @@ function WorkspacesPage() {
       }
       loadData();
     } catch (err) {
+      console.error('Failed to delete workspace:', err);
       setError(err.message || 'Помилка видалення workspace');
     }
   };
@@ -275,6 +286,7 @@ function WorkspacesPage() {
       setWidgetTokenCourseId('');
       loadWidgetTokens(editingId);
     } catch (err) {
+      console.error('Failed to create widget token:', err);
       setError(err.message || 'Помилка створення widget token');
     }
   };
@@ -288,6 +300,7 @@ function WorkspacesPage() {
       await api.deleteWidgetToken(editingId, tokenId);
       loadWidgetTokens(editingId);
     } catch (err) {
+      console.error('Failed to delete widget token:', err);
       setError(err.message || 'Помилка видалення token');
     }
   };
@@ -302,6 +315,7 @@ function WorkspacesPage() {
       await api.uploadWorkspaceDocument(editingId, file);
       await loadDocuments(editingId);
     } catch (err) {
+      console.error('Failed to upload workspace document:', err);
       setError(err.message || 'Помилка завантаження документа');
     } finally {
       setUploadingDocument(false);
@@ -318,6 +332,7 @@ function WorkspacesPage() {
       await api.deleteWorkspaceDocument(editingId, documentId);
       loadDocuments(editingId);
     } catch (err) {
+      console.error('Failed to delete workspace document:', err);
       setError(err.message || 'Помилка видалення документа');
     }
   };
@@ -329,6 +344,7 @@ function WorkspacesPage() {
       await api.retryWorkspaceDocument(editingId, documentId);
       await loadDocuments(editingId);
     } catch (err) {
+      console.error('Failed to retry document index:', err);
       setError(err.message || 'Помилка повторної індексації');
     }
   };
@@ -340,6 +356,7 @@ function WorkspacesPage() {
       await api.reindexFailedWorkspaceDocuments(editingId);
       await loadDocuments(editingId);
     } catch (err) {
+      console.error('Failed to reindex failed documents:', err);
       setError(err.message || 'Помилка reindex');
     }
   };
