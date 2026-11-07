@@ -35,7 +35,12 @@ def acquire_ollama_slot(client=None):
         ttl = int(getattr(settings, 'OLLAMA_ADMISSION_TTL_SECONDS', 180))
         written = redis_client.set(ADMISSION_KEY, token, nx=True, ex=ttl)
     except Exception as exc:
-        logger.warning('Ollama admission unavailable, failing open: %s', exc)
+        # Без Redis чат лишається доступним; слот тоді ніхто не тримає.
+        logger.warning(
+            'Ollama admission unavailable, failing open: %s',
+            exc,
+            exc_info=True,
+        )
         return None
     if not written:
         raise OllamaBusy()
@@ -53,4 +58,9 @@ def release_ollama_slot(token, client=None):
             redis_client = get_redis_connection('default')
         redis_client.eval(_RELEASE_LUA, 1, ADMISSION_KEY, token)
     except Exception as exc:
-        logger.warning('Ollama admission release failed: %s', exc)
+        # Ключ зникне по TTL, навіть якщо eval не пройшов.
+        logger.warning(
+            'Ollama admission release failed: %s',
+            exc,
+            exc_info=True,
+        )

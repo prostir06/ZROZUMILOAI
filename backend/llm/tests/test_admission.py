@@ -48,6 +48,13 @@ class AdmissionTests(SimpleTestCase):
                 token = acquire_ollama_slot(client=client)
         self.assertIsNone(token)
 
+    def test_release_failure_is_logged_and_not_raised(self):
+        client = MagicMock()
+        client.eval.side_effect = ConnectionError('redis down')
+        with self.assertLogs('llm.admission', level=logging.WARNING) as logs:
+            release_ollama_slot('token-1', client=client)
+        self.assertIn('redis down', logs.output[0])
+
     @override_settings(REDIS_URL='')
     def test_missing_redis_url_fails_open_without_client(self):
         token = acquire_ollama_slot(client=None)

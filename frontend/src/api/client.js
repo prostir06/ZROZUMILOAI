@@ -270,8 +270,8 @@ class ApiClient extends BaseApiClient {
         const error = await response.json();
         message = error.error || message;
         code = error.code || '';
-      } catch {
-        /* ignore */
+      } catch (parseErr) {
+        console.error('Chat error response is not JSON:', parseErr);
       }
       const err = new Error(message);
       err.code = code;

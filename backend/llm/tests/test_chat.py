@@ -149,6 +149,37 @@ class RunChatTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         mock_release.assert_called_once_with('token-1')
 
+    @patch('llm.chat.release_ollama_slot')
+    @patch('llm.chat.acquire_ollama_slot', return_value='token-1')
+    @patch('llm.chat.log_workspace_chat_exchange')
+    @patch('llm.chat.resolve_provider')
+    @patch('llm.chat.prepare_chat_messages')
+    def test_stream_close_error_is_logged_and_slot_released(
+        self, mock_prepare, mock_resolve, mock_log, mock_acquire, mock_release,
+    ):
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
+        mock_log.return_value = None
+        mock_response = MagicMock()
+        mock_response.iter_lines.return_value = []
+        mock_response.close.side_effect = OSError('close failed')
+        provider = MagicMock()
+        provider.chat.return_value = mock_response
+        mock_resolve.return_value = provider
+
+        with self.assertLogs('llm.chat', level='WARNING') as logs:
+            response = run_chat(
+                model='llama3',
+                messages=[{'role': 'user', 'content': 'Hi'}],
+                stream=True,
+                workspace=self.workspace,
+                user=self.user,
+                prompt='Hi',
+            )
+            b''.join(response.streaming_content)
+
+        self.assertTrue(any('close failed' in line for line in logs.output))
+        mock_release.assert_called_once_with('token-1')
+
     @patch('llm.chat.resolve_provider')
     @patch('llm.chat.prepare_chat_messages')
     def test_non_stream_request_exception(self, mock_prepare, mock_resolve):

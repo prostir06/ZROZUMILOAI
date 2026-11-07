@@ -167,6 +167,7 @@ def run_chat(
                     getattr(workspace, 'pk', None),
                     model,
                     exc,
+                    exc_info=True,
                 )
                 yield _provider_error_response(exc, stream=True)
                 return
@@ -195,6 +196,7 @@ def run_chat(
                     getattr(workspace, 'pk', None),
                     model,
                     exc,
+                    exc_info=True,
                 )
                 yield _provider_error_response(exc, stream=True)
             except Exception:
@@ -221,7 +223,11 @@ def run_chat(
                     try:
                         response.close()
                     except Exception as exc:
-                        logger.debug('Error closing stream response: %s', exc)
+                        logger.warning(
+                            'Error closing stream response: %s',
+                            exc,
+                            exc_info=True,
+                        )
 
         return StreamingHttpResponse(
             event_stream(),
@@ -237,6 +243,13 @@ def run_chat(
                 options=options,
             )
         except (LLMProviderError, requests.RequestException) as exc:
+            logger.warning(
+                'Chat provider error (workspace=%s, model=%s): %s',
+                getattr(workspace, 'pk', None),
+                model,
+                exc,
+                exc_info=True,
+            )
             return _provider_error_response(exc, stream=False)
         except Exception:
             logger.exception('Unexpected chat error')
