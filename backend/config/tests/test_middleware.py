@@ -12,6 +12,7 @@ from config.middleware import (
     RequestIdFilter,
     RequestIdMiddleware,
     get_request_id,
+    set_request_id,
 )
 
 
@@ -20,6 +21,9 @@ class RequestIdMiddlewareTests(SimpleTestCase):
 
     def setUp(self):
         self.factory = RequestFactory()
+
+    def tearDown(self):
+        set_request_id('-')
 
     def test_generates_request_id_when_header_missing(self):
         """Без X-Request-ID middleware генерує UUID і віддає його у відповіді."""
@@ -99,6 +103,9 @@ class RequestIdFilterTests(SimpleTestCase):
 
 class RequestIdIntegrationTests(TestCase):
     """Інтеграція middleware у Django test client."""
+
+    def tearDown(self):
+        set_request_id('-')
 
     def test_api_response_includes_request_id_header(self):
         """Будь-який HTTP-відповідь містить X-Request-ID."""
