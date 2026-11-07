@@ -141,7 +141,7 @@ class ModelDeleteView(APIView):
 
 
 class ChatView(APIView):
-    """Chat with selected model (Ollama or Gemini)."""
+    """Chat with the selected Ollama model."""
 
     permission_classes = (IsAuthenticated,)
     throttle_classes = (ClientIPScopedRateThrottle,)

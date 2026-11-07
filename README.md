@@ -1,15 +1,14 @@
 # ZROZUMILOAI — Панель керування персональним помічником
 
 Веб-панель для керування AI-помічником з React frontend та Django backend.
-Підтримує **Ollama** і **Google Gemini**, RAG по документах workspace та Open edX Meilisearch.
+Підтримує **Ollama**, RAG по документах workspace та Open edX Meilisearch.
 
 ## Можливості
 
-- Чат з AI-помічником (streaming) через Ollama або Gemini
+- Чат з AI-помічником (streaming) через Ollama
 - Workspaces — ізоляція моделей, system prompt, temperature, LLM-провайдера
 - **RAG** — завантаження документів (**TXT, MD, PDF, DOCX, HTML**); структурний chunking та індексація через Celery/Redis
 - **Гібридний пошук (Hybrid Search)** — RRF (Reciprocal Rank Fusion) об'єднання векторного пошуку (pgvector HNSW) та повнотекстового пошуку PostgreSQL FTS
-- **LLM Fallback & Resilience** — автоматичний fallback на резервного провайдера/модель (Ollama ↔ Gemini 2.0) при недоступності основної моделі
 - **Аналітика та Knowledge Gaps** — дашборд запитів, відстеження прогалин у знаннях з чергою резолюції для викладачів, експорт у CSV/JSON
 - **Feedback / handoff** — 👍/👎 на відповіді, ескалація при низькій релевантності RAG
 - **Meilisearch / hybrid** — пошук у Open edX (Tutor) разом із локальним RAG (RRF)
@@ -31,7 +30,7 @@ ZROZUMILOAI/
 │   ├── accounts/     # Авторизація, користувачі, API-ключі
 │   ├── chats/        # Збережені діалоги + Chats Info
 │   ├── workspaces/   # Workspaces, RAG, widget tokens
-│   ├── llm/          # Провайдери Ollama / Gemini
+│   ├── llm/          # Провайдер Ollama
 │   ├── ollama_proxy/ # HTTP API чату / моделей
 │   └── backups/      # Резервні копії БД
 ├── frontend/         # React (Vite) + embed widget
@@ -56,11 +55,11 @@ docker compose up --build -d
 - Backend API слухає лише всередині Docker-мережі (`backend:8000`), не на хості
 
 **Безпека перед GitHub / продакшеном:**
-1. Скопіюйте `.env.example` → `.env` і задайте унікальні `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, паролі БД, `GEMINI_API_KEY`.
+1. Скопіюйте `.env.example` → `.env` і задайте унікальні `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, паролі БД.
 2. Не комітьте `.env`, реальні widget tokens, backup з продакшен-даними. Якщо token потрапив у git — revoke у Workspaces і створіть новий.
 3. `docker-compose.yml` вимагає `DJANGO_SECRET_KEY` і `POSTGRES_PASSWORD` з `.env` (без слабких fallback). При `DJANGO_DEBUG=False` placeholder-секрети **відхиляються**.
 4. Для продакшену використовуйте `docker compose -f docker-compose.yml -f docker-compose.prod.yml` (resource limits, жорсткіші concurrency defaults).
-5. Workspace API keys (Gemini / Meilisearch) шифруються at rest (`FIELD_ENCRYPTION_KEY`).
+5. Workspace API keys (Meilisearch) шифруються at rest (`FIELD_ENCRYPTION_KEY`).
 
 ### Продакшен (один VPS)
 
@@ -177,7 +176,7 @@ API-ключ генерується автоматично при реєстра
 3. Вектори зберігаються в **PostgreSQL + pgvector** (HNSW-індекс, cosine-пошук), а текстові поля індексуються через GIN-індекс PostgreSQL FTS.
 4. При кожному повідомленні в чаті (в т.ч. widget) виконується гібридний пошук (RRF) і у system prompt додаються найрелевантніші фрагменти.
 
-**Важливо:** навіть якщо workspace використовує **Gemini** для чату, embeddings для RAG усе одно йдуть через **Ollama** (`nomic-embed-text`). Без запущеного Ollama ingest документів і RAG-контекст не працюватимуть.
+**Важливо:** embeddings для RAG ідуть через **Ollama** (`nomic-embed-text`). Без запущеного Ollama ingest документів і RAG-контекст не працюватимуть.
 
 Docker використовує образ `pgvector/pgvector:pg16`. Локально з `USE_SQLITE=True` пошук працює через Python fallback (без pgvector).
 
