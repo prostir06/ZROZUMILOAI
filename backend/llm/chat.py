@@ -26,10 +26,27 @@ from workspaces.services import (
     prepare_chat_messages,
 )
 
+from .admission import (
+    OLLAMA_BUSY_CODE,
+    OLLAMA_BUSY_MESSAGE,
+    RETRY_AFTER_SECONDS,
+    OllamaBusy,
+    acquire_ollama_slot,
+    release_ollama_slot,
+)
 from .base import LLMProviderError
 from .factory import resolve_provider
 
 logger = logging.getLogger(__name__)
+
+
+def _ollama_busy_response():
+    response = Response(
+        {'error': OLLAMA_BUSY_MESSAGE, 'code': OLLAMA_BUSY_CODE},
+        status=status.HTTP_429_TOO_MANY_REQUESTS,
+    )
+    response['Retry-After'] = RETRY_AFTER_SECONDS
+    return response
 
 
 def _provider_error_response(exc, *, stream=False):
@@ -120,6 +137,15 @@ def run_chat(
         )
     log_prompt = prompt if prompt is not None else ''
 
+    try:
+        slot_token = acquire_ollama_slot()
+    except OllamaBusy:
+        logger.warning(
+            'Ollama busy (workspace=%s)',
+            getattr(workspace, 'pk', None),
+        )
+        return _ollama_busy_response()
+
     if stream:
         def event_stream():
             accumulated = []
@@ -190,6 +216,7 @@ def run_chat(
                     meta['log_id'] = log.pk
                     yield f'data: {json.dumps(meta)}\n\n'
             finally:
+                release_ollama_slot(slot_token)
                 if response is not None and hasattr(response, 'close'):
                     try:
                         response.close()
@@ -202,33 +229,36 @@ def run_chat(
         )
 
     try:
-        parsed = provider.chat(
-            model,
-            prepared_messages,
-            stream=False,
-            options=options,
-        )
-    except (LLMProviderError, requests.RequestException) as exc:
-        return _provider_error_response(exc, stream=False)
-    except Exception:
-        logger.exception('Unexpected chat error')
-        return _provider_error_response(
-            LLMProviderError('Внутрішня помилка чату'),
-            stream=False,
-        )
+        try:
+            parsed = provider.chat(
+                model,
+                prepared_messages,
+                stream=False,
+                options=options,
+            )
+        except (LLMProviderError, requests.RequestException) as exc:
+            return _provider_error_response(exc, stream=False)
+        except Exception:
+            logger.exception('Unexpected chat error')
+            return _provider_error_response(
+                LLMProviderError('Внутрішня помилка чату'),
+                stream=False,
+            )
 
-    if isinstance(parsed, dict):
-        parsed = dict(parsed)
-        parsed['sources'] = sources
-        parsed['needs_handoff'] = needs_handoff
+        if isinstance(parsed, dict):
+            parsed = dict(parsed)
+            parsed['sources'] = sources
+            parsed['needs_handoff'] = needs_handoff
 
-    log = log_workspace_chat_exchange(
-        workspace=workspace,
-        user=user,
-        prompt=log_prompt,
-        response=extract_response_from_ollama_payload(parsed),
-        needs_handoff=needs_handoff,
-    )
-    if isinstance(parsed, dict) and log:
-        parsed['log_id'] = log.pk
-    return Response(parsed)
+        log = log_workspace_chat_exchange(
+            workspace=workspace,
+            user=user,
+            prompt=log_prompt,
+            response=extract_response_from_ollama_payload(parsed),
+            needs_handoff=needs_handoff,
+        )
+        if isinstance(parsed, dict) and log:
+            parsed['log_id'] = log.pk
+        return Response(parsed)
+    finally:
+        release_ollama_slot(slot_token)

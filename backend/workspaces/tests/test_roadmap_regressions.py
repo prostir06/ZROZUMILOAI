@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.test import APITestCase
 
 from chats.serializers import ChatSerializer
+from llm.admission import OllamaBusy
 from workspaces.models import WidgetToken, Workspace
 from workspaces.rag.meilisearch_search import search_openedx_meilisearch
 
@@ -78,6 +79,22 @@ class WidgetCourseScopeTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         kwargs = mock_run_chat.call_args.kwargs
         self.assertEqual(kwargs['meilisearch_course_id'], 'course-v1:ORG+LOCKED+1')
+
+    @patch('llm.chat.acquire_ollama_slot', side_effect=OllamaBusy())
+    @patch('llm.chat.prepare_chat_messages', return_value=([{'role': 'user', 'content': 'Hi'}], []))
+    @patch('llm.chat.resolve_provider')
+    def test_widget_busy_is_429_not_generic_503(self, mock_resolve, mock_prepare, mock_acquire):
+        response = self.client.post(
+            self.url,
+            {
+                'messages': [{'role': 'user', 'content': 'Hi'}],
+                'stream': True,
+            },
+            format='json',
+            HTTP_AUTHORIZATION=f'Widget-Token {self.raw}',
+        )
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertEqual(response.data['code'], 'ollama_busy')
 
     @patch('workspaces.widget_views.run_chat')
     def test_client_may_set_course_when_unlocked(self, mock_run_chat):

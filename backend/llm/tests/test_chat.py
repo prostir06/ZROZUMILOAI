@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework import status
 
+from llm.admission import OllamaBusy
 from llm.base import LLMProviderError
 from llm.chat import run_chat
 from workspaces.models import Workspace
@@ -93,6 +94,60 @@ class RunChatTests(TestCase):
         self.assertEqual(response.data['error'], 'Ollama недоступний')
         self.assertNotIn('provider_fallback', response.data)
         provider.chat.assert_called_once()
+
+    @patch('llm.chat.release_ollama_slot')
+    @patch('llm.chat.acquire_ollama_slot', side_effect=OllamaBusy())
+    @patch('llm.chat.resolve_provider')
+    @patch('llm.chat.prepare_chat_messages')
+    def test_busy_slot_returns_json_429_without_calling_ollama(
+        self, mock_prepare, mock_resolve, mock_acquire, mock_release,
+    ):
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
+        provider = MagicMock()
+        mock_resolve.return_value = provider
+
+        response = run_chat(
+            model='llama3',
+            messages=[{'role': 'user', 'content': 'Hi'}],
+            stream=True,
+            workspace=self.workspace,
+            user=self.user,
+            prompt='Hi',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        self.assertEqual(response.data['code'], 'ollama_busy')
+        self.assertEqual(
+            response.data['error'],
+            'Модель зайнята. Спробуйте ще раз за хвилину.',
+        )
+        self.assertEqual(response['Retry-After'], '60')
+        provider.chat.assert_not_called()
+        mock_release.assert_not_called()
+
+    @patch('llm.chat.release_ollama_slot')
+    @patch('llm.chat.acquire_ollama_slot', return_value='token-1')
+    @patch('llm.chat.resolve_provider')
+    @patch('llm.chat.prepare_chat_messages')
+    def test_provider_error_releases_slot(
+        self, mock_prepare, mock_resolve, mock_acquire, mock_release,
+    ):
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
+        provider = MagicMock()
+        provider.chat.side_effect = LLMProviderError('Ollama недоступний')
+        mock_resolve.return_value = provider
+
+        response = run_chat(
+            model='llama3',
+            messages=[{'role': 'user', 'content': 'Hi'}],
+            stream=False,
+            workspace=self.workspace,
+            user=self.user,
+            prompt='Hi',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        mock_release.assert_called_once_with('token-1')
 
     @patch('llm.chat.resolve_provider')
     @patch('llm.chat.prepare_chat_messages')
