@@ -1,63 +1,25 @@
 /**
- * Embed-чат у iframe: отримує конфіг від widget.js, спілкується з API.
+ * Embed-чат у iframe: отримує конфіг від widget.js, керує станом та взаємодією.
  */
 import { formatChatError } from '../utils/chatError.js';
 import './embed.css';
+import { createEmbedState } from './embed-state.js';
+import { fetchWorkspaceConfig, sendChatMessageStream, sendFeedback } from './embed-api.js';
 import {
-  buildAuthHeader,
-  EMBED_FAQ_QUESTIONS,
-  EMBED_GREETING,
-  escapeHtml,
-  formatMessageContent,
-  getEmbedStatusText,
-  isIso88591,
-  readEmbedFeedbackClick,
-  safeJson,
-  sanitizeColor,
-} from './utils.js';
+  appendAssistantText,
+  applyThemeColor,
+  attachFaqListeners,
+  attachFeedbackListeners,
+  isNearBottom,
+  renderEmbedLayout,
+  renderMessages,
+  scrollToBottom,
+} from './embed-dom.js';
 
 const root = document.getElementById('embed-root');
 const CONFIG_TIMEOUT_MS = 15000;
-const ASSISTANT_ICON_URL = '/zrozumilo-assistant.png';
 
-/** Привітання з API (workspace) або дефолт. */
-function getGreetingText() {
-  const fromApi = (workspace?.greeting || config?.greeting || '').trim();
-  return fromApi || EMBED_GREETING;
-}
-
-/** FAQ з API або дефолтні питання. */
-function getFaqQuestions() {
-  const fromApi = workspace?.faq_questions || config?.faqQuestions;
-  if (Array.isArray(fromApi) && fromApi.length > 0) {
-    return fromApi.map((item) => String(item).trim()).filter(Boolean).slice(0, 8);
-  }
-  return EMBED_FAQ_QUESTIONS;
-}
-
-/** Іконка Помічника біля відповіді ШІ. */
-function renderAssistantIcon() {
-  return `<img src="${ASSISTANT_ICON_URL}" alt="" class="embed__assistant-icon" width="28" height="28" />`;
-}
-
-/** Обгортка для повідомлення асистента з іконкою. */
-function wrapAssistantMessage(innerHtml) {
-  return `
-    <div class="embed__assistant">
-      ${renderAssistantIcon()}
-      ${innerHtml}
-    </div>
-  `;
-}
-
-let config = null;
-let workspace = null;
-let model = '';
-let initError = '';
-let messages = [];
-let isStreaming = false;
-let trustedOrigin = null;
-let typedGreeting = '';
+const store = createEmbedState();
 let typewriterTimer = null;
 
 /** Зупинити анімацію «друкування» привітання. */
@@ -72,26 +34,31 @@ function stopGreetingTypewriter() {
 function updateGreetingElement() {
   const greetingEl = root?.querySelector('#embed-greeting');
   const cursorEl = root?.querySelector('#embed-greeting-cursor');
+  const typedGreeting = store.getState().typedGreeting;
+  const fullGreeting = store.getGreetingText();
+
   if (greetingEl) {
     greetingEl.textContent = typedGreeting;
   }
   if (cursorEl) {
-    cursorEl.hidden = typedGreeting.length >= getGreetingText().length;
+    cursorEl.hidden = typedGreeting.length >= fullGreeting.length;
   }
 }
 
 /** Ефект друкування привітання при відкритті форми. */
 function startGreetingTypewriter() {
-  const greeting = getGreetingText();
+  const greeting = store.getGreetingText();
+  const state = store.getState();
   if (
     typewriterTimer
-    || messages.length > 0
-    || !model
-    || typedGreeting.length >= greeting.length
+    || state.messages.length > 0
+    || !state.model
+    || state.typedGreeting.length >= greeting.length
   ) {
     return;
   }
-  typedGreeting = '';
+
+  store.setState({ typedGreeting: '' });
   let index = 0;
   typewriterTimer = setInterval(() => {
     if (index >= greeting.length) {
@@ -99,42 +66,48 @@ function startGreetingTypewriter() {
       updateGreetingElement();
       return;
     }
-    typedGreeting += greeting[index];
+    store.setState((prev) => ({ typedGreeting: prev.typedGreeting + greeting[index] }));
     index += 1;
     updateGreetingElement();
   }, 28);
 }
 
-/** HTML хмари частих запитань (над полем вводу). */
-function renderFaqCloud() {
-  if (!model) {
-    return '';
+/** Оновлення лише блоку повідомлень (без повного render). */
+function updateMessages() {
+  const container = root?.querySelector('#embed-messages');
+  if (!container) {
+    return;
   }
-  const chips = getFaqQuestions().map(
-    (question) => `
-      <button
-        type="button"
-        class="embed__faq-chip"
-        data-question="${escapeHtml(question)}"
-        ${isStreaming ? 'disabled' : ''}
-      >${escapeHtml(question)}</button>
-    `,
-  ).join('');
 
-  return `
-    <div class="embed__faq" role="group" aria-label="Часті запитання">
-      ${chips}
-    </div>
-  `;
+  const wasNearBottom = isNearBottom(container);
+  const state = store.getState();
+
+  container.innerHTML = renderMessages({
+    messages: state.messages,
+    isStreaming: state.isStreaming,
+    typedGreeting: state.typedGreeting,
+  });
+
+  if (wasNearBottom) {
+    scrollToBottom(container);
+  }
+
+  attachFeedbackListeners(container, handleFeedback);
 }
 
-/** Підключити обробники кліків на часті запитання. */
-function attachFaqHandlers() {
-  root?.querySelectorAll('.embed__faq-chip').forEach((button) => {
-    button.addEventListener('click', () => {
-      handleSend(button.dataset.question || button.textContent || '');
+/** Надіслати feedback з embed через Widget-Token. */
+async function handleFeedback(logId, payload) {
+  try {
+    await sendFeedback({
+      config: store.getState().config,
+      logId,
+      payload,
     });
-  });
+    store.updateFeedback(logId, payload);
+    updateMessages();
+  } catch (err) {
+    console.error('[ZrozumiloAI Embed] feedback error:', err);
+  }
 }
 
 /** Повний перерендер UI embed-чату. */
@@ -143,45 +116,18 @@ function render() {
     return;
   }
 
-  if (!config) {
-    root.innerHTML = '<div class="embed__status">Завантаження…</div>';
+  const state = store.getState();
+  root.innerHTML = renderEmbedLayout({
+    ...state,
+    questions: store.getFaqQuestions(),
+  });
+
+  if (!state.config) {
     return;
   }
 
-  root.innerHTML = `
-    <div class="embed">
-      <header class="embed__header">
-        <div>
-          <div class="embed__title">${escapeHtml(config.title)}</div>
-          ${workspace ? `<div class="embed__subtitle">${escapeHtml(workspace.name)}</div>` : ''}
-        </div>
-        <button type="button" class="embed__close" aria-label="Закрити">×</button>
-      </header>
-      <div class="embed__status ${!workspace || !model ? 'embed__status--error' : ''}" id="embed-status">
-        ${getStatusText()}
-      </div>
-      <div class="embed__messages" id="embed-messages" role="log" aria-live="polite">
-        ${renderMessages()}
-      </div>
-      <div class="embed__footer">
-        ${renderFaqCloud()}
-        <form class="embed__input-row" id="embed-form">
-          <textarea
-            id="embed-input"
-            rows="1"
-            placeholder="Напишіть повідомлення…"
-            ${!model || isStreaming ? 'disabled' : ''}
-          ></textarea>
-          <button type="submit" class="embed__send" ${!model || isStreaming ? 'disabled' : ''}>
-            Надіслати
-          </button>
-        </form>
-      </div>
-    </div>
-  `;
-
   root.querySelector('.embed__close')?.addEventListener('click', () => {
-    const targetOrigin = trustedOrigin || '*';
+    const targetOrigin = store.getState().trustedOrigin || '*';
     window.parent.postMessage({ type: 'zrozumiloai-close' }, targetOrigin);
   });
 
@@ -200,416 +146,103 @@ function render() {
     }
   });
 
-  attachFaqHandlers();
-  // render() замінює DOM, тож кліки feedback треба вішати заново.
-  attachFeedbackHandlers();
+  attachFaqListeners(root, (question) => handleSend(question));
+  attachFeedbackListeners(root.querySelector('#embed-messages'), handleFeedback);
 
-  if (messages.length === 0 && model) {
+  if (state.messages.length === 0 && state.model) {
     updateGreetingElement();
-    if (typedGreeting.length < getGreetingText().length && !typewriterTimer) {
+    if (state.typedGreeting.length < store.getGreetingText().length && !typewriterTimer) {
       startGreetingTypewriter();
     }
   }
 
-  scrollToBottom();
-}
-
-/** Заголовок Authorization для API-запитів. */
-function getAuthHeader() {
-  return buildAuthHeader(config);
-}
-
-/** Текст статусу під заголовком чату. */
-function getStatusText() {
-  return getEmbedStatusText(config, workspace, model, initError);
-}
-
-/** HTML індикатора «Помічник друкує». */
-function renderTypingIndicator() {
-  return '<div class="embed__typing" aria-label="Помічник друкує"><span></span><span></span><span></span></div>';
-}
-
-/** HTML-розмітка списку повідомлень. */
-function renderMessages() {
-  if (messages.length === 0) {
-    return `
-      <div class="embed__welcome">
-        ${wrapAssistantMessage(`
-          <div class="embed__message embed__message--assistant">
-            <span id="embed-greeting">${escapeHtml(typedGreeting)}</span><span
-              id="embed-greeting-cursor"
-              class="embed__cursor"
-              aria-hidden="true"
-            >|</span>
-          </div>
-        `)}
-      </div>
-    `;
-  }
-
-  const html = messages.map((msg, index) => {
-    const isPendingAssistant = (
-      isStreaming
-      && index === messages.length - 1
-      && msg.role === 'assistant'
-      && !msg.content.trim()
-    );
-
-    if (isPendingAssistant) {
-      return wrapAssistantMessage(renderTypingIndicator());
-    }
-
-    const bubble = `
-      <div class="embed__message embed__message--${msg.role}">
-        ${formatMessageContent(msg.content, msg.role)}
-        ${msg.role === 'assistant' && msg.needsHandoff
-          ? '<div class="embed__handoff">Якщо відповідь не допомогла — зверніться до підтримки курсу.</div>'
-          : ''}
-        ${msg.role === 'assistant' && msg.logId && !isStreaming
-          ? `<div class="embed__feedback" data-log-id="${msg.logId}">
-              <button type="button" class="embed__feedback-btn" data-feedback="up" aria-label="Корисна відповідь" aria-pressed="${msg.feedback === 'up' ? 'true' : 'false'}">👍</button>
-              <button type="button" class="embed__feedback-btn" data-feedback="down" aria-label="Некорисна відповідь" aria-pressed="${msg.feedback === 'down' ? 'true' : 'false'}">👎</button>
-              ${!msg.needsHandoff
-                ? '<button type="button" class="embed__feedback-btn" data-handoff="1" aria-label="Запросити допомогу людини">До людини</button>'
-                : ''}
-            </div>`
-          : ''}
-      </div>
-    `;
-    if (msg.role === 'assistant') {
-      return wrapAssistantMessage(bubble);
-    }
-    return bubble;
-  }).join('');
-
-  const lastMessage = messages[messages.length - 1];
-  const showStandaloneTyping = isStreaming && lastMessage?.role !== 'assistant';
-
-  const typing = showStandaloneTyping
-    ? wrapAssistantMessage(renderTypingIndicator())
-    : '';
-
-  return html + typing;
-}
-
-/** Прокрутка до останнього повідомлення. */
-function scrollToBottom() {
-  const container = root?.querySelector('#embed-messages');
-  if (container) {
-    container.scrollTop = container.scrollHeight;
-  }
-}
-
-/** Оновлення лише блоку повідомлень (без повного render). */
-function updateMessages() {
-  const container = root?.querySelector('#embed-messages');
-  if (!container) {
-    return;
-  }
-
-  // P0: stick-to-bottom — не стрибати, якщо користувач прокрутив вгору.
-  const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
-  const wasNearBottom = distance <= 80;
-
-  container.innerHTML = renderMessages();
-
-  if (wasNearBottom) {
-    container.scrollTop = container.scrollHeight;
-  }
-
-  attachFeedbackHandlers(container);
-}
-
-/** Кліки 👍 / 👎 / «До людини» після кожного оновлення списку. */
-function attachFeedbackHandlers(container = root?.querySelector('#embed-messages')) {
-  container?.querySelectorAll('.embed__feedback').forEach((block) => {
-    block.onclick = (event) => {
-      const parsed = readEmbedFeedbackClick(event.target, block);
-      if (!parsed) return;
-      submitEmbedFeedback(parsed.logId, parsed.payload);
-    };
-  });
-}
-
-/** Надіслати feedback з embed через Widget-Token. */
-async function submitEmbedFeedback(logId, payload) {
-  try {
-    await apiRequest(`/widget/logs/${logId}/feedback/`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    messages = messages.map((msg) => {
-      if (msg.logId !== logId) return msg;
-      return {
-        ...msg,
-        ...(payload.feedback ? { feedback: payload.feedback } : {}),
-        ...(payload.needs_handoff ? { needsHandoff: true } : {}),
-      };
-    });
-    updateMessages();
-  } catch (err) {
-    console.error('[ZrozumiloAI Embed] feedback:', err);
-  }
-}
-
-/** Дописати текст у останній бульбашці асистента без повного rewrite списку. */
-function appendToLastAssistant(text) {
-  const container = root?.querySelector('#embed-messages');
-  if (!container) {
-    updateMessages();
-    return;
-  }
-  const bubbles = container.querySelectorAll('.embed__message--assistant');
-  const last = bubbles[bubbles.length - 1];
-  if (!last) {
-    updateMessages();
-    return;
-  }
-  // formatBoldTextHtml потрібен для повного тексту — для stream додаємо escaped.
-  last.insertAdjacentText('beforeend', text);
-  const distance = container.scrollHeight - container.scrollTop - container.clientHeight;
-  if (distance <= 80) {
-    container.scrollTop = container.scrollHeight;
-  }
-}
-
-/** HTTP-запит до backend API. */
-async function apiRequest(path, options = {}) {
-  try {
-    const authHeader = getAuthHeader();
-    const headers = {
-      'Content-Type': 'application/json',
-      ...(authHeader ? { Authorization: authHeader } : {}),
-      ...options.headers,
-    };
-    for (const [key, value] of Object.entries(headers)) {
-      if (!isIso88591(key) || !isIso88591(value)) {
-        delete headers[key];
-      }
-    }
-    const response = await fetch(`${config.apiUrl}${path}`, {
-      ...options,
-      headers,
-    });
-    return response;
-  } catch (error) {
-    throw new Error(error.message || 'Помилка мережі');
-  }
-}
-
-/** Завантажити workspace і модель за токеном або API-ключем. */
-async function initWorkspace() {
-  initError = '';
-
-  if (config.widgetToken) {
-    if (!isIso88591(config.widgetToken)) {
-      initError = 'Некоректний токен: токен містить неприпустимі не-ASCII символи. Будь ласка, замініть кириличний плейсхолдер у data-widget-token на дійсний токен із панелі Workspaces.';
-      workspace = null;
-      model = '';
-      return;
-    }
-    const response = await apiRequest('/widget/config/');
-    if (!response.ok) {
-      const error = await safeJson(response);
-      initError = error.error || error.detail || `Помилка конфігурації (${response.status})`;
-      workspace = null;
-      model = '';
-      return;
-    }
-    const data = await safeJson(response);
-    workspace = data.workspace || null;
-    if (workspace) {
-      workspace.greeting = data.greeting || '';
-      workspace.faq_questions = data.faq_questions || [];
-    }
-    model = data.model || workspace?.model_names?.[0] || '';
-    if (!workspace) {
-      initError = 'Widget token недійсний або workspace недоступний.';
-    }
-    return;
-  }
-
-  if (config.apiKey && !isIso88591(config.apiKey)) {
-    initError = 'Некоректний API-ключ: містить неприпустимі не-ASCII символи.';
-    workspace = null;
-    model = '';
-    return;
-  }
-
-  const response = await apiRequest('/workspaces/my/');
-  if (!response.ok) {
-    const error = await safeJson(response);
-    initError = error.error || error.detail || `Помилка завантаження workspace (${response.status})`;
-    workspace = null;
-    model = '';
-    return;
-  }
-
-  const workspaces = await safeJson(response, []);
-  workspace = workspaces.find(
-    (item) => item.name === config.workspaceName,
-  ) || null;
-
-  model = workspace?.model_names?.[0] || '';
-  if (!workspace) {
-    initError = `Workspace «${config.workspaceName}» не знайдено.`;
-  }
-}
-
-/** SSE-стрімінг відповіді чату. */
-async function chatStream(chatMessages, onChunk) {
-  if (!workspace?.id && !config.widgetToken) {
-    throw new Error('Workspace не завантажено');
-  }
-
-  const chatPath = config.widgetToken ? '/widget/chat/' : '/ollama/chat/';
-  const body = config.widgetToken
-    ? { stream: true, messages: chatMessages }
-    : {
-      model,
-      workspace_id: workspace.id,
-      stream: true,
-      messages: chatMessages,
-    };
-
-  if (config.openedxCourseId) {
-    body.openedx_course_id = config.openedxCourseId;
-  }
-
-  const response = await apiRequest(chatPath, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const error = await safeJson(response);
-    const err = new Error(error.error || error.detail || 'Помилка чату');
-    err.code = error.code || '';
-    throw err;
-  }
-
-  if (!response.body) {
-    throw new Error('Порожня відповідь сервера');
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  let doneReading = false;
-  while (!doneReading) {
-    const { done, value } = await reader.read();
-    doneReading = done;
-    if (done) {
-      break;
-    }
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) {
-        continue;
-      }
-      try {
-        const data = JSON.parse(line.slice(6));
-        onChunk(data);
-      } catch (err) {
-        console.warn('[ZrozumiloAI Embed] Invalid SSE JSON chunk:', err);
-      }
-    }
-  }
+  scrollToBottom(root.querySelector('#embed-messages'));
 }
 
 /** Обробка надсилання повідомлення користувачем. */
 async function handleSend(text) {
   const content = text.trim();
-  if (!content || !model || !workspace || isStreaming) {
+  const state = store.getState();
+  if (!content || !state.model || !state.workspace || state.isStreaming) {
     return;
   }
 
   stopGreetingTypewriter();
-  typedGreeting = getGreetingText();
+  store.setState({ typedGreeting: store.getGreetingText() });
 
-  messages = [...messages, { role: 'user', content }];
-  isStreaming = true;
+  store.addMessage({ role: 'user', content });
+  store.setState({ isStreaming: true });
   render();
 
-  const chatMessages = messages.map((msg) => ({ role: msg.role, content: msg.content }));
-  messages = [...messages, { role: 'assistant', content: '' }];
+  const chatMessages = store.getState().messages.map((msg) => ({ role: msg.role, content: msg.content }));
+  store.addMessage({ role: 'assistant', content: '' });
   updateMessages();
 
+  const container = root?.querySelector('#embed-messages');
+
   try {
-    await chatStream(chatMessages, (chunk) => {
-      // Спочатку текст (append DOM), потім meta — щоб updateMessages не затирав стрім.
-      if (chunk.message?.content) {
-        messages = messages.map((msg, index) => {
-          if (index === messages.length - 1 && msg.role === 'assistant') {
-            return { ...msg, content: msg.content + chunk.message.content };
+    await sendChatMessageStream({
+      config: store.getState().config,
+      workspace: store.getState().workspace,
+      model: store.getState().model,
+      messages: chatMessages,
+      onChunk: (chunk) => {
+        if (chunk.message?.content) {
+          store.updateLastAssistantMessage((msg) => ({
+            content: msg.content + chunk.message.content,
+          }));
+          const appended = appendAssistantText(container, chunk.message.content);
+          if (!appended) {
+            updateMessages();
           }
-          return msg;
-        });
-        appendToLastAssistant(chunk.message.content);
-      }
-      if (chunk.error) {
-        messages = messages.map((msg, index) => {
-          if (index === messages.length - 1 && msg.role === 'assistant') {
-            return { ...msg, content: `Помилка: ${chunk.error}` };
-          }
-          return msg;
-        });
-        updateMessages();
-      }
-      if (chunk.log_id != null || typeof chunk.needs_handoff === 'boolean') {
-        messages = messages.map((msg, index) => {
-          if (index !== messages.length - 1 || msg.role !== 'assistant') {
-            return msg;
-          }
-          return {
-            ...msg,
+        }
+        if (chunk.error) {
+          store.updateLastAssistantMessage({ content: `Помилка: ${chunk.error}` });
+          updateMessages();
+        }
+        if (chunk.log_id != null || typeof chunk.needs_handoff === 'boolean') {
+          store.updateLastAssistantMessage({
             ...(chunk.log_id != null ? { logId: chunk.log_id } : {}),
             ...(typeof chunk.needs_handoff === 'boolean'
               ? { needsHandoff: chunk.needs_handoff }
               : {}),
-          };
-        });
-        updateMessages();
-      }
+          });
+          updateMessages();
+        }
+      },
     });
   } catch (err) {
     console.error('[ZrozumiloAI Embed] Streaming error:', err);
-    messages = messages.map((msg, index) => {
-      if (index === messages.length - 1 && msg.role === 'assistant') {
-        return { ...msg, content: formatChatError(err) };
-      }
-      return msg;
-    });
+    store.updateLastAssistantMessage({ content: formatChatError(err) });
     updateMessages();
   } finally {
-    isStreaming = false;
+    store.setState({ isStreaming: false });
     render();
   }
 }
 
 /** Застосувати конфіг від батьківського віджета. */
 async function applyConfig(nextConfig) {
-  config = nextConfig;
-  initError = '';
-  messages = [];
-  typedGreeting = '';
   stopGreetingTypewriter();
-  document.documentElement.style.setProperty('--color-primary', sanitizeColor(config.color));
-  document.documentElement.style.setProperty('--color-user', sanitizeColor(config.color));
+  applyThemeColor(nextConfig.color);
+  store.setState({
+    config: nextConfig,
+    initError: '',
+    messages: [],
+    typedGreeting: '',
+  });
 
   render();
   try {
-    await initWorkspace();
+    const { workspace, model, initError } = await fetchWorkspaceConfig(nextConfig);
+    store.setState({ workspace, model, initError });
   } catch (err) {
-    workspace = null;
-    model = '';
-    initError = err.message || 'Помилка ініціалізації чату';
-    console.error('[ZrozumiloAI Embed] initWorkspace:', err);
+    store.setState({
+      workspace: null,
+      model: '',
+      initError: err.message || 'Помилка ініціалізації чату',
+    });
+    console.error('[ZrozumiloAI Embed] fetchWorkspaceConfig error:', err);
   }
   render();
 }
@@ -619,10 +252,11 @@ window.addEventListener('message', (event) => {
   if (event.data?.type !== 'zrozumiloai-config') {
     return;
   }
+  const trustedOrigin = store.getState().trustedOrigin;
   if (trustedOrigin && event.origin !== trustedOrigin) {
     return;
   }
-  trustedOrigin = event.origin;
+  store.setState({ trustedOrigin: event.origin });
   applyConfig(event.data.config).catch((err) => {
     console.error('[ZrozumiloAI Embed] applyConfig:', err);
   });
@@ -637,7 +271,7 @@ render();
 
 // Повторні запити конфігу, поки widget.js не відповість.
 const readyRetry = setInterval(() => {
-  if (config) {
+  if (store.getState().config) {
     clearInterval(readyRetry);
     return;
   }
@@ -647,7 +281,7 @@ const readyRetry = setInterval(() => {
 // Таймаут, якщо конфіг не надійшов від widget.js.
 setTimeout(() => {
   clearInterval(readyRetry);
-  if (!config && root) {
+  if (!store.getState().config && root) {
     root.innerHTML = '<div class="embed__status embed__status--error">Не вдалося завантажити конфігурацію чату.</div>';
   }
 }, CONFIG_TIMEOUT_MS);
