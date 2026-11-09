@@ -1,9 +1,10 @@
 """API-тести документів workspace: upload schedule, retry, rag-stats."""
+import tempfile
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -13,6 +14,19 @@ User = get_user_model()
 
 
 class WorkspaceDocumentApiTests(TestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls._temp_media = tempfile.TemporaryDirectory()
+        cls._media_override = override_settings(MEDIA_ROOT=cls._temp_media.name)
+        cls._media_override.enable()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._media_override.disable()
+        cls._temp_media.cleanup()
+        super().tearDownClass()
+
     def setUp(self):
         self.admin = User.objects.create_superuser(
             username='admin_docs',

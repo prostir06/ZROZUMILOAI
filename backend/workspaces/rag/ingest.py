@@ -1,10 +1,11 @@
 """Індексація документів workspace (chunking + embeddings)."""
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 from django.conf import settings
 from django.db import transaction
 
+from llm.admission import acquire_ollama_slot, release_ollama_slot
 from ollama_proxy.services import OllamaService
 
 from ..models import DocumentChunk, WorkspaceDocument
@@ -16,9 +17,10 @@ logger = logging.getLogger(__name__)
 
 def ingest_workspace_document(document):
     """
-    Проіндексувати документ: витяг тексту, chunking, embeddings.
+    Проіндексувати документ: витяг тексту, chunking, батчеві embeddings.
 
-    Embeddings поза atomic (паралельний пул); bulk_create у короткій транзакції.
+    Embeddings виконуються пачками через слот допуску Ollama поза atomic;
+    bulk_create виконується у короткій транзакції.
     """
     document.status = WorkspaceDocument.Status.PROCESSING
     document.error_message = ''
@@ -39,7 +41,7 @@ def ingest_workspace_document(document):
 
         ollama = OllamaService()
         embed_model = settings.RAG_EMBED_MODEL
-        embeddings = _embed_texts_parallel(ollama, embed_model, chunk_texts)
+        embeddings = _embed_texts_batched(ollama, embed_model, chunk_texts)
 
         prepared_chunks = [
             DocumentChunk(
@@ -83,25 +85,38 @@ def ingest_workspace_document(document):
         raise
 
 
-def _embed_texts_parallel(ollama, embed_model, texts):
-    """Паралельні embeddings з обмеженою конкуренцією."""
-    workers = max(1, min(
-        getattr(settings, 'RAG_EMBED_CONCURRENCY', 4),
-        len(texts),
-    ))
-    results = [None] * len(texts)
+def _embed_single_batch(ollama, embed_model, batch):
+    """Отримати embeddings для однієї пачки з підтримкою embed_batch або fallback."""
+    if hasattr(ollama, 'embed_batch'):
+        batch_result = ollama.embed_batch(embed_model, batch)
+        if isinstance(batch_result, list) and len(batch_result) == len(batch):
+            return batch_result
+    return [ollama.embed(embed_model, text) for text in batch]
 
-    def _one(index_text):
-        index, text = index_text
-        return index, ollama.embed(embed_model, text)
 
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = [
-            executor.submit(_one, (index, text))
-            for index, text in enumerate(texts)
-        ]
-        for future in as_completed(futures):
-            index, embedding = future.result()
-            results[index] = embedding
+def _embed_texts_batched(ollama, embed_model, texts):
+    """Послідовні батчі embeddings з поступливим захопленням слота Ollama."""
+    batch_size = max(1, int(getattr(settings, 'RAG_EMBED_BATCH_SIZE', 16)))
+    wait_seconds = float(
+        getattr(settings, 'OLLAMA_INGEST_SLOT_WAIT_SECONDS', 60.0)
+    )
+    pause_seconds = max(
+        0.0,
+        float(getattr(settings, 'RAG_EMBED_BATCH_PAUSE_SECONDS', 0.05)),
+    )
+    results = []
+    total = len(texts)
+
+    for start in range(0, total, batch_size):
+        batch = texts[start:start + batch_size]
+        slot_token = acquire_ollama_slot(wait_seconds=wait_seconds)
+        try:
+            batch_vectors = _embed_single_batch(ollama, embed_model, batch)
+            results.extend(batch_vectors)
+        finally:
+            release_ollama_slot(slot_token)
+
+        if pause_seconds > 0 and start + batch_size < total:
+            time.sleep(pause_seconds)
 
     return results

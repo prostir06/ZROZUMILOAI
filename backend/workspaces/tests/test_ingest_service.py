@@ -85,3 +85,46 @@ class IngestWorkspaceDocumentTests(TestCase):
             DocumentChunk.objects.filter(document=self.document).count(),
             0,
         )
+
+    @override_settings(
+        RAG_EMBED_BATCH_SIZE=2,
+        RAG_EMBED_BATCH_PAUSE_SECONDS=0.0,
+        OLLAMA_INGEST_SLOT_WAIT_SECONDS=5.0,
+    )
+    @patch('workspaces.rag.ingest.release_ollama_slot')
+    @patch('workspaces.rag.ingest.acquire_ollama_slot', side_effect=['tok1', 'tok2'])
+    @patch('workspaces.rag.ingest.OllamaService')
+    @patch(
+        'workspaces.rag.ingest.split_text_into_chunks',
+        return_value=['c1', 'c2', 'c3'],
+    )
+    @patch(
+        'workspaces.rag.ingest.extract_text_from_file',
+        return_value='text',
+    )
+    def test_ingest_batches_chunks_and_acquires_slot_per_batch(
+        self,
+        _extract,
+        _split,
+        mock_ollama_cls,
+        mock_acquire,
+        mock_release,
+    ):
+        mock_ollama = mock_ollama_cls.return_value
+        mock_ollama.embed_batch.side_effect = [
+            [[0.1, 0.2], [0.3, 0.4]],
+            [[0.5, 0.6]],
+        ]
+
+        ingest_workspace_document(self.document)
+
+        self.document.refresh_from_db()
+        self.assertEqual(self.document.status, WorkspaceDocument.Status.READY)
+        self.assertEqual(self.document.chunk_count, 3)
+        self.assertEqual(mock_ollama.embed_batch.call_count, 2)
+        self.assertEqual(mock_acquire.call_count, 2)
+        self.assertEqual(
+            [c.args[0] for c in mock_release.call_args_list],
+            ['tok1', 'tok2'],
+        )
+

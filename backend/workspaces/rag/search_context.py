@@ -5,6 +5,7 @@ import logging
 from django.conf import settings
 from django.core.cache import cache
 
+from llm.admission import OllamaBusy, acquire_ollama_slot, release_ollama_slot
 from ollama_proxy.services import OllamaService
 
 from ..models import Workspace
@@ -150,8 +151,24 @@ def cached_query_embedding(workspace_id, query):
     except Exception as exc:
         logger.warning('Failed to read query embedding cache: %s', exc)
 
-    ollama = OllamaService()
-    vector = ollama.embed(embed_model, query)
+    wait_seconds = float(
+        getattr(settings, 'OLLAMA_CHAT_SLOT_WAIT_SECONDS', 0.0) or 0.0
+    )
+    try:
+        slot_token = acquire_ollama_slot(wait_seconds=wait_seconds)
+    except OllamaBusy:
+        logger.warning(
+            'Skipping query embedding because Ollama slot is busy (workspace=%s)',
+            ws_key,
+        )
+        return None
+
+    try:
+        ollama = OllamaService()
+        vector = ollama.embed(embed_model, query)
+    finally:
+        release_ollama_slot(slot_token)
+
     try:
         cache.set(cache_key, vector, timeout=ttl)
     except Exception as exc:

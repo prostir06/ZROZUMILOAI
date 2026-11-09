@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase, override_settings
 
+from llm.admission import OllamaBusy
 from workspaces.rag.service import (
     extract_last_user_message,
     format_rag_context,
@@ -67,6 +68,22 @@ class RagServiceHelperTests(SimpleTestCase):
 
         result = search_workspace_documents(MagicMock(), 'питання')
         self.assertEqual(result, [])
+
+    @patch('workspaces.rag.search_context.acquire_ollama_slot', side_effect=OllamaBusy())
+    @patch('workspaces.rag.search_context.OllamaService')
+    def test_cached_query_embedding_returns_none_when_ollama_busy(
+        self,
+        mock_ollama_cls,
+        _mock_acquire,
+    ):
+        from django.core.cache import cache
+        from workspaces.rag.search_context import cached_query_embedding
+
+        cache.clear()
+        result = cached_query_embedding(workspace_id=1, query='зайнятий запит')
+        self.assertIsNone(result)
+        mock_ollama_cls.return_value.embed.assert_not_called()
+
 
 
 class SearchWorkspaceContextTests(SimpleTestCase):
