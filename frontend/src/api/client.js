@@ -423,7 +423,15 @@ export class ApiClient extends BaseApiClient {
     return data;
   }
 
-  async getWorkspaceChatLogs({ needsHandoff, feedback, limit = 50, offset = 0 } = {}) {
+  async getWorkspaceChatLogs({
+    needsHandoff,
+    feedback,
+    limit = 50,
+    offset = 0,
+    workspace_id,
+    workspaceId,
+    range,
+  } = {}) {
     const params = new URLSearchParams();
     params.set('limit', String(limit));
     params.set('offset', String(offset));
@@ -431,6 +439,13 @@ export class ApiClient extends BaseApiClient {
     if (needsHandoff === false) params.set('needs_handoff', 'false');
     if (feedback !== undefined && feedback !== null) {
       params.set('feedback', feedback);
+    }
+    const ws = workspace_id ?? workspaceId;
+    if (ws) {
+      params.set('workspace_id', String(ws));
+    }
+    if (range && range !== 'all') {
+      params.set('range', range);
     }
     const response = await this.request(`/chats/logs/?${params.toString()}`);
     if (!response.ok) {
@@ -472,10 +487,37 @@ export class ApiClient extends BaseApiClient {
     return safeJson(response, {});
   }
 
-  async exportWorkspaceChatLogs(format) {
+  getWorkspaceChatLogsExportUrl(format, {
+    needsHandoff,
+    needs_handoff,
+    feedback,
+    workspace_id,
+    workspaceId,
+    range,
+  } = {}) {
+    const params = new URLSearchParams();
+    params.set('export_format', format);
+    const handoff = needsHandoff !== undefined ? needsHandoff : needs_handoff;
+    if (handoff === true) params.set('needs_handoff', 'true');
+    if (handoff === false) params.set('needs_handoff', 'false');
+    if (feedback !== undefined && feedback !== null) {
+      params.set('feedback', feedback);
+    }
+    const ws = workspace_id ?? workspaceId;
+    if (ws) {
+      params.set('workspace_id', String(ws));
+    }
+    if (range && range !== 'all') {
+      params.set('range', range);
+    }
+    return `${this.baseUrl}/chats/logs/export/?${params.toString()}`;
+  }
+
+  async exportWorkspaceChatLogs(format, filters = {}) {
     const token = this.getToken();
+    const url = this.getWorkspaceChatLogsExportUrl(format, filters);
     const response = await fetch(
-      `${this.baseUrl}/chats/logs/export/?export_format=${encodeURIComponent(format)}`,
+      url,
       { headers: { Authorization: `Bearer ${token}` } },
     );
 
@@ -488,12 +530,12 @@ export class ApiClient extends BaseApiClient {
     const disposition = response.headers.get('Content-Disposition') || '';
     const match = disposition.match(/filename="([^"]+)"/);
     const filename = match?.[1] || `workspace_chats.${format}`;
-    const url = window.URL.createObjectURL(blob);
+    const urlObj = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
+    link.href = urlObj;
     link.download = filename;
     link.click();
-    window.URL.revokeObjectURL(url);
+    window.URL.revokeObjectURL(urlObj);
   }
 }
 

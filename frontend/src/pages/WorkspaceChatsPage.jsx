@@ -4,7 +4,7 @@ import ChatTableAnalysis from '../components/analytics/ChatTableAnalysis';
 import { formatChatError } from '../utils/chatError.js';
 import { truncateText } from '../utils/text.js';
 
-const EXPORT_FORMATS = [
+export const EXPORT_FORMATS = [
   { id: 'csv', label: 'CSV' },
   { id: 'json', label: 'JSON' },
   { id: 'jsonl', label: 'JSONL' },
@@ -13,14 +13,17 @@ const EXPORT_FORMATS = [
 
 const PROMPT_PREVIEW_LENGTH = 80;
 const RESPONSE_PREVIEW_LENGTH = 120;
-const PAGE_SIZE = 50;
+export const PAGE_SIZE = 50;
 
-function WorkspaceChatsPage() {
+export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
   const [logs, setLogs] = useState([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [handoffFilter, setHandoffFilter] = useState('all');
   const [feedbackFilter, setFeedbackFilter] = useState('all');
+  const [workspaceFilter, setWorkspaceFilter] = useState('');
+  const [rangeFilter, setRangeFilter] = useState('all');
+  const [workspaces, setWorkspaces] = useState(initialWorkspaces);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [exportOpen, setExportOpen] = useState(false);
@@ -30,28 +33,59 @@ function WorkspaceChatsPage() {
   const [analysisError, setAnalysisError] = useState('');
   const exportRef = useRef(null);
 
-  const loadLogs = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const params = {
-        limit: PAGE_SIZE,
-        offset,
-      };
-      if (handoffFilter === 'yes') params.needsHandoff = true;
-      if (handoffFilter === 'no') params.needsHandoff = false;
-      if (feedbackFilter !== 'all') params.feedback = feedbackFilter;
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getWorkspaces()
+      .then((data) => {
+        if (!cancelled && Array.isArray(data)) {
+          setWorkspaces(data);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load workspaces:', err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-      const data = await api.getWorkspaceChatLogs(params);
-      setLogs(data.results || []);
-      setTotal(data.count || 0);
-    } catch (err) {
-      console.error('Failed to load workspace chat logs:', err);
-      setError(err.message || 'Не вдалося завантажити чати');
-    } finally {
-      setLoading(false);
-    }
-  }, [offset, handoffFilter, feedbackFilter]);
+  const loadLogs = useCallback(
+    async (overrides = {}) => {
+      setLoading(true);
+      setError('');
+      try {
+        const activeWorkspace =
+          overrides.workspace_id !== undefined ? overrides.workspace_id : workspaceFilter;
+        const activeRange = overrides.range !== undefined ? overrides.range : rangeFilter;
+        const activeHandoff =
+          overrides.handoffFilter !== undefined ? overrides.handoffFilter : handoffFilter;
+        const activeFeedback =
+          overrides.feedbackFilter !== undefined ? overrides.feedbackFilter : feedbackFilter;
+        const activeOffset = overrides.offset !== undefined ? overrides.offset : offset;
+
+        const params = {
+          limit: PAGE_SIZE,
+          offset: activeOffset,
+          workspace_id: activeWorkspace || undefined,
+          range: activeRange !== 'all' ? activeRange : undefined,
+        };
+        if (activeHandoff === 'yes') params.needsHandoff = true;
+        if (activeHandoff === 'no') params.needsHandoff = false;
+        if (activeFeedback !== 'all') params.feedback = activeFeedback;
+
+        const data = await api.getWorkspaceChatLogs(params);
+        setLogs(data.results || []);
+        setTotal(data.count || 0);
+      } catch (err) {
+        console.error('Failed to load workspace chat logs:', err);
+        setError(err.message || 'Не вдалося завантажити чати');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [offset, handoffFilter, feedbackFilter, workspaceFilter, rangeFilter],
+  );
 
   useEffect(() => {
     loadLogs();
@@ -104,6 +138,8 @@ function WorkspaceChatsPage() {
       if (handoffFilter === 'yes') payload.needs_handoff = true;
       if (handoffFilter === 'no') payload.needs_handoff = false;
       if (feedbackFilter !== 'all') payload.feedback = feedbackFilter;
+      if (workspaceFilter) payload.workspace_id = workspaceFilter;
+      if (rangeFilter !== 'all') payload.range = rangeFilter;
       setAnalysis(await api.analyzeWorkspaceChatLogs(payload));
     } catch (err) {
       console.error('Failed to analyze chat table:', err);
@@ -116,7 +152,7 @@ function WorkspaceChatsPage() {
     } finally {
       setAnalysisLoading(false);
     }
-  }, [feedbackFilter, handoffFilter]);
+  }, [feedbackFilter, handoffFilter, workspaceFilter, rangeFilter]);
 
   useEffect(() => {
     if (!analysisOpen) {
@@ -125,19 +161,127 @@ function WorkspaceChatsPage() {
     loadAnalysis();
   }, [analysisOpen, loadAnalysis]);
 
-  const handleExport = async (format) => {
+  const exportFilters = {
+    workspace_id: workspaceFilter || undefined,
+    range: rangeFilter !== 'all' ? rangeFilter : undefined,
+    needs_handoff: handoffFilter === 'yes' ? true : handoffFilter === 'no' ? false : undefined,
+    feedback: feedbackFilter !== 'all' ? feedbackFilter : undefined,
+  };
+
+  const exportItems = EXPORT_FORMATS.map((item) => ({
+    ...item,
+    url: typeof api.getWorkspaceChatLogsExportUrl === 'function'
+      ? api.getWorkspaceChatLogsExportUrl(item.id, exportFilters)
+      : undefined,
+  }));
+
+  const handleExport = async (format, overrideFilters) => {
     setExportOpen(false);
     setError('');
     try {
-      await api.exportWorkspaceChatLogs(format);
+      await api.exportWorkspaceChatLogs(format, overrideFilters || exportFilters);
     } catch (err) {
       console.error('Failed to export workspace chat logs:', err);
       setError(err.message || 'Помилка експорту');
     }
   };
 
+  const onWorkspaceFilterChange = (value) => {
+    setOffset(0);
+    setWorkspaceFilter(value);
+  };
+
+  const onRangeFilterChange = (value) => {
+    setOffset(0);
+    setRangeFilter(value);
+  };
+
+  const onHandoffFilterChange = (value) => {
+    setOffset(0);
+    setHandoffFilter(value);
+  };
+
+  const onFeedbackFilterChange = (value) => {
+    setOffset(0);
+    setFeedbackFilter(value);
+  };
+
   const canPrev = offset > 0;
   const canNext = offset + PAGE_SIZE < total;
+
+  return {
+    logs,
+    total,
+    offset,
+    setOffset,
+    handoffFilter,
+    setHandoffFilter,
+    onHandoffFilterChange,
+    feedbackFilter,
+    setFeedbackFilter,
+    onFeedbackFilterChange,
+    workspaceFilter,
+    setWorkspaceFilter,
+    onWorkspaceFilterChange,
+    rangeFilter,
+    setRangeFilter,
+    onRangeFilterChange,
+    workspaces,
+    setWorkspaces,
+    loading,
+    error,
+    exportOpen,
+    setExportOpen,
+    analysisOpen,
+    setAnalysisOpen,
+    analysis,
+    analysisLoading,
+    analysisError,
+    exportRef,
+    exportItems,
+    exportFilters,
+    loadLogs,
+    handleDelete,
+    handleClear,
+    loadAnalysis,
+    handleExport,
+    canPrev,
+    canNext,
+  };
+}
+
+function WorkspaceChatsPage({ initialWorkspaces } = {}) {
+  const {
+    logs,
+    total,
+    setOffset,
+    handoffFilter,
+    onHandoffFilterChange,
+    feedbackFilter,
+    onFeedbackFilterChange,
+    workspaceFilter,
+    onWorkspaceFilterChange,
+    rangeFilter,
+    onRangeFilterChange,
+    workspaces,
+    loading,
+    error,
+    exportOpen,
+    setExportOpen,
+    analysisOpen,
+    setAnalysisOpen,
+    analysis,
+    analysisLoading,
+    analysisError,
+    exportRef,
+    exportItems,
+    handleDelete,
+    handleClear,
+    loadAnalysis,
+    handleExport,
+    canPrev,
+    canNext,
+  } = useWorkspaceChats({ initialWorkspaces });
 
   return (
     <div className="page">
@@ -169,12 +313,13 @@ function WorkspaceChatsPage() {
             </button>
             {exportOpen && (
               <div className="dropdown__menu" role="menu">
-                {EXPORT_FORMATS.map((item) => (
+                {exportItems.map((item) => (
                   <button
                     key={item.id}
                     type="button"
                     className="dropdown__item"
                     role="menuitem"
+                    data-export-url={item.url}
                     onClick={() => handleExport(item.id)}
                   >
                     {item.label}
@@ -206,17 +351,44 @@ function WorkspaceChatsPage() {
       )}
 
       <section className="section">
-        <div className="form__row" style={{ marginBottom: '1rem', gap: '1rem' }}>
+        <div className="form__row" style={{ marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
+          <div className="form__group">
+            <label htmlFor="filter_workspace">Робочий простір</label>
+            <select
+              id="filter_workspace"
+              className="select"
+              value={workspaceFilter}
+              onChange={(e) => onWorkspaceFilterChange(e.target.value)}
+            >
+              <option value="">Всі робочі простори</option>
+              {workspaces.map((ws) => (
+                <option key={ws.id} value={ws.id}>
+                  {ws.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form__group">
+            <label htmlFor="filter_range">Період</label>
+            <select
+              id="filter_range"
+              className="select"
+              value={rangeFilter}
+              onChange={(e) => onRangeFilterChange(e.target.value)}
+            >
+              <option value="all">Весь час</option>
+              <option value="today">Сьогодні</option>
+              <option value="7d">Останні 7 днів</option>
+              <option value="30d">Останні 30 днів</option>
+            </select>
+          </div>
           <div className="form__group">
             <label htmlFor="filter_handoff">Handoff</label>
             <select
               id="filter_handoff"
               className="select"
               value={handoffFilter}
-              onChange={(e) => {
-                setOffset(0);
-                setHandoffFilter(e.target.value);
-              }}
+              onChange={(e) => onHandoffFilterChange(e.target.value)}
             >
               <option value="all">Усі</option>
               <option value="yes">Потрібен handoff</option>
@@ -229,10 +401,7 @@ function WorkspaceChatsPage() {
               id="filter_feedback"
               className="select"
               value={feedbackFilter}
-              onChange={(e) => {
-                setOffset(0);
-                setFeedbackFilter(e.target.value);
-              }}
+              onChange={(e) => onFeedbackFilterChange(e.target.value)}
             >
               <option value="all">Усі</option>
               <option value="up">👍</option>
