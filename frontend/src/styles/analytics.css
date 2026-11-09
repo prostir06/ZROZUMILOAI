@@ -258,6 +258,42 @@
   border: 1px solid rgba(239, 68, 68, 0.28);
 }
 
+.gap-badge--pending {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.gap-badge--resolved {
+  background: rgba(16, 185, 129, 0.12);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+/* Gap Filters */
+.knowledge-gaps-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.gap-filter-btn {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8125rem;
+}
+
+.gap-filter-btn--active {
+  font-weight: 600;
+}
+
+/* Gap Actions */
+.gap-actions-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* Gap Action Button */
 .gap-upload-btn {
   display: inline-flex;
@@ -275,6 +311,31 @@
 
 .gap-upload-btn__icon {
   font-size: 0.85rem;
+}
+
+.gap-resolve-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.gap-resolve-btn--resolve {
+  color: #047857;
+}
+
+.gap-resolve-btn--resolve:hover {
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.gap-resolve-btn--reopen {
+  color: var(--color-text-muted, #5E7A78);
+}
+
+.gap-resolve-btn--reopen:hover {
+  background: rgba(94, 122, 120, 0.12);
 }
 
 .knowledge-gaps-empty {

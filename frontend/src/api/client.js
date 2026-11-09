@@ -1,7 +1,7 @@
 import { safeJson } from '../utils/safeJson.js';
 import { BaseApiClient } from './base.js';
 
-class ApiClient extends BaseApiClient {
+export class ApiClient extends BaseApiClient {
   async getWorkspaces() {
     const response = await this.request('/workspaces/');
     if (!response.ok) throw new Error('Не вдалося отримати workspace');
@@ -369,6 +369,21 @@ class ApiClient extends BaseApiClient {
     if (!response.ok) {
       const error = await safeJson(response, {});
       throw new Error(error.detail || error.error || 'Не вдалося отримати аналітику');
+    }
+    return response.json();
+  }
+
+  async resolveKnowledgeGap(workspaceId, logId, resolved = true) {
+    const response = await this.request(
+      `/workspaces/${workspaceId}/analytics/gaps/${logId}/resolve/`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ resolved }),
+      },
+    );
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.detail || error.error || 'Не вдалося оновити статус прогалини');
     }
     return response.json();
   }

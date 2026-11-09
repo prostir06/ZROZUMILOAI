@@ -27,6 +27,7 @@ export default function AnalyticsSection({
   const [analytics, setAnalytics] = useState(initialAnalytics);
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [resolvingGapId, setResolvingGapId] = useState(null);
   const [error, setError] = useState('');
 
   const loadAnalytics = useCallback(
@@ -69,6 +70,36 @@ export default function AnalyticsSection({
       setError(err.message || 'Не вдалося експортувати аналітику у CSV');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleResolveGap = async (gap, targetResolved) => {
+    if (!workspaceId || !gap?.id) return;
+    const nextResolved = targetResolved !== undefined ? targetResolved : !gap.is_resolved;
+    setResolvingGapId(gap.id);
+    setError('');
+    try {
+      await api.resolveKnowledgeGap(workspaceId, gap.id, nextResolved);
+      setAnalytics((prev) => {
+        if (!prev || !prev.knowledge_gaps) return prev;
+        return {
+          ...prev,
+          knowledge_gaps: prev.knowledge_gaps.map((item) =>
+            item.id === gap.id
+              ? {
+                  ...item,
+                  is_resolved: nextResolved,
+                  resolved_at: nextResolved ? new Date().toISOString() : null,
+                }
+              : item,
+          ),
+        };
+      });
+    } catch (err) {
+      console.error('Failed to update knowledge gap resolution status:', err);
+      setError(err.message || 'Не вдалося оновити статус прогалини');
+    } finally {
+      setResolvingGapId(null);
     }
   };
 
@@ -146,6 +177,8 @@ export default function AnalyticsSection({
             <KnowledgeGapsTable
               gaps={analytics?.knowledge_gaps}
               onUploadClick={onUploadMaterial}
+              onResolveClick={handleResolveGap}
+              resolvingId={resolvingGapId}
             />
           </div>
         </>

@@ -66,6 +66,10 @@ describe('AnalyticsSection component', () => {
     expect(html).toContain('80%');
     expect(html).toContain('Як подати апеляцію?');
     expect(html).toContain('Низька впевненість RAG');
+    expect(html).toContain('Статус');
+    expect(html).toContain('Потребує матеріалу');
     expect(html).toContain('Додати матеріал');
+    expect(html).toContain('✓ Вирішено');
+    expect(html).toContain('knowledge-gaps-filters');
   });
 });
