@@ -114,8 +114,8 @@ class OllamaService:
         except requests.RequestException:
             return False
 
-    def embed(self, model, text):
-        """Отримати embedding-вектор для тексту."""
+    def _embed_single_legacy(self, model, text):
+        """Отримати один embedding через legacy /api/embeddings."""
         model = normalize_model_name(model)
         response = self._request(
             'POST',
@@ -129,3 +129,32 @@ class OllamaService:
         if not isinstance(embedding, list) or not embedding:
             raise requests.RequestException('Ollama не повернув embedding')
         return embedding
+
+    def embed_batch(self, model, texts):
+        """Отримати список embedding-векторів пачкою через /api/embed."""
+        if not texts:
+            return []
+        model = normalize_model_name(model)
+        items = [str(item) for item in texts]
+        response = self._request(
+            'POST',
+            '/api/embed',
+            json={'model': model, 'input': items},
+            timeout=180,
+        )
+        if response.status_code == 404:
+            return [self._embed_single_legacy(model, item) for item in items]
+        raise_for_ollama_status(response)
+        data = self.parse_json(response)
+        embeddings = data.get('embeddings')
+        if (
+            not isinstance(embeddings, list)
+            or len(embeddings) != len(items)
+            or any(not isinstance(vec, list) or not vec for vec in embeddings)
+        ):
+            raise requests.RequestException('Ollama не повернув коректні embeddings')
+        return embeddings
+
+    def embed(self, model, text):
+        """Отримати embedding-вектор для одного тексту."""
+        return self.embed_batch(model, [text])[0]

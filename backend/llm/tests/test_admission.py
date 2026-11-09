@@ -59,3 +59,26 @@ class AdmissionTests(SimpleTestCase):
     def test_missing_redis_url_fails_open_without_client(self):
         token = acquire_ollama_slot(client=None)
         self.assertIsNone(token)
+
+    def test_acquire_waits_until_slot_is_released(self):
+        client = FakeRedis()
+        calls = {'count': 0}
+        orig_set = client.set
+
+        def releasing_set(key, value, nx=False, ex=None):
+            calls['count'] += 1
+            if calls['count'] == 2:
+                client.store.pop(ADMISSION_KEY, None)
+            return orig_set(key, value, nx=nx, ex=ex)
+
+        client.set = releasing_set
+        first = orig_set(ADMISSION_KEY, 'holder', nx=True, ex=180)
+        self.assertTrue(first)
+
+        token = acquire_ollama_slot(
+            client=client,
+            wait_seconds=0.2,
+            poll_interval=0.01,
+        )
+        self.assertTrue(token)
+        self.assertEqual(calls['count'], 2)

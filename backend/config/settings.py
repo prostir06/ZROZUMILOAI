@@ -195,6 +195,8 @@ OLLAMA_BASE_URL = os.getenv(
 )
 OLLAMA_ADMISSION_LIMIT = 1
 OLLAMA_ADMISSION_TTL_SECONDS = int(os.getenv('OLLAMA_ADMISSION_TTL_SECONDS', '180'))
+OLLAMA_CHAT_SLOT_WAIT_SECONDS = float(os.getenv('OLLAMA_CHAT_SLOT_WAIT_SECONDS', '0.0'))
+OLLAMA_INGEST_SLOT_WAIT_SECONDS = float(os.getenv('OLLAMA_INGEST_SLOT_WAIT_SECONDS', '60.0'))
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -284,6 +286,8 @@ TRUST_X_FORWARDED_FOR = os.getenv(
 # RAG: мінімальний score для «знаю»; нижче — підказка ескалації.
 RAG_MIN_SCORE = float(os.getenv('RAG_MIN_SCORE', '0.25'))
 RAG_EMBED_CONCURRENCY = int(os.getenv('RAG_EMBED_CONCURRENCY', '4'))
+RAG_EMBED_BATCH_SIZE = int(os.getenv('RAG_EMBED_BATCH_SIZE', '16'))
+RAG_EMBED_BATCH_PAUSE_SECONDS = float(os.getenv('RAG_EMBED_BATCH_PAUSE_SECONDS', '0.05'))
 # Кеш embeddings для пошукового запиту (секунди).
 RAG_QUERY_EMBED_CACHE_TTL = int(os.getenv('RAG_QUERY_EMBED_CACHE_TTL', '300'))
 

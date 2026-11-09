@@ -1,5 +1,6 @@
 """Один одночасний чат на інстанс Ollama."""
 import logging
+import time
 import uuid
 
 from django.conf import settings
@@ -22,29 +23,41 @@ class OllamaBusy(Exception):
     """Слот генерації вже зайнятий."""
 
 
-def acquire_ollama_slot(client=None):
+def acquire_ollama_slot(client=None, wait_seconds=None, poll_interval=0.05):
     """Повернути токен власника, None для fail-open, або кинути OllamaBusy."""
     if client is None and not (getattr(settings, 'REDIS_URL', '') or '').strip():
         return None
-    redis_client = client
-    try:
-        if redis_client is None:
-            from django_redis import get_redis_connection
-            redis_client = get_redis_connection('default')
-        token = uuid.uuid4().hex
-        ttl = int(getattr(settings, 'OLLAMA_ADMISSION_TTL_SECONDS', 180))
-        written = redis_client.set(ADMISSION_KEY, token, nx=True, ex=ttl)
-    except Exception as exc:
-        # Без Redis чат лишається доступним; слот тоді ніхто не тримає.
-        logger.warning(
-            'Ollama admission unavailable, failing open: %s',
-            exc,
-            exc_info=True,
+    if wait_seconds is None:
+        wait_seconds = float(
+            getattr(settings, 'OLLAMA_CHAT_SLOT_WAIT_SECONDS', 0.0) or 0.0
         )
-        return None
-    if not written:
-        raise OllamaBusy()
-    return token
+    wait_seconds = max(0.0, float(wait_seconds))
+    poll_interval = max(0.005, float(poll_interval))
+    deadline = time.monotonic() + wait_seconds
+    redis_client = client
+    token = uuid.uuid4().hex
+    ttl = int(getattr(settings, 'OLLAMA_ADMISSION_TTL_SECONDS', 180))
+
+    while True:
+        try:
+            if redis_client is None:
+                from django_redis import get_redis_connection
+                redis_client = get_redis_connection('default')
+            written = redis_client.set(ADMISSION_KEY, token, nx=True, ex=ttl)
+        except Exception as exc:
+            # Без Redis чат лишається доступним; слот тоді ніхто не тримає.
+            logger.warning(
+                'Ollama admission unavailable, failing open: %s',
+                exc,
+                exc_info=True,
+            )
+            return None
+        if written:
+            return token
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise OllamaBusy()
+        time.sleep(min(poll_interval, remaining))
 
 
 def release_ollama_slot(token, client=None):
