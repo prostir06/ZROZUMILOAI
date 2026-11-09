@@ -58,6 +58,11 @@ class WorkspaceChatLog(models.Model):
         default='',
         help_text='up | down | порожньо',
     )
+    is_resolved = models.BooleanField(
+        default=False,
+        help_text='Чи опрацьовано цю прогалину викладачем/адміністратором',
+    )
+    resolved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -67,6 +72,7 @@ class WorkspaceChatLog(models.Model):
         indexes = [
             models.Index(fields=['workspace', 'created_at']),
             models.Index(fields=['workspace', 'needs_handoff']),
+            models.Index(fields=['workspace', 'is_resolved']),
         ]
 
     def __str__(self):

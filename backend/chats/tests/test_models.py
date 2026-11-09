@@ -13,3 +13,4 @@ class WorkspaceChatLogIndexesTests(SimpleTestCase):
         index_fields = [list(idx.fields) for idx in WorkspaceChatLog._meta.indexes]
         self.assertIn(['workspace', 'created_at'], index_fields)
         self.assertIn(['workspace', 'needs_handoff'], index_fields)
+        self.assertIn(['workspace', 'is_resolved'], index_fields)

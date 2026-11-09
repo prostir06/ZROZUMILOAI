@@ -38,6 +38,24 @@ class WorkspaceAnalyticsServiceTests(APITestCase):
         self.assertEqual(analytics['knowledge_gaps'], [])
         self.assertEqual(analytics['timeline'], [])
 
+    def test_workspace_chat_log_has_resolution_fields(self):
+        log = WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            prompt='Питання',
+            response='Відповідь',
+            needs_handoff=True,
+            is_resolved=False,
+        )
+        self.assertFalse(log.is_resolved)
+        self.assertIsNone(log.resolved_at)
+
+        log.is_resolved = True
+        log.resolved_at = timezone.now()
+        log.save()
+        log.refresh_from_db()
+        self.assertTrue(log.is_resolved)
+        self.assertIsNotNone(log.resolved_at)
+
     def test_metrics_calculation(self):
         """Обчислення KPI (запити, передачі, CSAT)."""
         # User 1: up feedback

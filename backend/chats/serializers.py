@@ -73,6 +73,8 @@ class WorkspaceChatLogSerializer(serializers.ModelSerializer):
             'response',
             'needs_handoff',
             'feedback',
+            'is_resolved',
+            'resolved_at',
             'sent_at',
         )
         read_only_fields = fields

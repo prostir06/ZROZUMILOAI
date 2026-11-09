@@ -3,7 +3,8 @@ from django.contrib.auth import get_user_model
 from django.test import RequestFactory, TestCase
 from rest_framework.exceptions import ValidationError
 
-from chats.serializers import ChatSerializer
+from chats.serializers import ChatSerializer, WorkspaceChatLogSerializer
+from chats.models import WorkspaceChatLog
 from workspaces.models import Workspace
 
 User = get_user_model()
@@ -57,3 +58,20 @@ class ChatSerializerTests(TestCase):
         })
         with self.assertRaises(ValidationError):
             serializer.is_valid(raise_exception=True)
+
+
+class WorkspaceChatLogSerializerTests(TestCase):
+    """Тести серіалізації WorkspaceChatLog."""
+
+    def test_serializes_resolution_fields(self):
+        ws = Workspace.objects.create(name='Physics')
+        log = WorkspaceChatLog.objects.create(
+            workspace=ws,
+            prompt='Hello',
+            response='World',
+            is_resolved=True,
+        )
+        serializer = WorkspaceChatLogSerializer(log)
+        self.assertIn('is_resolved', serializer.data)
+        self.assertIn('resolved_at', serializer.data)
+        self.assertTrue(serializer.data['is_resolved'])
