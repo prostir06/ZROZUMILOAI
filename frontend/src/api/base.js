@@ -87,11 +87,16 @@ export class BaseApiClient {
   }
 
   async getAuthConfig() {
-    const response = await fetch(`${this.baseUrl}/auth/config/`);
-    if (!response.ok) {
+    try {
+      const response = await fetch(`${this.baseUrl}/auth/config/`);
+      if (!response.ok) {
+        return { allow_registration: true };
+      }
+      return await response.json();
+    } catch (err) {
+      console.warn('Failed to fetch auth config, using fallback:', err);
       return { allow_registration: true };
     }
-    return response.json();
   }
 
   async login(username, password) {

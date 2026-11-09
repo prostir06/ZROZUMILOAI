@@ -24,3 +24,13 @@ class WorkspaceCryptoTests(SimpleTestCase):
         first = encrypt_secret('abc')
         second = encrypt_secret(first)
         self.assertEqual(first, second)
+
+    def test_decrypt_invalid_token_logs_with_exc_info_and_returns_empty(self):
+        """Невалідний зашифрований токен логується з деталями та повертає порожній рядок."""
+        from unittest.mock import patch
+        with patch('workspaces.crypto.logger.error') as mock_log:
+            result = decrypt_secret('enc:v1:invalid-token-payload')
+            self.assertEqual(result, '')
+            mock_log.assert_called_once()
+            self.assertIn('decrypt_secret failed', mock_log.call_args[0][0])
+            self.assertTrue(mock_log.call_args[1].get('exc_info'))

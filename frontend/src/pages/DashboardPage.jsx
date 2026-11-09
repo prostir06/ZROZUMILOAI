@@ -34,7 +34,8 @@ async function fetchJsonSafe(url) {
       return null;
     }
     return await response.json();
-  } catch {
+  } catch (err) {
+    console.warn(`fetchJsonSafe failed for ${url}:`, err);
     return null;
   }
 }

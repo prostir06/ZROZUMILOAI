@@ -89,6 +89,7 @@ export function useWorkspacesAdmin() {
       setWidgetTokens(tokens);
     } catch (err) {
       console.error('Failed to load widget tokens:', err);
+      setError(err.message || 'Не вдалося завантажити віджет-токени');
       setWidgetTokens([]);
     }
   };
@@ -106,6 +107,7 @@ export function useWorkspacesAdmin() {
       setRagStats(stats);
     } catch (err) {
       console.error('Failed to load workspace documents:', err);
+      setError(err.message || 'Не вдалося завантажити документи');
       setDocuments([]);
       setRagStats(null);
     }
@@ -388,6 +390,8 @@ export function useWorkspacesAdmin() {
     uploadingDocument,
     ragStats,
     loadData,
+    loadWidgetTokens,
+    loadDocuments,
     resetForm,
     closeForm: resetForm,
     openCreate: openCreateForm,

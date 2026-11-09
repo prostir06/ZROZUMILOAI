@@ -197,4 +197,19 @@ describe('ApiClient chats logs parameters and export URL generator', () => {
       api.request = originalRequest;
     }
   });
+
+  it('catches error and logs when api.getWorkspaceChatLogs fails in useWorkspaceChats', async () => {
+    vi.spyOn(api, 'getWorkspaceChatLogs').mockRejectedValue(new Error('Logs backend failed'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    let hookResult;
+    function TestComponent() {
+      hookResult = useWorkspaceChats();
+      return React.createElement('div');
+    }
+
+    renderToString(React.createElement(TestComponent));
+    await expect(hookResult.loadLogs()).resolves.not.toThrow();
+    expect(consoleSpy).toHaveBeenCalledWith('Failed to load workspace chat logs:', expect.any(Error));
+  });
 });

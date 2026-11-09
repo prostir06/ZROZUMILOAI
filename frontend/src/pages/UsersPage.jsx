@@ -123,10 +123,13 @@ function UsersPage() {
 
   const handleCopyKey = async (key) => {
     try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error('Буфер обміну не підтримується браузером');
+      }
       await navigator.clipboard.writeText(key);
     } catch (err) {
-      // Clipboard API may be disabled or blocked by browser permissions
       console.error('Failed to copy API key to clipboard:', err);
+      setError('Не вдалося скопіювати ключ до буфера обміну');
     }
   };
 

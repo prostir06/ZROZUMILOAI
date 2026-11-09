@@ -74,5 +74,5 @@ def decrypt_secret(value):
     try:
         return _fernet().decrypt(token.encode('ascii')).decode('utf-8')
     except Exception as exc:
-        logger.error('decrypt_secret failed: %s', exc)
+        logger.error('decrypt_secret failed: %s', exc, exc_info=True)
         return ''

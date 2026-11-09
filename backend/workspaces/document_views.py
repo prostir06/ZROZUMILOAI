@@ -121,11 +121,12 @@ class WorkspaceDocumentDeleteView(APIView):
         if document.file:
             try:
                 document.file.delete(save=False)
-            except OSError as exc:
+            except Exception as exc:
                 logger.warning(
-                    'Could not delete file for document %s: %s',
+                    'Could not delete storage file for document %s: %s',
                     document_id,
                     exc,
+                    exc_info=True,
                 )
 
         try:

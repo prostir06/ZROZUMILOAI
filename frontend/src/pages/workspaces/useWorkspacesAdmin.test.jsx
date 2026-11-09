@@ -221,4 +221,34 @@ describe('WorkspaceModal component', () => {
     expect(html).toContain('Документи (RAG)');
     expect(html).toContain('Аналітика та прогалини знань');
   });
+
+  it('catches error and logs when loadWidgetTokens fails', async () => {
+    vi.spyOn(api, 'getWidgetTokens').mockRejectedValue(new Error('Tokens API down'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    let hookValue;
+    function TestComponent() {
+      hookValue = useWorkspacesAdmin();
+      return React.createElement('div');
+    }
+
+    renderToString(React.createElement(TestComponent));
+    await expect(hookValue.loadWidgetTokens(1)).resolves.not.toThrow();
+    expect(consoleSpy).toHaveBeenCalledWith('Failed to load widget tokens:', expect.any(Error));
+  });
+
+  it('catches error and logs when loadDocuments fails', async () => {
+    vi.spyOn(api, 'getWorkspaceDocuments').mockRejectedValue(new Error('Storage unavailable'));
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    let hookValue;
+    function TestComponent() {
+      hookValue = useWorkspacesAdmin();
+      return React.createElement('div');
+    }
+
+    renderToString(React.createElement(TestComponent));
+    await expect(hookValue.loadDocuments(1)).resolves.not.toThrow();
+    expect(consoleSpy).toHaveBeenCalledWith('Failed to load workspace documents:', expect.any(Error));
+  });
 });

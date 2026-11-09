@@ -43,7 +43,10 @@ export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
         }
       })
       .catch((err) => {
-        console.error('Failed to load workspaces:', err);
+        if (!cancelled) {
+          console.error('Failed to load workspaces:', err);
+          setError(err.message || 'Не вдалося завантажити робочі простори');
+        }
       });
     return () => {
       cancelled = true;

@@ -8,19 +8,23 @@ export function ChatProvider({ children }) {
   const { isAuthenticated } = useAuth();
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const refreshChats = useCallback(async () => {
     if (!isAuthenticated) {
       setChats([]);
+      setError('');
       return;
     }
 
     setLoading(true);
+    setError('');
     try {
       const data = await api.getChats();
       setChats(data);
     } catch (err) {
       console.error('Failed to load user chats:', err);
+      setError(err.message || 'Не вдалося завантажити чати');
       setChats([]);
     } finally {
       setLoading(false);
@@ -32,8 +36,8 @@ export function ChatProvider({ children }) {
   }, [refreshChats]);
 
   const value = useMemo(
-    () => ({ chats, loading, refreshChats }),
-    [chats, loading, refreshChats],
+    () => ({ chats, loading, error, refreshChats }),
+    [chats, loading, error, refreshChats],
   );
 
   return (

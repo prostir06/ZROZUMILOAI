@@ -160,3 +160,22 @@ class WorkspaceDocumentApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['documents_ready'], 1)
         self.assertEqual(response.data['chunks_total'], 3)
+
+    def test_delete_document_succeeds_even_if_storage_file_delete_fails(self):
+        """Видалення документа завершується успішно, навіть якщо файл не вдалося видалити з диску."""
+        self.client.force_authenticate(user=self.admin)
+        document = WorkspaceDocument.objects.create(
+            workspace=self.workspace,
+            original_filename='error_file.txt',
+            file=SimpleUploadedFile('error_file.txt', b'data'),
+            file_size=4,
+            status=WorkspaceDocument.Status.READY,
+        )
+
+        with patch.object(document.file, 'delete', side_effect=Exception('Storage unavailable')):
+            with patch('workspaces.models.WorkspaceDocument.objects.get', return_value=document):
+                response = self.client.delete(
+                    f'/api/workspaces/{self.workspace.pk}/documents/{document.pk}/',
+                )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(WorkspaceDocument.objects.filter(pk=document.pk).exists())
