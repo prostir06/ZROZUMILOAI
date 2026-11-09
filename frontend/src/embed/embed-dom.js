@@ -210,6 +210,9 @@ export function appendAssistantText(container, text) {
   if (!container) {
     return false;
   }
+  if (container.querySelector('.embed__typing')) {
+    return false;
+  }
   const bubbles = container.querySelectorAll('.embed__message--assistant');
   const last = bubbles[bubbles.length - 1];
   if (!last) {

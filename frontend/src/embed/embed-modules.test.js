@@ -8,6 +8,7 @@ import {
   renderFaqCloud,
   renderMessages,
   renderEmbedLayout,
+  appendAssistantText,
 } from './embed-dom.js';
 import { EMBED_GREETING, EMBED_FAQ_QUESTIONS } from './utils.js';
 
@@ -300,6 +301,28 @@ describe('embed-dom', () => {
     const typing = renderTypingIndicator();
     expect(typing).toContain('class="embed__typing"');
     expect(typing).toContain('<span></span><span></span><span></span>');
+  });
+
+  it('appendAssistantText returns false when typing indicator is present or container missing', () => {
+    expect(appendAssistantText(null, 'test')).toBe(false);
+
+    const mockLastBubble = { insertAdjacentText: vi.fn() };
+    const containerWithTyping = {
+      querySelector: (sel) => (sel === '.embed__typing' ? {} : null),
+      querySelectorAll: (sel) => (sel === '.embed__message--assistant' ? [mockLastBubble] : []),
+    };
+    expect(appendAssistantText(containerWithTyping, ' world')).toBe(false);
+    expect(mockLastBubble.insertAdjacentText).not.toHaveBeenCalled();
+
+    const normalContainer = {
+      querySelector: () => null,
+      querySelectorAll: (sel) => (sel === '.embed__message--assistant' ? [mockLastBubble] : []),
+      scrollHeight: 100,
+      scrollTop: 100,
+      clientHeight: 50,
+    };
+    expect(appendAssistantText(normalContainer, ' world')).toBe(true);
+    expect(mockLastBubble.insertAdjacentText).toHaveBeenCalledWith('beforeend', ' world');
   });
 
   it('renders FAQ cloud when model is available', () => {
