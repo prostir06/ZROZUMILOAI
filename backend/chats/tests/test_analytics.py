@@ -9,8 +9,10 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from chats.analytics_service import get_workspace_analytics
+from chats.analytics_service import build_analytics_csv, get_workspace_analytics
+from chats.export_service import serialize_logs
 from chats.models import WorkspaceChatLog
+from chats.table_analysis import build_table_digest
 from workspaces.models import Workspace
 
 User = get_user_model()
@@ -233,6 +235,55 @@ class WorkspaceAnalyticsServiceTests(APITestCase):
         )
         self.assertEqual(timeline[1]['total_queries'], 1)
         self.assertEqual(timeline[1]['handoffs'], 0)
+
+    def test_get_workspace_analytics_uses_single_aggregate_for_kpis(self):
+        WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='u1',
+            prompt='Q1',
+            response='A1',
+            needs_handoff=True,
+            feedback='down',
+        )
+        # 1 aggregate query + 1 gaps query + 1 timeline query = 3 queries total
+        with self.assertNumQueries(3):
+            data = get_workspace_analytics(self.workspace, date_range='30d')
+        self.assertEqual(data['total_queries'], 1)
+        self.assertEqual(data['handoff_count'], 1)
+
+    def test_build_table_digest_uses_single_aggregate_for_totals(self):
+        WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='u1',
+            prompt='Q1',
+            response='A1',
+            needs_handoff=True,
+            feedback='up',
+        )
+        qs = WorkspaceChatLog.objects.filter(workspace=self.workspace)
+        # 1 aggregate query + 1 workspace_rows query + 1 sample query = 3 queries total
+        with self.assertNumQueries(3):
+            digest = build_table_digest(qs)
+        self.assertEqual(digest['total'], 1)
+        self.assertEqual(digest['handoff'], 1)
+        self.assertEqual(digest['feedback_up'], 1)
+        self.assertEqual(digest['feedback_down'], 0)
+
+    def test_build_analytics_csv_and_serialize_logs_use_iterator(self):
+        WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='u1',
+            prompt='Q1',
+            response='A1',
+            needs_handoff=False,
+            feedback='up',
+        )
+        csv_text = build_analytics_csv(self.workspace, date_range='30d')
+        self.assertIn('Q1', csv_text)
+        qs = WorkspaceChatLog.objects.filter(workspace=self.workspace)
+        rows = serialize_logs(qs)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['prompt'], 'Q1')
 
 
 class WorkspaceAnalyticsApiTests(APITestCase):

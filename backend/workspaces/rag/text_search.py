@@ -48,8 +48,11 @@ def search_with_fulltext(workspace, query, top_k=None):
                     workspace=workspace,
                     document__status=WorkspaceDocument.Status.READY,
                 )
-                .annotate(rank=SearchRank(search_vector, search_query))
-                .filter(rank__gt=0.0)
+                .annotate(
+                    search=search_vector,
+                    rank=SearchRank(search_vector, search_query),
+                )
+                .filter(search=search_query, rank__gt=0.0)
                 .order_by('-rank')
                 .select_related('document')[:top_k]
             )

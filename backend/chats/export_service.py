@@ -66,8 +66,13 @@ def serialize_log_row(log):
 
 
 def serialize_logs(logs):
-    """Серіалізувати queryset або список логів."""
-    return [serialize_log_row(log) for log in logs]
+    """Серіалізувати queryset або список логів з мінімальним споживанням RAM."""
+    iterable = (
+        logs.iterator(chunk_size=500)
+        if hasattr(logs, 'iterator')
+        else logs
+    )
+    return [serialize_log_row(log) for log in iterable]
 
 
 def build_export_timestamp(logs):

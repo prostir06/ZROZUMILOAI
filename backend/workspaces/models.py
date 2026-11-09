@@ -158,7 +158,7 @@ def _embedding_field():
 
 
 def _document_chunk_indexes(engine=None):
-    """Індекси для DocumentChunk: workspace завжди, HnswIndex тільки для PostgreSQL."""
+    """Індекси для DocumentChunk: workspace завжди, HnswIndex та GinIndex тільки для PostgreSQL."""
     if engine is None:
         from django.conf import settings as django_settings
 
@@ -170,6 +170,8 @@ def _document_chunk_indexes(engine=None):
     if 'sqlite' in engine:
         return indexes
 
+    from django.contrib.postgres.indexes import GinIndex
+    from django.contrib.postgres.search import SearchVector
     from pgvector.django import HnswIndex
 
     indexes.append(
@@ -179,6 +181,12 @@ def _document_chunk_indexes(engine=None):
             m=16,
             ef_construction=64,
             opclasses=['vector_cosine_ops'],
+        ),
+    )
+    indexes.append(
+        GinIndex(
+            SearchVector('content', config='simple'),
+            name='chunk_content_fts_gin_idx',
         ),
     )
     return indexes

@@ -44,17 +44,24 @@ def get_workspace_analytics(
     qs = WorkspaceChatLog.objects.filter(workspace=workspace)
     qs = _filter_logs_by_date_range(qs, date_range)
 
-    total_queries = qs.count()
-    unique_users = qs.values('sent_by').distinct().count()
-    handoff_count = qs.filter(needs_handoff=True).count()
+    totals = qs.aggregate(
+        total_queries=Count('id'),
+        unique_users=Count('sent_by', distinct=True),
+        handoff_count=Count('id', filter=Q(needs_handoff=True)),
+        feedback_up=Count('id', filter=Q(feedback='up')),
+        feedback_down=Count('id', filter=Q(feedback='down')),
+    )
+    total_queries = totals['total_queries'] or 0
+    unique_users = totals['unique_users'] or 0
+    handoff_count = totals['handoff_count'] or 0
     handoff_rate = (
         round(handoff_count / total_queries * 100, 1)
         if total_queries > 0
         else 0.0
     )
 
-    feedback_up = qs.filter(feedback='up').count()
-    feedback_down = qs.filter(feedback='down').count()
+    feedback_up = totals['feedback_up'] or 0
+    feedback_down = totals['feedback_down'] or 0
     rated_count = feedback_up + feedback_down
     csat_score = (
         round(feedback_up / rated_count * 100, 1)
@@ -146,7 +153,7 @@ def build_analytics_csv(workspace, date_range: str = '30d') -> str:
         'Оцінка',
     ])
 
-    for log in qs:
+    for log in qs.iterator(chunk_size=500):
         created_str = (
             log.created_at.strftime('%Y-%m-%d %H:%M')
             if log.created_at

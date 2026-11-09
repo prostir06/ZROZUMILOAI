@@ -3,7 +3,7 @@ import json
 import logging
 import re
 
-from django.db.models import Count
+from django.db.models import Count, Q
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +49,16 @@ def pick_chat_model(models):
 
 def build_table_digest(logs):
     """Лічильники всієї вибірки і короткі рядки для промпта."""
-    total = logs.count()
-    handoff = logs.filter(needs_handoff=True).count()
-    feedback_up = logs.filter(feedback='up').count()
-    feedback_down = logs.filter(feedback='down').count()
+    totals = logs.aggregate(
+        total=Count('id'),
+        handoff=Count('id', filter=Q(needs_handoff=True)),
+        feedback_up=Count('id', filter=Q(feedback='up')),
+        feedback_down=Count('id', filter=Q(feedback='down')),
+    )
+    total = totals['total'] or 0
+    handoff = totals['handoff'] or 0
+    feedback_up = totals['feedback_up'] or 0
+    feedback_down = totals['feedback_down'] or 0
     workspace_rows = (
         logs.values('workspace__name')
         .annotate(count=Count('id'))

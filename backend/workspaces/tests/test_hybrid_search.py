@@ -150,6 +150,12 @@ class FulltextSearchTests(TestCase):
         self.assertEqual(results[0]['id'], 42)
         self.assertEqual(results[0]['score'], 0.75)
         self.assertEqual(results[0]['document_name'], 'pg.pdf')
+        annotate_kwargs = queryset.annotate.call_args.kwargs
+        self.assertIn('search', annotate_kwargs)
+        self.assertIn('rank', annotate_kwargs)
+        filter_kwargs = queryset.annotate.return_value.filter.call_args.kwargs
+        self.assertIn('search', filter_kwargs)
+        self.assertEqual(filter_kwargs.get('rank__gt'), 0.0)
 
 
 class HybridSearchWorkspaceDocumentsTests(TestCase):

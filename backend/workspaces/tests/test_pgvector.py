@@ -1,6 +1,7 @@
 """Unit-тести pgvector RAG-пошуку та HnswIndex."""
 from unittest.mock import MagicMock, patch
 
+from django.contrib.postgres.indexes import GinIndex
 from django.db import connection, migrations, models
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -18,10 +19,11 @@ class DocumentChunkIndexTests(SimpleTestCase):
         self.assertEqual(len(indexes), 1)
         self.assertEqual(indexes[0].fields, ['workspace'])
         self.assertFalse(any(isinstance(idx, HnswIndex) for idx in indexes))
+        self.assertFalse(any(isinstance(idx, GinIndex) for idx in indexes))
 
     def test_document_chunk_indexes_on_postgresql(self):
         indexes = _document_chunk_indexes(engine='django.db.backends.postgresql')
-        self.assertEqual(len(indexes), 2)
+        self.assertEqual(len(indexes), 3)
         self.assertEqual(indexes[0].fields, ['workspace'])
 
         hnsw_idx = indexes[1]
@@ -31,6 +33,10 @@ class DocumentChunkIndexTests(SimpleTestCase):
         self.assertEqual(hnsw_idx.m, 16)
         self.assertEqual(hnsw_idx.ef_construction, 64)
         self.assertEqual(hnsw_idx.opclasses, ['vector_cosine_ops'])
+
+        gin_idx = indexes[2]
+        self.assertIsInstance(gin_idx, GinIndex)
+        self.assertEqual(gin_idx.name, 'chunk_content_fts_gin_idx')
 
     def test_active_environment_model_indexes_compat(self):
         """В активному тестовому середовищі (SQLite) індекси не повинні містити HnswIndex."""
@@ -102,6 +108,46 @@ class DocumentChunkMigrationTests(TestCase):
         mod.drop_hnsw_index(None, mock_editor)
         rollback_sqls = [call.args[0] for call in mock_editor.execute.call_args_list]
         self.assertTrue(any('DROP INDEX IF EXISTS chunk_embedding_hnsw_idx' in sql for sql in rollback_sqls))
+
+    def test_migration_0015_fts_gin_index_declared_and_executes(self):
+        import importlib
+        loader = MigrationLoader(connection)
+        self.assertIn(
+            ('workspaces', '0015_documentchunk_fts_gin_index'),
+            loader.disk_migrations,
+            'Міграція 0015 повинна існувати на диску',
+        )
+        migration = loader.disk_migrations[('workspaces', '0015_documentchunk_fts_gin_index')]
+        self.assertIn(('workspaces', '0014_remove_gemini'), migration.dependencies)
+
+        sep_op = migration.operations[0]
+        self.assertIsInstance(sep_op, migrations.SeparateDatabaseAndState)
+        add_index_op = sep_op.state_operations[0]
+        self.assertIsInstance(add_index_op, migrations.AddIndex)
+        self.assertEqual(add_index_op.model_name, 'documentchunk')
+        self.assertIsInstance(add_index_op.index, GinIndex)
+        self.assertEqual(add_index_op.index.name, 'chunk_content_fts_gin_idx')
+
+        mod = importlib.import_module('workspaces.migrations.0015_documentchunk_fts_gin_index')
+
+        sqlite_editor = MagicMock()
+        sqlite_editor.connection.vendor = 'sqlite'
+        mod.create_fts_gin_index(None, sqlite_editor)
+        sqlite_editor.execute.assert_not_called()
+        mod.drop_fts_gin_index(None, sqlite_editor)
+        sqlite_editor.execute.assert_not_called()
+
+        pg_editor = MagicMock()
+        pg_editor.connection.vendor = 'postgresql'
+        mod.create_fts_gin_index(None, pg_editor)
+        executed_sqls = [call.args[0] for call in pg_editor.execute.call_args_list]
+        self.assertTrue(any('CREATE INDEX IF NOT EXISTS chunk_content_fts_gin_idx' in sql for sql in executed_sqls))
+        self.assertTrue(any("to_tsvector('simple', content)" in sql for sql in executed_sqls))
+
+        pg_editor.reset_mock()
+        mod.drop_fts_gin_index(None, pg_editor)
+        rollback_sqls = [call.args[0] for call in pg_editor.execute.call_args_list]
+        self.assertTrue(any('DROP INDEX IF EXISTS chunk_content_fts_gin_idx' in sql for sql in rollback_sqls))
 
 
 class PgvectorSearchTests(SimpleTestCase):
