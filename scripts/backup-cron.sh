@@ -18,9 +18,14 @@ echo "[$(date -Iseconds)] backup start"
 FILENAME="$("${COMPOSE[@]}" exec -T backend python manage.py create_backup)"
 echo "[$(date -Iseconds)] created: ${FILENAME}"
 
+if [ -n "${BACKUP_OFFBOX_CMD:-}" ]; then
+  echo "[backup-cron] $(date -Iseconds) Running BACKUP_OFFBOX_CMD..."
+  sh -c "${BACKUP_OFFBOX_CMD}"
+fi
+
 # Prune local files older than KEEP_DAYS (off-box copies are the source of truth).
 if [[ -d ./backup ]]; then
-  find ./backup -type f \( -name '*.tar.gz' -o -name '*.sql' -o -name '*.sqlite3' -o -name '*.db' \) -mtime "+${KEEP_DAYS}" -print -delete || true
+  find ./backup -type f \( -name '*.tar.gz' -o -name '*.sql.gz' -o -name '*.sql' -o -name '*.sqlite3' -o -name '*.db' \) -mtime "+${KEEP_DAYS}" -print -delete || true
 fi
 
 echo "[$(date -Iseconds)] backup done"

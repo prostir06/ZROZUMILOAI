@@ -32,10 +32,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec ollama olla
 
 | Check | Як |
 |-------|-----|
-| App | `curl -fsS https://your.domain/api/health/` → 200 |
+| App (Docker / proxy) | `curl -fsS https://your.domain/api/health/` → 200 (поки жива БД; містить поля `database`, `cache`, `ollama`) |
+| Strict (Uptime monitor) | `curl -fsS "https://your.domain/api/health/?strict=1"` → 200 якщо всі сервіси `ok`, або 503 якщо `ollama != ok` (`status: degraded`) |
 | Containers | `docker compose -f docker-compose.yml -f docker-compose.prod.yml ps` |
 | Ollama (auth) | `GET /api/ollama/health/` з JWT / API key |
-| External uptime | HTTP GET `/api/health/` і `/` кожні 1–5 хв (UptimeRobot тощо) |
+| External uptime | HTTP GET `/api/health/?strict=1` і `/` кожні 1–5 хв (UptimeRobot тощо; статус Ollama кешується на 10 с) |
 
 Логи: JSON з `request_id` при `DJANGO_LOG_FORMAT=json` (prod default).
 
@@ -43,7 +44,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec ollama olla
 
 ## Backup (RPO 24h)
 
-Створення:
+Створення (повний архів `.tar.gz` з дампом БД та `media/` або legacy `.sql.gz`/`.sql`):
 
 ```bash
 ./scripts/backup-cron.sh
@@ -57,12 +58,18 @@ Cron (приклад):
 15 2 * * * cd /opt/zrozumiloai && ./scripts/backup-cron.sh >> /var/log/zrozumiloai-backup.log 2>&1
 ```
 
-Після кожного backup — **скопіюйте** `./backup/` off-box (rsync/object storage). Локальний prune: `BACKUP_KEEP_DAYS` (default 14).
+Після кожного backup — **скопіюйте** `./backup/` off-box (rsync/object storage). Можна автоматизувати через змінну середовища `BACKUP_OFFBOX_CMD` (виконується у `scripts/backup-cron.sh` одразу після `create_backup` і перед локальним ротуванням), наприклад:
+
+```bash
+export BACKUP_OFFBOX_CMD="rclone copy ./backup remote:zrozumiloai-backups"
+```
+
+Локальний prune: `BACKUP_KEEP_DAYS` (default 14).
 
 ### Restore drill (раз на квартал)
 
 1. Зупиніть write-навантаження / візьміть maintenance window.
-2. Покладіть потрібний `.sql` у `./backup/` (найновіший підхопить `find_latest_backup`).
+2. Покладіть потрібний архів `.tar.gz` (або `.sql.gz` / `.sql`) у `./backup/` (найновіший підхопить `find_latest_backup`).
 3. Відновлення через entrypoint:
 
 ```bash
@@ -71,7 +78,7 @@ FORCE_DB_RESTORE=1 docker compose -f docker-compose.yml -f docker-compose.prod.y
 
 Або вручну: `docker compose … exec backend python manage.py restore_backup` (потрібен `FORCE_DB_RESTORE=1` у env контейнера).
 
-4. Перевірте health, логін, один widget chat, один документ у RAG.
+4. Перевірте health (`/api/health/?strict=1`), логін, один widget chat, один документ у RAG.
 5. Зніміть `FORCE_DB_RESTORE` назад на `0`.
 
 ## Incidents
@@ -80,8 +87,8 @@ FORCE_DB_RESTORE=1 docker compose -f docker-compose.yml -f docker-compose.prod.y
 |---------|-----|
 | OOM / хост swap | Знизьте `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MEM_LIMIT`; не робіть model pull / mass reindex |
 | Redis down | Chat/сесії можуть деградувати; перевірте пароль і `redis` health |
-| Ingest FAILED | Повтор у UI / Celery; перевірте worker + Ollama embed model |
-| 429 на chat | Очікувано: DRF `WIDGET_CHAT_RATE` / `USER_CHAT_RATE` (prod ~30/min) |
+| Ingest FAILED | Повтор у UI / Celery; перевірте worker + Ollama embed model та параметри батчингу (`RAG_EMBED_BATCH_SIZE`, `RAG_EMBED_BATCH_PAUSE_SECONDS`, `OLLAMA_INGEST_SLOT_WAIT_SECONDS`) |
+| 429 на chat (`ollama_busy` або rate limit) | Якщо `"code": "ollama_busy"` (з заголовком `Retry-After`) — слот генерації Ollama зайнятий; налаштуйте `OLLAMA_CHAT_SLOT_WAIT_SECONDS` або зменшіть конкурентний ingest (`RAG_EMBED_BATCH_SIZE`, `RAG_EMBED_BATCH_PAUSE_SECONDS`). Інакше — DRF throttle `WIDGET_CHAT_RATE` / `USER_CHAT_RATE` (prod ~30/min) |
 | TLS fail | DNS, `CADDY_SITE_ADDRESS`, порти 80/443 |
 
 Під тиском спочатку вимкніть: pull великих моделей → масовий reindex → зайвий parallel Ollama.
