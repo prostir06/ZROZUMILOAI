@@ -1,6 +1,9 @@
 """API-тести Chats Info (workspace chat logs)."""
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -152,3 +155,64 @@ class WorkspaceChatLogApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['results'][0]['feedback'], 'up')
         self.assertTrue(response.data['results'][0]['needs_handoff'])
+
+    def test_filter_by_workspace_id(self):
+        """Фільтр workspace_id повертає логи лише вказаного простору."""
+        other_ws = Workspace.objects.create(name='other', model_names=['llama3'])
+        WorkspaceChatLog.objects.create(
+            sent_by='student_2',
+            workspace=other_ws,
+            prompt='Інший простір',
+            response='Відповідь',
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f'{self.list_url}?workspace_id={other_ws.pk}')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['results'][0]['prompt'], 'Інший простір')
+
+    def test_filter_by_is_resolved(self):
+        """Фільтр is_resolved повертає вирішені або невирішені логи."""
+        resolved_log = WorkspaceChatLog.objects.create(
+            sent_by='student',
+            workspace=self.workspace,
+            prompt='Вирішено',
+            response='Так',
+            is_resolved=True,
+            resolved_at=timezone.now(),
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        # Filter is_resolved=true
+        resp_true = self.client.get(f'{self.list_url}?is_resolved=true')
+        self.assertEqual(resp_true.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_true.data['count'], 1)
+        self.assertEqual(resp_true.data['results'][0]['id'], resolved_log.id)
+
+        # Filter is_resolved=false
+        resp_false = self.client.get(f'{self.list_url}?is_resolved=false')
+        self.assertEqual(resp_false.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_false.data['count'], 1)
+        self.assertEqual(resp_false.data['results'][0]['id'], self.log.id)
+
+    def test_filter_by_date_range(self):
+        """Фільтр range (today, 7d, 30d) відтинає старі записи."""
+        old_log = WorkspaceChatLog.objects.create(
+            sent_by='student',
+            workspace=self.workspace,
+            prompt='40 днів тому',
+            response='Старе',
+        )
+        WorkspaceChatLog.objects.filter(pk=old_log.pk).update(
+            created_at=timezone.now() - timedelta(days=40)
+        )
+
+        self.client.force_authenticate(user=self.admin)
+
+        # 30d should exclude 40d old log
+        resp_30d = self.client.get(f'{self.list_url}?range=30d')
+        self.assertEqual(resp_30d.status_code, status.HTTP_200_OK)
+        ids = [item['id'] for item in resp_30d.data['results']]
+        self.assertNotIn(old_log.id, ids)
+        self.assertIn(self.log.id, ids)
+

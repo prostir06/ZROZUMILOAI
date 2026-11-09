@@ -11,7 +11,7 @@ from django.utils import timezone
 from chats.models import WorkspaceChatLog
 
 
-def _filter_logs_by_date_range(qs, date_range: str):
+def filter_logs_by_date_range(qs, date_range: str):
     """Filter chat logs queryset by standard date ranges."""
     now = timezone.now()
     if date_range == 'today':
@@ -27,9 +27,13 @@ def _filter_logs_by_date_range(qs, date_range: str):
     return qs.filter(created_at__gte=now - timedelta(days=30))
 
 
+_filter_logs_by_date_range = filter_logs_by_date_range
+
+
 def get_workspace_analytics(
     workspace,
     date_range: str = '30d',
+    resolved: Any = None,
 ) -> Dict[str, Any]:
     """
     Compute educational KPIs and knowledge gaps for a given workspace.
@@ -37,12 +41,13 @@ def get_workspace_analytics(
     Args:
         workspace: Workspace instance to aggregate analytics for.
         date_range: 'today', '7d', '30d', or 'all'. Defaults to '30d'.
+        resolved: Optional bool or str filter for gap resolution status.
 
     Returns:
         Dictionary with KPIs, knowledge gaps list, and timeline data.
     """
     qs = WorkspaceChatLog.objects.filter(workspace=workspace)
-    qs = _filter_logs_by_date_range(qs, date_range)
+    qs = filter_logs_by_date_range(qs, date_range)
 
     totals = qs.aggregate(
         total_queries=Count('id'),
@@ -71,7 +76,14 @@ def get_workspace_analytics(
 
     gaps_qs = qs.filter(
         Q(needs_handoff=True) | Q(feedback='down')
-    ).order_by('-created_at')[:50]
+    )
+    if resolved is not None:
+        if resolved in (True, '1', 'true', 'yes'):
+            gaps_qs = gaps_qs.filter(is_resolved=True)
+        elif resolved in (False, '0', 'false', 'no'):
+            gaps_qs = gaps_qs.filter(is_resolved=False)
+
+    gaps_qs = gaps_qs.order_by('-created_at')[:50]
 
     knowledge_gaps = [
         {
@@ -85,6 +97,10 @@ def get_workspace_analytics(
                 'low_confidence'
                 if log.needs_handoff
                 else 'negative_feedback'
+            ),
+            'is_resolved': log.is_resolved,
+            'resolved_at': (
+                log.resolved_at.isoformat() if log.resolved_at else None
             ),
         }
         for log in gaps_qs

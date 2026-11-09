@@ -17,6 +17,7 @@ from llm.admission import (
 from llm.base import LLMProviderError
 from llm.ollama_provider import OllamaProvider
 
+from .analytics_service import filter_logs_by_date_range
 from .export_service import (
     build_export_response,
     build_export_timestamp,
@@ -43,6 +44,24 @@ def filtered_chat_logs(params):
     feedback = params.get('feedback')
     if feedback is not None and feedback in ALLOWED_FEEDBACK:
         logs = logs.filter(feedback=feedback)
+
+    workspace_id = params.get('workspace_id')
+    if workspace_id:
+        try:
+            logs = logs.filter(workspace_id=int(workspace_id))
+        except (ValueError, TypeError):
+            pass
+
+    is_resolved = params.get('is_resolved')
+    if is_resolved in (True, '1', 'true', 'yes'):
+        logs = logs.filter(is_resolved=True)
+    elif is_resolved in (False, '0', 'false', 'no'):
+        logs = logs.filter(is_resolved=False)
+
+    date_range = params.get('range')
+    if date_range in ('today', '7d', '30d'):
+        logs = filter_logs_by_date_range(logs, date_range)
+
     return logs
 
 

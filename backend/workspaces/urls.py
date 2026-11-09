@@ -4,6 +4,7 @@ from django.urls import path
 from chats.analytics_views import (
     WorkspaceAnalyticsExportView,
     WorkspaceAnalyticsView,
+    WorkspaceKnowledgeGapResolveView,
 )
 from .views import MyWorkspacesView, WorkspaceDetailView, WorkspaceListCreateView
 from .document_views import (
@@ -61,5 +62,10 @@ urlpatterns = [
         '<int:workspace_id>/analytics/export/',
         WorkspaceAnalyticsExportView.as_view(),
         name='workspace_analytics_export',
+    ),
+    path(
+        '<int:workspace_id>/analytics/gaps/<int:log_id>/resolve/',
+        WorkspaceKnowledgeGapResolveView.as_view(),
+        name='workspace_gap_resolve',
     ),
 ]

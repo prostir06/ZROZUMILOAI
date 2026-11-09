@@ -304,6 +304,64 @@ class WorkspaceAnalyticsServiceTests(APITestCase):
         self.assertEqual(rows[0]['prompt'], 'Q1')
 
 
+    def test_knowledge_gaps_includes_resolution_fields(self):
+        """Елементи knowledge_gaps містять is_resolved та resolved_at."""
+        log1 = WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            prompt='Нерозв\'язане питання',
+            response='Не знаю',
+            needs_handoff=True,
+            is_resolved=False,
+        )
+        resolved_time = timezone.now()
+        log2 = WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            prompt='Вирішене питання',
+            response='Тепер знаю',
+            feedback='down',
+            is_resolved=True,
+            resolved_at=resolved_time,
+        )
+
+        analytics = get_workspace_analytics(self.workspace, date_range='all')
+        gaps = analytics['knowledge_gaps']
+        self.assertEqual(len(gaps), 2)
+        gap1 = next(g for g in gaps if g['id'] == log1.id)
+        gap2 = next(g for g in gaps if g['id'] == log2.id)
+
+        self.assertFalse(gap1['is_resolved'])
+        self.assertIsNone(gap1['resolved_at'])
+
+        self.assertTrue(gap2['is_resolved'])
+        self.assertEqual(gap2['resolved_at'], resolved_time.isoformat())
+
+    def test_filter_analytics_by_resolved_status(self):
+        """Параметр resolved фільтрує knowledge_gaps."""
+        log_open = WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            prompt='Відкрите',
+            needs_handoff=True,
+            is_resolved=False,
+        )
+        log_resolved = WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            prompt='Вирішене',
+            needs_handoff=True,
+            is_resolved=True,
+            resolved_at=timezone.now(),
+        )
+
+        open_analytics = get_workspace_analytics(self.workspace, date_range='all', resolved=False)
+        open_ids = [g['id'] for g in open_analytics['knowledge_gaps']]
+        self.assertIn(log_open.id, open_ids)
+        self.assertNotIn(log_resolved.id, open_ids)
+
+        resolved_analytics = get_workspace_analytics(self.workspace, date_range='all', resolved=True)
+        resolved_ids = [g['id'] for g in resolved_analytics['knowledge_gaps']]
+        self.assertNotIn(log_open.id, resolved_ids)
+        self.assertIn(log_resolved.id, resolved_ids)
+
+
 class WorkspaceAnalyticsApiTests(APITestCase):
     """Тести HTTP API endpoint аналітики робочого простору."""
 
@@ -378,3 +436,114 @@ class WorkspaceAnalyticsApiTests(APITestCase):
         )
         response = self.client.get(invalid_url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class WorkspaceKnowledgeGapResolveApiTests(APITestCase):
+    """Тести endpoint позначення прогалини знань як вирішеної."""
+
+    def setUp(self):
+        self.teacher = User.objects.create_user(
+            username='teacher',
+            password='password123',
+        )
+        self.outsider = User.objects.create_user(
+            username='outsider',
+            password='password123',
+        )
+        self.admin = User.objects.create_superuser(
+            username='admin',
+            password='password123',
+            email='admin@example.com',
+        )
+        self.workspace = Workspace.objects.create(name='Physics 101')
+        self.workspace.users.add(self.teacher)
+
+        self.other_workspace = Workspace.objects.create(name='Chemistry 101')
+
+        self.log = WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            prompt='Складне питання',
+            response='Не маю відповіді',
+            needs_handoff=True,
+            is_resolved=False,
+        )
+
+        self.resolve_url = reverse(
+            'workspace_gap_resolve',
+            kwargs={'workspace_id': self.workspace.id, 'log_id': self.log.id},
+        )
+
+    def test_unauthenticated_returns_401(self):
+        """Неавтентифікований запит повертає 401."""
+        response = self.client.patch(self.resolve_url, {'resolved': True})
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_outsider_forbidden_403(self):
+        """Користувач без доступу до простору отримує 403."""
+        self.client.force_authenticate(user=self.outsider)
+        response = self.client.patch(self.resolve_url, {'resolved': True})
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_teacher_resolves_gap_successfully(self):
+        """Призначений викладач може позначити прогалину як вирішену."""
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.patch(self.resolve_url, {'resolved': True})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['id'], self.log.id)
+        self.assertTrue(response.data['is_resolved'])
+        self.assertIsNotNone(response.data['resolved_at'])
+
+        self.log.refresh_from_db()
+        self.assertTrue(self.log.is_resolved)
+        self.assertIsNotNone(self.log.resolved_at)
+
+    def test_teacher_resolves_gap_default_true(self):
+        """За замовчуванням без тіла або порожнє тіло resolved=True."""
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.patch(self.resolve_url, {})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['is_resolved'])
+
+    def test_staff_resolves_gap_successfully(self):
+        """Staff/superuser може позначити прогалину."""
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.patch(self.resolve_url, {'resolved': True})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['is_resolved'])
+
+    def test_reopen_resolved_gap(self):
+        """Повторне відкриття прогалини (resolved=False) скидає is_resolved та resolved_at."""
+        self.log.is_resolved = True
+        self.log.resolved_at = timezone.now()
+        self.log.save()
+
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.patch(self.resolve_url, {'resolved': False})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data['is_resolved'])
+        self.assertIsNone(response.data['resolved_at'])
+
+        self.log.refresh_from_db()
+        self.assertFalse(self.log.is_resolved)
+        self.assertIsNone(self.log.resolved_at)
+
+    def test_resolve_gap_from_different_workspace_returns_404(self):
+        """Запит з ID чужого простору повертає 404."""
+        self.client.force_authenticate(user=self.admin)
+        wrong_url = reverse(
+            'workspace_gap_resolve',
+            kwargs={'workspace_id': self.other_workspace.id, 'log_id': self.log.id},
+        )
+        response = self.client.patch(wrong_url, {'resolved': True})
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_nonexistent_gap_returns_404(self):
+        """Неіснуючий лог повертає 404."""
+        self.client.force_authenticate(user=self.teacher)
+        missing_url = reverse(
+            'workspace_gap_resolve',
+            kwargs={'workspace_id': self.workspace.id, 'log_id': 999999},
+        )
+        response = self.client.patch(missing_url, {'resolved': True})
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
