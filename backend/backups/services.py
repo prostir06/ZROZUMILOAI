@@ -1,11 +1,6 @@
-"""Database backup service."""
-import io
-import json
+"""Database backup service (facade over engine submodules)."""
 import logging
-import os
 import re
-import shutil
-import subprocess
 import tarfile
 from datetime import datetime
 from pathlib import Path
@@ -13,10 +8,10 @@ from pathlib import Path
 from django.conf import settings
 from django.db import connection
 
-logger = logging.getLogger(__name__)
+from backups.engine import archive, postgres, sqlite
+from backups.engine.archive import ALLOWED_EXTENSIONS
 
-ALLOWED_EXTENSIONS = {'.sql', '.sqlite3', '.db', '.tar.gz'}
-_PG_IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+logger = logging.getLogger(__name__)
 
 
 class BackupService:
@@ -35,13 +30,66 @@ class BackupService:
         return f'backup_{db_name}_{stamp}{extension}'
 
     def _resolve_safe_path(self, filename):
-        path = (self.backup_dir / filename).resolve()
-        backup_dir = self.backup_dir.resolve()
-        if not (path == backup_dir or backup_dir in path.parents):
-            raise ValueError('Недопустиме ім\'я файлу')
-        if not any(path.name.endswith(ext) for ext in ALLOWED_EXTENSIONS):
-            raise ValueError('Недопустимий тип файлу')
-        return path
+        return archive.resolve_safe_path(self.backup_dir, filename)
+
+    def _read_manifest(self, filepath):
+        return archive.read_manifest(filepath)
+
+    def _unpack_media_member(self, tar, member, media_root):
+        return archive.unpack_media_member(tar, member, media_root)
+
+    def _dump_postgresql(self, target_filepath):
+        return postgres.dump_postgresql(target_filepath, settings.DATABASES['default'])
+
+    def _dump_sqlite(self, target_filepath):
+        return sqlite.dump_sqlite(target_filepath, settings.DATABASES['default'])
+
+    def _run_psql(self, *extra_args):
+        return postgres.run_psql(settings.DATABASES['default'], *extra_args)
+
+    def _quote_pg_ident(self, ident):
+        return postgres.quote_pg_ident(ident)
+
+    def _restore_postgresql(self, filepath):
+        return postgres.restore_postgresql(
+            filepath=filepath,
+            db_config=settings.DATABASES['default'],
+            backup_dir=self.backup_dir,
+            run_psql_fn=self._run_psql,
+        )
+
+    def _restore_sqlite(self, filepath):
+        return sqlite.restore_sqlite(filepath, settings.DATABASES['default'])
+
+    def _pack_archive(self, db_dump_path, dump_arcname, include_media=True):
+        archive_name = self._timestamp_name('.tar.gz')
+        archive_path = archive.pack_archive(
+            backup_dir=self.backup_dir,
+            db_dump_path=db_dump_path,
+            dump_arcname=dump_arcname,
+            include_media=include_media,
+            engine_type=self._engine_type(),
+            archive_name=archive_name,
+        )
+        return self._file_info(archive_path)
+
+    def _restore_archive(self, backup_path, engine_type):
+        def restore_dump_fn(target_dump_file):
+            if engine_type == 'postgresql':
+                self._restore_postgresql(target_dump_file)
+            elif engine_type == 'sqlite':
+                self._restore_sqlite(target_dump_file)
+            else:
+                raise RuntimeError(f'Непідтримуваний тип БД: {engine_type}')
+
+        return archive.restore_archive(
+            backup_dir=self.backup_dir,
+            backup_path=backup_path,
+            engine_type=engine_type,
+            restore_dump_fn=restore_dump_fn,
+            unpack_media_fn=self._unpack_media_member,
+            file_info_fn=self._file_info,
+        )
 
     def create_backup(self, include_media=True):
         """Create a new database backup and return metadata."""
@@ -75,68 +123,6 @@ class BackupService:
                 except OSError as exc:
                     logger.warning('Failed to remove temp dump file %s: %s', temp_dump, exc)
 
-    def _dump_postgresql(self, target_filepath):
-        db = settings.DATABASES['default']
-        env = os.environ.copy()
-        env['PGPASSWORD'] = db.get('PASSWORD', '')
-
-        command = [
-            'pg_dump',
-            '-h', db.get('HOST', 'localhost'),
-            '-p', str(db.get('PORT', '5432')),
-            '-U', db.get('USER', ''),
-            '-d', db.get('NAME', ''),
-            '-f', str(target_filepath),
-            '--clean',
-            '--if-exists',
-            '--no-owner',
-            '--no-acl',
-        ]
-
-        try:
-            result = subprocess.run(
-                command,
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=300,
-            )
-        except subprocess.TimeoutExpired as exc:
-            logger.error('pg_dump timed out after 300s')
-            raise RuntimeError('pg_dump перевищив ліміт часу') from exc
-
-        if result.returncode != 0:
-            logger.error(
-                'pg_dump failed (rc=%s): %s',
-                result.returncode,
-                (result.stderr or '')[:500],
-            )
-            raise RuntimeError('pg_dump завершився з помилкою')
-
-    def _dump_sqlite(self, target_filepath):
-        db_name = settings.DATABASES['default']['NAME']
-        db_path = Path(db_name) if isinstance(db_name, (str, Path)) else None
-        if db_path and db_path.exists():
-            shutil.copy2(db_path, target_filepath)
-            return
-
-        try:
-            import sqlite3
-            if connection.connection is None:
-                connection.connect()
-            dest = sqlite3.connect(str(target_filepath))
-            try:
-                connection.connection.backup(dest)
-            finally:
-                dest.close()
-            return
-        except Exception as exc:
-            logger.error('SQLite dump failed: %s', exc)
-
-        raise FileNotFoundError(f'Файл БД не знайдено: {db_path}')
-
-
     def _backup_postgresql(self):
         filename = self._timestamp_name('.sql')
         filepath = self.backup_dir / filename
@@ -148,74 +134,6 @@ class BackupService:
         filepath = self.backup_dir / filename
         self._dump_sqlite(filepath)
         return self._file_info(filepath, has_media=False)
-
-    def _pack_archive(self, db_dump_path, dump_arcname, include_media=True):
-        archive_name = self._timestamp_name('.tar.gz')
-        archive_path = self.backup_dir / archive_name
-
-        has_media = False
-        media_root = getattr(settings, 'MEDIA_ROOT', None)
-        workspace_docs = None
-        if include_media and media_root:
-            media_root_path = Path(media_root)
-            candidate = media_root_path / 'workspace_documents'
-            if candidate.exists():
-                workspace_docs = candidate
-                has_media = True
-
-        files_list = ['manifest.json', dump_arcname]
-        if workspace_docs is not None:
-            files_list.append('media/workspace_documents')
-
-        # Prepare manifest metadata in advance so it is written as the first entry in the tar stream
-        manifest_data = {
-            'version': '1.0',
-            'format': 'tar.gz',
-            'engine': self._engine_type(),
-            'dump_file': dump_arcname,
-            'created_at': datetime.now().isoformat(),
-            'has_media': has_media,
-            'files': files_list,
-        }
-        manifest_bytes = json.dumps(manifest_data, indent=2, ensure_ascii=False).encode('utf-8')
-        manifest_info = tarfile.TarInfo(name='manifest.json')
-        manifest_info.size = len(manifest_bytes)
-        manifest_info.mtime = int(datetime.now().timestamp())
-
-        try:
-            with tarfile.open(archive_path, 'w:gz') as tar:
-                # 1. Add manifest.json first (allows fast O(1) reads without decompressing dump or media)
-                tar.addfile(manifest_info, io.BytesIO(manifest_bytes))
-
-                # 2. Add database dump
-                tar.add(str(db_dump_path), arcname=dump_arcname)
-
-                # 3. Add media workspace_documents if present
-                if workspace_docs is not None:
-                    tar.add(str(workspace_docs), arcname='media/workspace_documents')
-
-            return self._file_info(archive_path, has_media=has_media)
-        except Exception as exc:
-            logger.error('Failed to pack backup archive %s: %s', archive_path, exc, exc_info=True)
-            if archive_path.exists():
-                try:
-                    archive_path.unlink()
-                except OSError as unlink_err:
-                    logger.warning('Failed to remove partial archive %s: %s', archive_path, unlink_err)
-            raise
-
-    def _read_manifest(self, filepath):
-        if not filepath.name.endswith('.tar.gz'):
-            return None
-        try:
-            with tarfile.open(filepath, 'r:gz') as tar:
-                manifest_file = tar.extractfile('manifest.json')
-                if manifest_file:
-                    return json.load(manifest_file)
-        except (tarfile.TarError, json.JSONDecodeError, KeyError, OSError) as exc:
-            logger.debug('Cannot read manifest from %s: %s', filepath, exc)
-            return None
-        return None
 
     def _file_info(self, filepath, has_media=None):
         stat = filepath.stat()
@@ -269,7 +187,6 @@ class BackupService:
 
         backups.sort(key=lambda item: item['created_at'], reverse=True)
         return backups
-
 
     def get_backup_path(self, filename):
         """Return validated path to a backup file."""
@@ -357,124 +274,6 @@ class BackupService:
             return None
         return max(candidates, key=lambda path: path.stat().st_mtime)
 
-    def _unpack_media_member(self, tar, member, media_root):
-        norm_name = member.name.replace('\\', '/')
-        if norm_name == 'media' or norm_name == 'media/':
-            return
-        if not norm_name.startswith('media/'):
-            return
-
-        rel_path = norm_name[len('media/'):].lstrip('/')
-        if not rel_path:
-            return
-
-        parts = Path(rel_path).parts
-        if '..' in parts or any(part.startswith('/') or part.startswith('\\') for part in parts):
-            raise ValueError(f"Небезпечний шлях у резервній копії: {member.name}")
-
-        if Path(rel_path).is_absolute() or (len(rel_path) > 1 and rel_path[1] == ':'):
-            raise ValueError(f"Небезпечний шлях у резервній копії: {member.name}")
-
-        if member.issym() or member.islnk():
-            raise ValueError(f"Небезпечний тип запису у резервній копії: {member.name}")
-
-        media_root_resolved = media_root.resolve()
-        target_path = (media_root_resolved / rel_path).resolve()
-
-        try:
-            if os.path.commonpath([str(media_root_resolved), str(target_path)]) != str(media_root_resolved):
-                raise ValueError(f"Небезпечний шлях у резервній копії: {member.name}")
-        except ValueError:
-            raise ValueError(f"Небезпечний шлях у резервній копії: {member.name}")
-
-        if member.isdir():
-            target_path.mkdir(parents=True, exist_ok=True)
-        elif member.isfile():
-            target_path.parent.mkdir(parents=True, exist_ok=True)
-            src = tar.extractfile(member)
-            if src is not None:
-                with open(target_path, 'wb') as dst:
-                    shutil.copyfileobj(src, dst)
-        else:
-            raise ValueError(f"Небезпечний тип запису у резервній копії: {member.name}")
-
-    def _restore_archive(self, backup_path, engine_type):
-        tmp_restore_dir = self.backup_dir / f'.tmp_restore_{datetime.now().strftime("%Y%m%d%H%M%S%f")}'
-        tmp_restore_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            with tarfile.open(backup_path, 'r:gz') as tar:
-                members = tar.getmembers()
-                member_names = [m.name for m in members]
-
-                manifest = None
-                try:
-                    if 'manifest.json' in member_names:
-                        manifest_file = tar.extractfile('manifest.json')
-                        if manifest_file:
-                            manifest = json.load(manifest_file)
-                except (tarfile.TarError, json.JSONDecodeError, KeyError, OSError) as exc:
-                    logger.warning('Failed to parse manifest in %s: %s', backup_path.name, exc)
-                    manifest = None
-
-                dump_filename = None
-                if manifest and isinstance(manifest, dict) and 'dump_file' in manifest:
-                    raw_dump_name = manifest['dump_file']
-                    sanitized_name = Path(str(raw_dump_name)).name
-                    if sanitized_name and sanitized_name in member_names:
-                        dump_filename = sanitized_name
-
-                if not dump_filename:
-                    for fallback in ('dump.sql', 'dump.sqlite3', 'dump.db'):
-                        if fallback in member_names:
-                            dump_filename = fallback
-                            break
-
-                if not dump_filename:
-                    raise RuntimeError('Архів не містить валідного дампа бази даних')
-
-                dump_member = tar.getmember(dump_filename)
-                if not dump_member.isfile():
-                    raise RuntimeError(f'Елемент {dump_filename} не є файлом')
-
-                if dump_filename.endswith('.sql') and engine_type != 'postgresql':
-                    raise RuntimeError(f"Дамп {dump_filename} не підтримується для рушія {engine_type}")
-                if dump_filename.endswith(('.sqlite3', '.db')) and engine_type != 'sqlite':
-                    raise RuntimeError(f"Дамп {dump_filename} не підтримується для рушія {engine_type}")
-
-                media_members = [
-                    m for m in members
-                    if m.name == 'media' or m.name.startswith(('media/', 'media\\'))
-                ]
-                if media_members:
-                    media_root = getattr(settings, 'MEDIA_ROOT', None)
-                    if not media_root:
-                        raise RuntimeError('MEDIA_ROOT не налаштовано')
-                    media_root_path = Path(media_root).resolve()
-                    media_root_path.mkdir(parents=True, exist_ok=True)
-
-                    for m in media_members:
-                        self._unpack_media_member(tar, m, media_root_path)
-
-                dump_member = tar.getmember(dump_filename)
-                target_dump_file = tmp_restore_dir / dump_filename
-                dump_src = tar.extractfile(dump_member)
-                if dump_src is None:
-                    raise RuntimeError(f'Не вдалося прочитати {dump_filename} з архіву')
-                with open(target_dump_file, 'wb') as dump_dst:
-                    shutil.copyfileobj(dump_src, dump_dst)
-
-            if engine_type == 'postgresql':
-                self._restore_postgresql(target_dump_file)
-            elif engine_type == 'sqlite':
-                self._restore_sqlite(target_dump_file)
-            else:
-                raise RuntimeError(f'Непідтримуваний тип БД: {engine_type}')
-
-            return self._file_info(backup_path)
-        finally:
-            shutil.rmtree(tmp_restore_dir, ignore_errors=True)
-
     def restore_backup(self, filename):
         """Restore database and optional media from a backup file."""
         backup_path = self.get_backup_path(filename)
@@ -485,13 +284,13 @@ class BackupService:
 
         if backup_path.name.endswith('.sql'):
             if engine_type != 'postgresql':
-                raise RuntimeError(f"Дамп {backup_path.name} не підтримується для рушія {engine_type}")
+                raise RuntimeError(f'Дамп {backup_path.name} не підтримується для рушія {engine_type}')
             self._restore_postgresql(backup_path)
             return self._file_info(backup_path)
 
         if any(backup_path.name.endswith(ext) for ext in ('.sqlite3', '.db')):
             if engine_type != 'sqlite':
-                raise RuntimeError(f"Дамп {backup_path.name} не підтримується для рушія {engine_type}")
+                raise RuntimeError(f'Дамп {backup_path.name} не підтримується для рушія {engine_type}')
             self._restore_sqlite(backup_path)
             return self._file_info(backup_path)
 
@@ -503,89 +302,3 @@ class BackupService:
         if backup_path is None:
             return None
         return self.restore_backup(backup_path.name)
-
-    def _run_psql(self, *extra_args):
-        db = settings.DATABASES['default']
-        env = os.environ.copy()
-        env['PGPASSWORD'] = db.get('PASSWORD', '')
-
-        command = [
-            'psql',
-            '-h', db.get('HOST', 'localhost'),
-            '-p', str(db.get('PORT', '5432')),
-            '-U', db.get('USER', ''),
-            '-d', db.get('NAME', ''),
-            '-v', 'ON_ERROR_STOP=1',
-            *extra_args,
-        ]
-
-        try:
-            result = subprocess.run(
-                command,
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=300,
-            )
-        except subprocess.TimeoutExpired as exc:
-            logger.error('psql timed out after 300s')
-            raise RuntimeError('psql перевищив ліміт часу') from exc
-
-        if result.returncode != 0:
-            logger.error(
-                'psql failed (rc=%s): %s',
-                result.returncode,
-                (result.stderr or '')[:500],
-            )
-            raise RuntimeError('psql завершився з помилкою')
-
-        return result
-
-    def _quote_pg_ident(self, ident):
-        """Екранувати ідентифікатор PostgreSQL (без метакоманд psql)."""
-        name = (ident or '').strip()
-        if not _PG_IDENT_RE.fullmatch(name):
-            raise ValueError('Недопустиме ім\'я користувача БД')
-        return f'"{name}"'
-
-    def _restore_postgresql(self, filepath):
-        """
-        DROP + restore в одному psql-скрипті з транзакцією.
-
-        Якщо restore падає — ROLLBACK, схема не лишається порожньою.
-        """
-        db_user = settings.DATABASES['default'].get('USER', '')
-        quoted_user = self._quote_pg_ident(db_user)
-        combined = self.backup_dir / f'.restore_tmp_{datetime.now().strftime("%Y%m%d%H%M%S%f")}.sql'
-        try:
-            with combined.open('w', encoding='utf-8') as out:
-                out.write('BEGIN;\n')
-                out.write('DROP SCHEMA IF EXISTS public CASCADE;\n')
-                out.write('CREATE SCHEMA public;\n')
-                out.write(f'GRANT ALL ON SCHEMA public TO {quoted_user};\n')
-                out.write('GRANT ALL ON SCHEMA public TO public;\n')
-                with Path(filepath).open('r', encoding='utf-8', errors='replace') as src:
-                    shutil.copyfileobj(src, out)
-                out.write('\nCOMMIT;\n')
-            self._run_psql('-v', 'ON_ERROR_STOP=1', '-f', str(combined))
-        finally:
-            try:
-                combined.unlink(missing_ok=True)
-            except OSError as exc:
-                logger.warning('Failed to remove temp SQL restore file %s: %s', combined, exc)
-
-    def _restore_sqlite(self, filepath):
-        db_path = Path(settings.DATABASES['default']['NAME'])
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = db_path.with_suffix(db_path.suffix + '.tmp_restore')
-        connection.close()
-        try:
-            shutil.copy2(filepath, tmp_path)
-            os.replace(tmp_path, db_path)
-        finally:
-            if tmp_path.exists():
-                try:
-                    tmp_path.unlink()
-                except OSError as exc:
-                    logger.warning('Failed to remove temp SQLite restore file %s: %s', tmp_path, exc)

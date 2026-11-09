@@ -23,6 +23,17 @@ class BackupServiceTests(TestCase):
         """Видалення тимчасового каталогу після тестів."""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_engine_submodules_exist_and_facade_delegates(self):
+        """Перевірити, що engine-модулі експортують функції та BackupService їх викликає."""
+        from backups.engine import archive, postgres, sqlite
+
+        self.assertTrue(callable(archive.pack_archive))
+        self.assertTrue(callable(archive.read_manifest))
+        self.assertTrue(callable(postgres.dump_postgresql))
+        self.assertTrue(callable(postgres.restore_postgresql))
+        self.assertTrue(callable(sqlite.dump_sqlite))
+        self.assertTrue(callable(sqlite.restore_sqlite))
+
     def test_resolve_safe_path_rejects_traversal(self):
         """Path traversal у імені файлу блокується."""
         with self.assertRaises(ValueError):
