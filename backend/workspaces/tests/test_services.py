@@ -103,6 +103,7 @@ class WorkspaceServicesTests(TestCase):
     def test_get_workspace_for_user_rejects_non_int_id(self):
         """Нецілий workspace_id → ValidationError, не 500."""
         from rest_framework.exceptions import ValidationError
+
         from workspaces.services import get_workspace_for_user
 
         with self.assertRaises(ValidationError):

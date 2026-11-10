@@ -62,6 +62,7 @@ class WidgetFeedbackApiTests(APITestCase):
     def test_feedback_database_error_returns_500(self):
         """DatabaseError при збереженні відгуку повертає 500 та логується."""
         from unittest.mock import patch
+
         from django.db import DatabaseError
 
         with patch(

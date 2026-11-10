@@ -2,7 +2,7 @@
 from unittest.mock import MagicMock, patch
 
 from django.contrib.postgres.indexes import GinIndex
-from django.db import connection, migrations, models
+from django.db import connection, migrations
 from django.db.migrations.loader import MigrationLoader
 from django.test import SimpleTestCase, TestCase, override_settings
 from pgvector.django import HnswIndex

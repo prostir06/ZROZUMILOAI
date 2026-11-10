@@ -151,7 +151,7 @@ class WorkspaceAnalyticsServiceTests(APITestCase):
     def test_date_range_filtering(self):
         """Фільтрація за діапазонами today, 7d, 30d, all."""
         # Log today
-        log_today = WorkspaceChatLog.objects.create(
+        WorkspaceChatLog.objects.create(
             workspace=self.workspace,
             sent_by='student',
             prompt='Сьогодні',

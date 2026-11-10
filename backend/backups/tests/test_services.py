@@ -347,7 +347,10 @@ class BackupServiceTests(TestCase):
             dump_info.size = len(dump_bytes)
             tar.addfile(dump_info, io.BytesIO(dump_bytes))
 
-            manifest = b'{"version":"1.0","format":"tar.gz","engine":"postgresql","dump_file":"dump.sql","has_media":false}'
+            manifest = (
+                b'{"version":"1.0","format":"tar.gz","engine":"postgresql",'
+                b'"dump_file":"dump.sql","has_media":false}'
+            )
             m_info = tarfile.TarInfo(name='manifest.json')
             m_info.size = len(manifest)
             tar.addfile(m_info, io.BytesIO(manifest))

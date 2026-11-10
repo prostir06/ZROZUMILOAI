@@ -1,7 +1,7 @@
 """Workspace analytics aggregation service."""
 import csv
-from datetime import timedelta
 import io
+from datetime import timedelta
 from typing import Any, Dict
 
 from django.db.models import Count, Q

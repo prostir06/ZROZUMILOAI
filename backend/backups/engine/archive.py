@@ -75,8 +75,8 @@ def unpack_media_member(
     try:
         if os.path.commonpath([str(media_root_resolved), str(target_path)]) != str(media_root_resolved):
             raise ValueError(f"Небезпечний шлях у резервній копії: {member.name}")
-    except ValueError:
-        raise ValueError(f"Небезпечний шлях у резервній копії: {member.name}")
+    except ValueError as exc:
+        raise ValueError(f"Небезпечний шлях у резервній копії: {member.name}") from exc
 
     if member.isdir():
         target_path.mkdir(parents=True, exist_ok=True)

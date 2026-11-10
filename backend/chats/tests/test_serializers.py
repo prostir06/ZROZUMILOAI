@@ -3,8 +3,8 @@ from django.contrib.auth import get_user_model
 from django.test import RequestFactory, TestCase
 from rest_framework.exceptions import ValidationError
 
-from chats.serializers import ChatSerializer, WorkspaceChatLogSerializer
 from chats.models import WorkspaceChatLog
+from chats.serializers import ChatSerializer, WorkspaceChatLogSerializer
 from workspaces.models import Workspace
 
 User = get_user_model()

@@ -6,13 +6,14 @@ from chats.analytics_views import (
     WorkspaceAnalyticsView,
     WorkspaceKnowledgeGapResolveView,
 )
-from .views import MyWorkspacesView, WorkspaceDetailView, WorkspaceListCreateView
+
 from .document_views import (
     WorkspaceDocumentDeleteView,
     WorkspaceDocumentListCreateView,
     WorkspaceDocumentRetryView,
     WorkspaceRagStatsView,
 )
+from .views import MyWorkspacesView, WorkspaceDetailView, WorkspaceListCreateView
 from .widget_views import WidgetTokenDeleteView, WidgetTokenListCreateView
 
 urlpatterns = [

@@ -22,8 +22,8 @@ from llm.chat import run_chat
 
 from .models import WidgetToken
 from .serializers import (
-    WidgetTokenCreateSerializer,
     WidgetTokenCreateResponseSerializer,
+    WidgetTokenCreateSerializer,
     WidgetTokenSerializer,
 )
 from .services import get_workspace_or_404

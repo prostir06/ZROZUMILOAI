@@ -9,7 +9,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .throttling import ClientIPScopedRateThrottle
 from .serializers import (
     AdminCreateUserSerializer,
     AdminUpdateUserSerializer,
@@ -18,6 +17,7 @@ from .serializers import (
     UserCreateResponseSerializer,
     UserSerializer,
 )
+from .throttling import ClientIPScopedRateThrottle
 
 User = get_user_model()
 logger = logging.getLogger(__name__)

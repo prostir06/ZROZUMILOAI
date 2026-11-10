@@ -15,7 +15,7 @@ def cosine_similarity(vector_a, vector_b):
         return 0.0
 
     try:
-        dot = sum(float(a) * float(b) for a, b in zip(vector_a, vector_b))
+        dot = sum(float(a) * float(b) for a, b in zip(vector_a, vector_b, strict=True))
         norm_a = math.sqrt(sum(float(a) * float(a) for a in vector_a))
         norm_b = math.sqrt(sum(float(b) * float(b) for b in vector_b))
     except (TypeError, ValueError) as exc:

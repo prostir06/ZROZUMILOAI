@@ -105,7 +105,7 @@ class AnalyticsCsvExportServiceTests(APITestCase):
 
     def test_date_range_filtering_csv(self):
         """Фільтрація записів у CSV за періодами."""
-        l_today = WorkspaceChatLog.objects.create(
+        WorkspaceChatLog.objects.create(
             workspace=self.workspace,
             sent_by='student_today',
             prompt='Сьогоднішній запит',

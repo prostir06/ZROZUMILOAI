@@ -52,7 +52,7 @@ def ingest_workspace_document(document):
                 embedding=embedding,
             )
             for index, (chunk_text, embedding) in enumerate(
-                zip(chunk_texts, embeddings),
+                zip(chunk_texts, embeddings, strict=True),
             )
         ]
 

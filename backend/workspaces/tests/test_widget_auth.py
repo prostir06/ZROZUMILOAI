@@ -89,6 +89,7 @@ class WidgetTokenDeleteApiTests(APITestCase):
     def test_delete_database_error_returns_500(self):
         """DatabaseError при видаленні токена повертає 500 та логується."""
         from unittest.mock import patch
+
         from django.db import DatabaseError
 
         self.client.force_authenticate(user=self.admin)

@@ -1,5 +1,6 @@
 """Views for Ollama proxy API."""
 import json
+import logging
 
 import requests
 from rest_framework import status
@@ -8,12 +9,12 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from accounts.throttling import ClientIPScopedRateThrottle
+from chats.services import extract_prompt_from_messages
 from config.http_utils import (
     validate_chat_messages,
     validation_error_message,
 )
-from accounts.throttling import ClientIPScopedRateThrottle
-from chats.services import extract_prompt_from_messages
 from llm.chat import run_chat
 from llm.factory import list_all_models
 from llm.ollama_provider import OllamaProvider
@@ -23,6 +24,8 @@ from workspaces.services import (
 )
 
 from .services import OllamaService
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaHealthView(APIView):

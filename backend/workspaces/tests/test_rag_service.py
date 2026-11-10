@@ -77,6 +77,7 @@ class RagServiceHelperTests(SimpleTestCase):
         _mock_acquire,
     ):
         from django.core.cache import cache
+
         from workspaces.rag.search_context import cached_query_embedding
 
         cache.clear()

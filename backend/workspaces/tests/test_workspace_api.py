@@ -1,12 +1,10 @@
 """API-тести Workspace CRUD та document upload path uniqueness."""
 from django.contrib.auth import get_user_model
-from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from workspaces.models import Workspace, workspace_document_upload_to
-from workspaces.models import WorkspaceDocument
+from workspaces.models import Workspace, WorkspaceDocument, workspace_document_upload_to
 
 User = get_user_model()
 

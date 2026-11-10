@@ -2,8 +2,8 @@
 import tempfile
 from pathlib import Path
 
-from django.test import SimpleTestCase
 import docx
+from django.test import SimpleTestCase
 
 from workspaces.rag.text_extractor import ALLOWED_EXTENSIONS, extract_text_from_file
 
