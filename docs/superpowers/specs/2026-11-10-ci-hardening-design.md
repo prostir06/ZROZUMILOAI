@@ -39,8 +39,7 @@
 1. Встановлюються залежності (`requirements.lock` / `requirements.txt`) та dev-інструменти (`pip install -r requirements-dev.txt`).
 2. Запускається `ruff check .` (перевірка PEP 8, невикористаних імпортів, порядку імпортів, bugbear-патернів).
 3. Виконується ліцензійна перевірка (`piplicenses --fail-on=...`).
-4. Виконується `python manage.py makemigrations --check --dry-run` (перевірка відсутності незбережених міграцій).
-5. Виконуються тести на SQLite (`python manage.py test --verbosity=1`) для підтвердження сумісності локального режиму розробки.
+4. Виконуються тести на SQLite (`python manage.py test --verbosity=1`) для підтвердження сумісності локального режиму розробки.
 
 ### 2.3. Job `backend-postgres` (PostgreSQL 16 + pgvector + Redis)
 У `.github/workflows/ci.yml`:
@@ -52,8 +51,9 @@
    - `REDIS_URL: 'redis://127.0.0.1:6379/0'`
    - `CELERY_TASK_ALWAYS_EAGER: 'True'`
 3. Кроки:
+   - `python manage.py makemigrations --check --dry-run` (виконується саме при `USE_SQLITE='False'`, бо міграції `DocumentChunk` фіксують PostgreSQL-специфічні `VectorField`, `HnswIndex` і `GinIndex`).
    - `python manage.py migrate --noinput`
-   - Повний запуск тестів: `python manage.py test --verbosity=1` (охоплює pgvector, HNSW, GIN FTS, RRF, RAG, chats analytics/resolution, crypto, backups, admission locks у Redis, healthcheck).
+   - Повний запуск тестів: `python manage.py test --verbosity=1` (охоплює pgvector, HNSW, GIN FTS, RRF, RAG, chats analytics/resolution, crypto, backups, admission locks у Redis, healthcheck). У процесі реалізації виправляються залежності тестів від SQLite-дефолтів та баг звільнення Redis-слота в `llm/chat.py` при помилці `provider.chat()` у стрімі.
 
 ### 2.4. Job `frontend` (ESLint Strict + License + Test + Build)
 У `frontend/package.json` та `.github/workflows/ci.yml`:
