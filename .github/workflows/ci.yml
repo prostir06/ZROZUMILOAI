@@ -20,6 +20,7 @@ jobs:
           cache-dependency-path: |
             backend/requirements.txt
             backend/requirements.lock
+            backend/requirements-dev.txt
       - name: Install dependencies
         run: |
           if [ -f requirements.lock ]; then
@@ -27,6 +28,9 @@ jobs:
           else
             pip install -r requirements.txt
           fi
+          pip install -r requirements-dev.txt
+      - name: Lint with ruff
+        run: ruff check .
       - name: License check (fail on GPL/AGPL)
         run: |
           pip install 'pip-licenses>=5.0,<6.0'
@@ -44,6 +48,17 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    env:
+      USE_SQLITE: 'False'
+      DJANGO_SECRET_KEY: test-secret-key-at-least-32-chars!!
+      CELERY_TASK_ALWAYS_EAGER: 'True'
+      ALLOW_REGISTRATION: 'True'
+      POSTGRES_DB: zrozumiloai_test
+      POSTGRES_USER: zrozumiloai
+      POSTGRES_PASSWORD: zrozumiloai
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: '5432'
+      REDIS_URL: 'redis://127.0.0.1:6379/0'
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -55,6 +70,15 @@ jobs:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U zrozumiloai"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.2.7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -74,20 +98,12 @@ jobs:
           else
             pip install -r requirements.txt
           fi
-      - name: Migrate and smoke tests on Postgres
-        env:
-          USE_SQLITE: 'False'
-          DJANGO_SECRET_KEY: test-secret-key-at-least-32-chars!!
-          CELERY_TASK_ALWAYS_EAGER: 'True'
-          ALLOW_REGISTRATION: 'True'
-          POSTGRES_DB: zrozumiloai_test
-          POSTGRES_USER: zrozumiloai
-          POSTGRES_PASSWORD: zrozumiloai
-          POSTGRES_HOST: 127.0.0.1
-          POSTGRES_PORT: '5432'
+      - name: Check pending migrations
+        run: python manage.py makemigrations --check --dry-run
+      - name: Migrate and run full test suite on Postgres+Redis
         run: |
           python manage.py migrate --noinput
-          python manage.py test workspaces.tests.test_pgvector workspaces.tests.test_rrf config.tests.test_health --verbosity=1
+          python manage.py test --verbosity=1
 
   frontend:
     runs-on: ubuntu-latest
@@ -135,3 +151,22 @@ jobs:
           grep -q 'npm ci' frontend/Dockerfile
       - name: Health route exists
         run: grep -q "api/health" backend/config/urls.py
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build core images
+        run: docker compose build backend worker frontend
+      - name: Start core services without pulling ollama
+        run: |
+          docker compose up -d --wait db redis
+          docker compose up -d --no-deps --wait backend
+          docker compose up -d --no-deps --wait frontend
+      - name: Smoke-probe HTTP endpoints
+        run: |
+          curl -fsS http://127.0.0.1/api/health/ | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['database']=='ok' and d['cache']=='ok', d"
+          curl -fsS http://127.0.0.1/ >/dev/null
+      - name: Dump compose logs on failure
+        if: failure()
+        run: docker compose logs --tail=50
+      - name: Tear down compose stack
+        if: always()
+        run: docker compose down -v
