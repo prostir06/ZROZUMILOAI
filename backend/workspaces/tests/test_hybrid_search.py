@@ -69,23 +69,27 @@ class FulltextSearchTests(TestCase):
             original_filename='failed.txt',
             status=WorkspaceDocument.Status.FAILED,
         )
+        dummy_vec = [0.0] * 768
         self.chunk_iso = DocumentChunk.objects.create(
             workspace=self.workspace,
             document=self.doc_ready,
             chunk_index=0,
             content='Сертифікація за міжнародним стандартом ISO-9001 гарантує якість.',
+            embedding=dummy_vec,
         )
         self.chunk_dstu = DocumentChunk.objects.create(
             workspace=self.workspace,
             document=self.doc_ready,
             chunk_index=1,
             content='Національний стандарт ДСТУ 1.0 встановлює правила стандартизації.',
+            embedding=dummy_vec,
         )
         self.chunk_failed = DocumentChunk.objects.create(
             workspace=self.workspace,
             document=self.doc_failed,
             chunk_index=0,
             content='Помилковий документ ISO-9001 не повинен знаходитися.',
+            embedding=dummy_vec,
         )
 
     def test_search_with_fulltext_finds_iso_9001(self):

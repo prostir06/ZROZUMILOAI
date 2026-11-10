@@ -151,72 +151,73 @@ def run_chat(
             accumulated = []
             response = None
 
-            if sources:
-                yield f'data: {json.dumps({"sources": sources})}\n\n'
-
             try:
-                response = provider.chat(
-                    model,
-                    prepared_messages,
-                    stream=True,
-                    options=options,
-                )
-            except (LLMProviderError, requests.RequestException) as exc:
-                logger.warning(
-                    'Streaming LLM error (workspace=%s, model=%s): %s',
-                    getattr(workspace, 'pk', None),
-                    model,
-                    exc,
-                    exc_info=True,
-                )
-                yield _provider_error_response(exc, stream=True)
-                return
-            except Exception:
-                logger.exception('Unexpected streaming chat error')
-                yield _provider_error_response(
-                    LLMProviderError('Внутрішня помилка чату'),
-                    stream=True,
-                )
-                return
+                if sources:
+                    yield f'data: {json.dumps({"sources": sources})}\n\n'
 
-            try:
-                for line in response.iter_lines():
-                    if not line:
-                        continue
-                    decoded = decode_stream_line(line)
-                    if not decoded:
-                        continue
-                    yield f'data: {decoded}\n\n'
-                    chunk_content = content_from_ollama_chunk(decoded)
-                    if chunk_content:
-                        accumulated.append(chunk_content)
-            except (LLMProviderError, requests.RequestException) as exc:
-                logger.warning(
-                    'Streaming LLM error (workspace=%s, model=%s): %s',
-                    getattr(workspace, 'pk', None),
-                    model,
-                    exc,
-                    exc_info=True,
-                )
-                yield _provider_error_response(exc, stream=True)
-            except Exception:
-                logger.exception('Unexpected streaming chat error')
-                yield _provider_error_response(
-                    LLMProviderError('Внутрішня помилка чату'),
-                    stream=True,
-                )
-            else:
-                log = log_workspace_chat_exchange(
-                    workspace=workspace,
-                    user=user,
-                    prompt=log_prompt,
-                    response=''.join(accumulated),
-                    needs_handoff=needs_handoff,
-                )
-                meta = {'needs_handoff': needs_handoff}
-                if log:
-                    meta['log_id'] = log.pk
-                    yield f'data: {json.dumps(meta)}\n\n'
+                try:
+                    response = provider.chat(
+                        model,
+                        prepared_messages,
+                        stream=True,
+                        options=options,
+                    )
+                except (LLMProviderError, requests.RequestException) as exc:
+                    logger.warning(
+                        'Streaming LLM error (workspace=%s, model=%s): %s',
+                        getattr(workspace, 'pk', None),
+                        model,
+                        exc,
+                        exc_info=True,
+                    )
+                    yield _provider_error_response(exc, stream=True)
+                    return
+                except Exception:
+                    logger.exception('Unexpected streaming chat error')
+                    yield _provider_error_response(
+                        LLMProviderError('Внутрішня помилка чату'),
+                        stream=True,
+                    )
+                    return
+
+                try:
+                    for line in response.iter_lines():
+                        if not line:
+                            continue
+                        decoded = decode_stream_line(line)
+                        if not decoded:
+                            continue
+                        yield f'data: {decoded}\n\n'
+                        chunk_content = content_from_ollama_chunk(decoded)
+                        if chunk_content:
+                            accumulated.append(chunk_content)
+                except (LLMProviderError, requests.RequestException) as exc:
+                    logger.warning(
+                        'Streaming LLM error (workspace=%s, model=%s): %s',
+                        getattr(workspace, 'pk', None),
+                        model,
+                        exc,
+                        exc_info=True,
+                    )
+                    yield _provider_error_response(exc, stream=True)
+                except Exception:
+                    logger.exception('Unexpected streaming chat error')
+                    yield _provider_error_response(
+                        LLMProviderError('Внутрішня помилка чату'),
+                        stream=True,
+                    )
+                else:
+                    log = log_workspace_chat_exchange(
+                        workspace=workspace,
+                        user=user,
+                        prompt=log_prompt,
+                        response=''.join(accumulated),
+                        needs_handoff=needs_handoff,
+                    )
+                    meta = {'needs_handoff': needs_handoff}
+                    if log:
+                        meta['log_id'] = log.pk
+                        yield f'data: {json.dumps(meta)}\n\n'
             finally:
                 release_ollama_slot(slot_token)
                 if response is not None and hasattr(response, 'close'):

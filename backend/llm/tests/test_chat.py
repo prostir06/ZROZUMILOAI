@@ -259,6 +259,32 @@ class RunChatTests(TestCase):
         body = b''.join(response.streaming_content).decode('utf-8')
         self.assertIn('stream fail', body)
 
+    @patch('llm.chat.release_ollama_slot')
+    @patch('llm.chat.acquire_ollama_slot', return_value='token-stream-err')
+    @patch('llm.chat.resolve_provider')
+    @patch('llm.chat.prepare_chat_messages')
+    def test_stream_provider_error_releases_slot(
+        self, mock_prepare, mock_resolve, _mock_acquire, mock_release,
+    ):
+        """Помилка provider.chat() у стрімі все одно звільняє Redis-слот."""
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
+        provider = MagicMock()
+        provider.chat.side_effect = LLMProviderError('stream init fail')
+        mock_resolve.return_value = provider
+
+        response = run_chat(
+            model='llama3',
+            messages=[{'role': 'user', 'content': 'Hi'}],
+            stream=True,
+            workspace=self.workspace,
+            user=self.user,
+            prompt='Hi',
+        )
+
+        body = b''.join(response.streaming_content).decode('utf-8')
+        self.assertIn('stream init fail', body)
+        mock_release.assert_called_once_with('token-stream-err')
+
     @override_settings(RAG_MIN_SCORE=0.5)
     @patch('llm.chat.resolve_provider')
     @patch('llm.chat.prepare_chat_messages')

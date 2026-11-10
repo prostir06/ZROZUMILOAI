@@ -33,7 +33,7 @@ class IngestWorkspaceDocumentTests(TestCase):
         return_value='Короткий FAQ текст для індексації.',
     )
     def test_ingest_creates_chunks_and_marks_ready(self, _extract, mock_ollama_cls):
-        mock_ollama_cls.return_value.embed.return_value = [0.1, 0.2, 0.3]
+        mock_ollama_cls.return_value.embed.return_value = [0.1] * 768
 
         ingest_workspace_document(self.document)
 
@@ -112,8 +112,8 @@ class IngestWorkspaceDocumentTests(TestCase):
     ):
         mock_ollama = mock_ollama_cls.return_value
         mock_ollama.embed_batch.side_effect = [
-            [[0.1, 0.2], [0.3, 0.4]],
-            [[0.5, 0.6]],
+            [[0.1] * 768, [0.3] * 768],
+            [[0.5] * 768],
         ]
 
         ingest_workspace_document(self.document)

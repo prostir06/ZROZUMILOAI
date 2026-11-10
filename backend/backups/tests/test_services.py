@@ -382,7 +382,10 @@ class BackupServiceTests(TestCase):
             evil_info.size = len(evil_bytes)
             tar.addfile(evil_info, io.BytesIO(evil_bytes))
 
-        with override_settings(MEDIA_ROOT=str(media_dir)):
+        with override_settings(
+            MEDIA_ROOT=str(media_dir),
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(tmp_path / 'db.sqlite3')}},
+        ):
             with self.assertRaises(ValueError) as ctx:
                 service.restore_backup(malicious_archive.name)
             self.assertIn('Небезпечний шлях', str(ctx.exception))
@@ -411,7 +414,10 @@ class BackupServiceTests(TestCase):
             sym_info.linkname = '/etc/passwd'
             tar.addfile(sym_info)
 
-        with override_settings(MEDIA_ROOT=str(media_dir)):
+        with override_settings(
+            MEDIA_ROOT=str(media_dir),
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(tmp_path / 'db.sqlite3')}},
+        ):
             with self.assertRaises(ValueError) as ctx:
                 service.restore_backup(archive_path.name)
             self.assertIn('Небезпечний тип', str(ctx.exception))
@@ -496,25 +502,28 @@ class BackupServiceTests(TestCase):
         pg_sql = backup_dir / 'backup_pg_20260101_130000.sql'
         pg_sql.write_text('-- pg sql', encoding='utf-8')
 
-        # За замовчуванням у тестах рушій SQLite
-        latest_sqlite = service.find_latest_backup()
-        self.assertIsNone(latest_sqlite)
+        # Тест очікує SQLite-рушій незалежно від активного CI DB engine
+        with override_settings(
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(tmp_path / 'db.sqlite3')}},
+        ):
+            latest_sqlite = service.find_latest_backup()
+            self.assertIsNone(latest_sqlite)
 
-        # Додаємо SQLite архів
-        sqlite_archive = backup_dir / 'backup_sqlite_20260101_140000.tar.gz'
-        with tarfile.open(sqlite_archive, 'w:gz') as tar:
-            m_bytes = b'{"version":"1.0","format":"tar.gz","engine":"sqlite","dump_file":"dump.sqlite3"}'
-            m_info = tarfile.TarInfo(name='manifest.json')
-            m_info.size = len(m_bytes)
-            tar.addfile(m_info, io.BytesIO(m_bytes))
-            d_bytes = b'sqlite format 3\x00'
-            d_info = tarfile.TarInfo(name='dump.sqlite3')
-            d_info.size = len(d_bytes)
-            tar.addfile(d_info, io.BytesIO(d_bytes))
+            # Додаємо SQLite архів
+            sqlite_archive = backup_dir / 'backup_sqlite_20260101_140000.tar.gz'
+            with tarfile.open(sqlite_archive, 'w:gz') as tar:
+                m_bytes = b'{"version":"1.0","format":"tar.gz","engine":"sqlite","dump_file":"dump.sqlite3"}'
+                m_info = tarfile.TarInfo(name='manifest.json')
+                m_info.size = len(m_bytes)
+                tar.addfile(m_info, io.BytesIO(m_bytes))
+                d_bytes = b'sqlite format 3\x00'
+                d_info = tarfile.TarInfo(name='dump.sqlite3')
+                d_info.size = len(d_bytes)
+                tar.addfile(d_info, io.BytesIO(d_bytes))
 
-        latest_sqlite = service.find_latest_backup()
-        self.assertIsNotNone(latest_sqlite)
-        self.assertEqual(latest_sqlite.name, sqlite_archive.name)
+            latest_sqlite = service.find_latest_backup()
+            self.assertIsNotNone(latest_sqlite)
+            self.assertEqual(latest_sqlite.name, sqlite_archive.name)
 
     def test_file_info_reads_manifest_once(self):
         """_file_info зчитує маніфест лише один раз, не відкриваючи архів двічі."""
