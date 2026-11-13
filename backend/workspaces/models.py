@@ -7,6 +7,8 @@ from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 
+from workspaces.crypto import decrypt_secret, encrypt_secret
+
 
 def generate_widget_token_value():
     """Generate a new widget token string."""
@@ -265,3 +267,78 @@ class WidgetToken(models.Model):
     def mark_used(self):
         self.last_used_at = timezone.now()
         self.save(update_fields=['last_used_at'])
+
+
+class TelegramBot(models.Model):
+    """Телеграм-бот, підключений до системи та прив'язаний до Workspace."""
+
+    name = models.CharField(max_length=150, help_text='Назва бота для адмін-панелі')
+    encrypted_token = models.TextField(blank=True, default='')
+    bot_username = models.CharField(max_length=150, blank=True, default='')
+    workspace = models.ForeignKey(
+        Workspace,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='telegram_bots',
+    )
+    is_active = models.BooleanField(default=True)
+    last_update_id = models.BigIntegerField(default=0)
+    last_poll_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+        verbose_name = 'Телеграм-бот'
+        verbose_name_plural = 'Телеграм-боти'
+
+    def __str__(self):
+        return f'{self.name} (@{self.bot_username or "unknown"})'
+
+    def set_token(self, raw_token: str) -> None:
+        self.encrypted_token = encrypt_secret(raw_token or '')
+
+    def get_token(self) -> str:
+        return decrypt_secret(self.encrypted_token or '')
+
+    @property
+    def token_masked(self) -> str:
+        token = self.get_token()
+        if not token:
+            return ''
+        if len(token) <= 8:
+            return '***'
+        if ':' in token:
+            prefix, secret = token.split(':', 1)
+            return f'{prefix}:***{secret[-4:]}'
+        return f'{token[:4]}***{token[-4:]}'
+
+
+class TelegramChatSession(models.Model):
+    """Сесія діалогу з користувачем у Telegram для збереження контексту."""
+
+    bot = models.ForeignKey(
+        TelegramBot,
+        on_delete=models.CASCADE,
+        related_name='sessions',
+    )
+    telegram_chat_id = models.BigIntegerField()
+    telegram_username = models.CharField(max_length=150, blank=True, default='')
+    messages = models.JSONField(default=list, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['bot', 'telegram_chat_id'],
+                name='uniq_telegram_bot_chat_session',
+            ),
+        ]
+        verbose_name = 'Сесія Telegram чату'
+        verbose_name_plural = 'Сесії Telegram чатів'
+
+    def __str__(self):
+        return f'Chat {self.telegram_chat_id} (Bot {self.bot.name})'
+
