@@ -152,7 +152,7 @@ jobs:
       - name: Health route exists
         run: grep -q "api/health" backend/config/urls.py
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
       - name: Build core images
         run: docker compose build backend worker frontend
       - name: Start core services without pulling ollama
