@@ -56,7 +56,11 @@ export class ApiClient extends BaseApiClient {
       const error = await safeJson(response, {});
       throw new Error(error.detail || error.error || 'Не вдалося отримати список телеграм-ботів');
     }
-    return response.json();
+    const data = await safeJson(response, null);
+    if (data === null) {
+      throw new Error('Некоректна відповідь сервера (очікувався JSON)');
+    }
+    return data;
   }
 
   async createTelegramBot(data) {
@@ -76,7 +80,11 @@ export class ApiClient extends BaseApiClient {
         || 'Не вдалося створити телеграм-бота',
       );
     }
-    return response.json();
+    const result = await safeJson(response, null);
+    if (result === null) {
+      throw new Error('Некоректна відповідь сервера (очікувався JSON)');
+    }
+    return result;
   }
 
   async updateTelegramBot(botId, data) {
@@ -96,7 +104,11 @@ export class ApiClient extends BaseApiClient {
         || 'Не вдалося оновити телеграм-бота',
       );
     }
-    return response.json();
+    const result = await safeJson(response, null);
+    if (result === null) {
+      throw new Error('Некоректна відповідь сервера (очікувався JSON)');
+    }
+    return result;
   }
 
   async deleteTelegramBot(botId) {
@@ -118,7 +130,11 @@ export class ApiClient extends BaseApiClient {
       const error = await safeJson(response, {});
       throw new Error(error.error || error.detail || 'Не вдалося перевірити токен телеграм-бота');
     }
-    return response.json();
+    const result = await safeJson(response, null);
+    if (result === null) {
+      throw new Error('Некоректна відповідь сервера (очікувався JSON)');
+    }
+    return result;
   }
 
   async getWidgetTokens(workspaceId) {

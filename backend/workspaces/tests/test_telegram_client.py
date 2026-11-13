@@ -142,6 +142,31 @@ class TelegramClientTests(TestCase):
             timeout=5,
         )
 
+    @patch("requests.Session.get")
+    def test_non_json_http_error(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 502
+        mock_resp.text = "<html><body>502 Bad Gateway</body></html>"
+        mock_resp.json.side_effect = ValueError("No JSON object could be decoded")
+        mock_get.return_value = mock_resp
+
+        res = self.client.get_me(self.token)
+        self.assertFalse(res.get("ok"))
+        self.assertIn("HTTP 502", res.get("description", ""))
+        self.assertIn("Bad Gateway", res.get("description", ""))
+
+    @patch("requests.Session.post")
+    def test_send_message_chunk_failure(self, mock_post):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 400
+        mock_resp.json.return_value = {"ok": False, "description": "Bad Request: chat not found"}
+        mock_post.return_value = mock_resp
+
+        res = self.client.send_message(self.token, chat_id=123, text="A" * 9000)
+        self.assertFalse(res.get("ok"))
+        # Should abort on first chunk failure
+        self.assertEqual(mock_post.call_count, 1)
+
     @patch("requests.Session.post")
     def test_edit_message_reply_markup(self, mock_post):
         mock_resp = MagicMock()

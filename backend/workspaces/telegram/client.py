@@ -28,12 +28,30 @@ class TelegramClient:
     def _url(self, token: str, method: str) -> str:
         return f"{self.base_url}/bot{token}/{method}"
 
+    def _parse_response(self, resp: requests.Response, method: str) -> dict[str, Any]:
+        """Safely parse response JSON, capturing HTTP errors with status code when non-JSON."""
+        try:
+            return resp.json()
+        except Exception as exc:
+            preview = (resp.text or "")[:200]
+            logger.warning(
+                "Telegram API %s returned non-JSON (status %s): %s (error: %s)",
+                method,
+                resp.status_code,
+                preview,
+                exc,
+            )
+            return {
+                "ok": False,
+                "description": f"HTTP {resp.status_code}: {preview}" if preview else f"HTTP {resp.status_code}",
+            }
+
     def get_me(self, token: str, timeout: int = 5) -> dict[str, Any]:
         """Validate bot token and fetch bot profile via getMe."""
         url = self._url(token, "getMe")
         try:
             resp = self.session.get(url, timeout=timeout)
-            return resp.json()
+            return self._parse_response(resp, "getMe")
         except Exception as exc:
             logger.warning("Failed to call getMe for bot: %s", exc)
             return {"ok": False, "description": str(exc)}
@@ -53,7 +71,7 @@ class TelegramClient:
         http_timeout = timeout + 10
         try:
             resp = self.session.get(url, params=params, timeout=http_timeout)
-            return resp.json()
+            return self._parse_response(resp, "getUpdates")
         except Exception as exc:
             logger.warning("Failed to call getUpdates for bot: %s", exc)
             return {"ok": False, "description": str(exc)}
@@ -79,12 +97,16 @@ class TelegramClient:
             }
             if parse_mode:
                 payload["parse_mode"] = parse_mode
+            # Telegram API requires reply_markup to attach strictly to the final message chunk
             if idx == len(chunks) - 1 and reply_markup is not None:
                 payload["reply_markup"] = reply_markup
 
             try:
                 resp = self.session.post(url, json=payload, timeout=timeout)
-                last_result = resp.json()
+                last_result = self._parse_response(resp, "sendMessage")
+                if not last_result.get("ok"):
+                    logger.warning("Telegram sendMessage chunk %s failed: %s", idx, last_result)
+                    return last_result
             except Exception as exc:
                 logger.warning("Failed to call sendMessage: %s", exc)
                 return {"ok": False, "description": str(exc)}
@@ -103,7 +125,7 @@ class TelegramClient:
         payload = {"chat_id": chat_id, "action": action}
         try:
             resp = self.session.post(url, json=payload, timeout=timeout)
-            return resp.json()
+            return self._parse_response(resp, "sendChatAction")
         except Exception as exc:
             logger.warning("Failed to call sendChatAction: %s", exc)
             return {"ok": False, "description": str(exc)}
@@ -127,7 +149,7 @@ class TelegramClient:
 
         try:
             resp = self.session.post(url, json=payload, timeout=timeout)
-            return resp.json()
+            return self._parse_response(resp, "answerCallbackQuery")
         except Exception as exc:
             logger.warning("Failed to call answerCallbackQuery: %s", exc)
             return {"ok": False, "description": str(exc)}
@@ -149,7 +171,7 @@ class TelegramClient:
         }
         try:
             resp = self.session.post(url, json=payload, timeout=timeout)
-            return resp.json()
+            return self._parse_response(resp, "editMessageReplyMarkup")
         except Exception as exc:
             logger.warning("Failed to call editMessageReplyMarkup: %s", exc)
             return {"ok": False, "description": str(exc)}

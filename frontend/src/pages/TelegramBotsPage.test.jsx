@@ -402,4 +402,68 @@ describe('useTelegramBots hook logic', () => {
     expect(telegramBotsApi.deleteTelegramBot).not.toHaveBeenCalled();
     expect(deleted).toBe(false);
   });
+
+  it('handles verifyTelegramBot failure and updates error state gracefully', async () => {
+    const bot = { id: 13, name: 'Бот з помилкою' };
+    vi.spyOn(telegramBotsApi, 'verifyTelegramBot').mockRejectedValue(
+      new Error('Telegram API timeout'),
+    );
+
+    let hookValue;
+    function TestComponent() {
+      hookValue = useTelegramBots({ initialBots: [bot] });
+      return React.createElement('div');
+    }
+    renderToString(React.createElement(TestComponent));
+
+    const result = await hookValue.handleVerify(13);
+    expect(result).toEqual({ error: 'Telegram API timeout' });
+    expect(result.error).toBe('Telegram API timeout');
+  });
+
+  it('handles deleteTelegramBot failure and updates error state gracefully', async () => {
+    const bot = { id: 14, name: 'Бот не видаляється' };
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    vi.spyOn(telegramBotsApi, 'deleteTelegramBot').mockRejectedValue(
+      new Error('Database lock error'),
+    );
+
+    let hookValue;
+    function TestComponent() {
+      hookValue = useTelegramBots({ initialBots: [bot] });
+      return React.createElement('div');
+    }
+    renderToString(React.createElement(TestComponent));
+
+    const result = await hookValue.handleDelete(14, 'Бот не видаляється');
+    expect(result).toEqual({ error: 'Database lock error' });
+    expect(result.error).toBe('Database lock error');
+  });
+
+  it('handles updateTelegramBot failure and updates error state gracefully', async () => {
+    vi.spyOn(telegramBotsApi, 'updateTelegramBot').mockRejectedValue(
+      new Error('Validation error on server'),
+    );
+
+    let hookValue;
+    function TestComponent() {
+      hookValue = useTelegramBots({
+        initialBots: [{ id: 15, name: 'Бот 15' }],
+        initialFormMode: 'edit',
+        initialEditingBotId: 15,
+        initialForm: {
+          name: 'Бот 15',
+          token: '',
+          workspace: '',
+          is_active: true,
+        },
+      });
+      return React.createElement('div');
+    }
+    renderToString(React.createElement(TestComponent));
+
+    const result = await hookValue.handleSubmit();
+    expect(result).toEqual({ error: 'Validation error on server' });
+    expect(result.error).toBe('Validation error on server');
+  });
 });

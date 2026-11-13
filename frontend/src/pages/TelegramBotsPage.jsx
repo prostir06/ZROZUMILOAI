@@ -161,8 +161,9 @@ export function useTelegramBots({
       }
     } catch (err) {
       console.error('Failed to save telegram bot:', err);
-      setError(err.message || 'Помилка збереження бота');
-      throw err;
+      const msg = err.message || 'Помилка збереження бота';
+      setError(msg);
+      return { error: msg };
     } finally {
       setSaving(false);
     }
@@ -190,8 +191,9 @@ export function useTelegramBots({
       return true;
     } catch (err) {
       console.error('Failed to delete telegram bot:', err);
-      setError(err.message || 'Не вдалося видалити бота');
-      throw err;
+      const msg = err.message || 'Не вдалося видалити бота';
+      setError(msg);
+      return { error: msg };
     }
   };
 
@@ -209,8 +211,9 @@ export function useTelegramBots({
       return verifiedBot;
     } catch (err) {
       console.error('Failed to verify telegram bot token:', err);
-      setError(err.message || 'Не вдалося перевірити токен телеграм-бота');
-      throw err;
+      const msg = err.message || 'Не вдалося перевірити токен телеграм-бота';
+      setError(msg);
+      return { error: msg };
     } finally {
       setVerifyingId(null);
     }
@@ -327,7 +330,12 @@ export default function TelegramBotsPage({
                 ✕
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="form">
+            <form
+              onSubmit={(e) => {
+                handleSubmit(e).catch(() => {});
+              }}
+              className="form"
+            >
               <div className="modal__body">
                 <div className="form__group">
                   <label htmlFor="bot_name">Назва</label>

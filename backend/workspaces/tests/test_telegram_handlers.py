@@ -294,3 +294,54 @@ class TelegramHandlerTests(TestCase):
         mock_run_chat.assert_called_once()
         _, rkwargs = mock_run_chat.call_args
         self.assertEqual(rkwargs["prompt"], "Розклад занять")
+
+    @patch("workspaces.telegram.handlers.run_chat")
+    def test_run_chat_exception_gracefully_handled(self, mock_run_chat):
+        mock_run_chat.side_effect = RuntimeError("Ollama connection broke")
+
+        update = {
+            "update_id": 9,
+            "message": {
+                "message_id": 200,
+                "chat": {"id": 12345},
+                "from": {"id": 12345, "username": "student"},
+                "text": "Як справи?",
+            },
+        }
+
+        # Should not raise exception
+        handle_telegram_update(self.bot, update, client=self.client_mock)
+
+        self.client_mock.send_message.assert_called_once_with(
+            "123456:SECRET",
+            12345,
+            "Вибачте, виникла помилка під час обробки вашого запиту.",
+        )
+
+    @patch("workspaces.telegram.handlers.save_log_feedback")
+    def test_feedback_callback_exception_handled(self, mock_save_feedback):
+        mock_save_feedback.side_effect = Exception("DB error saving feedback")
+        log = WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            prompt="Тестове питання",
+            response="Тестова відповідь",
+        )
+
+        update = {
+            "update_id": 10,
+            "callback_query": {
+                "id": "cq_err_1",
+                "from": {"id": 12345, "username": "student"},
+                "message": {"message_id": 103, "chat": {"id": 12345}},
+                "data": f"fb:{log.id}:up",
+            },
+        }
+
+        # Should not raise exception, answers callback query gracefully
+        handle_telegram_update(self.bot, update, client=self.client_mock)
+
+        self.client_mock.answer_callback_query.assert_called_once_with(
+            "123456:SECRET",
+            "cq_err_1",
+            text="Дякуємо за відгук!",
+        )

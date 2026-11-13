@@ -1,5 +1,6 @@
 """Serializers for workspaces."""
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from rest_framework import serializers
 
 from .models import TelegramBot, WidgetToken, Workspace
@@ -213,9 +214,11 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             id__in=bot_ids
         ).update(workspace=None)
         TelegramBot.objects.filter(id__in=bot_ids).update(workspace=instance)
+        # Purge prefetched relation cache so serialized responses reflect newly linked bots immediately
         if hasattr(instance, '_prefetched_objects_cache'):
             instance._prefetched_objects_cache.pop('telegram_bots', None)
 
+    @transaction.atomic
     def create(self, validated_data):
         users = validated_data.pop('users', [])
         api_key = validated_data.pop('meilisearch_api_key', None)
@@ -230,6 +233,7 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             self._sync_telegram_bots(workspace, telegram_bots)
         return workspace
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         users = validated_data.pop('users', None)
         api_key = validated_data.pop('meilisearch_api_key', None)

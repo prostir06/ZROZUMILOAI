@@ -68,14 +68,30 @@ def handle_telegram_update(
         if not chat_id:
             return
 
-        session, _ = TelegramChatSession.objects.get_or_create(
-            bot=bot,
-            telegram_chat_id=chat_id,
-            defaults={"telegram_username": username},
-        )
+        try:
+            session, _ = TelegramChatSession.objects.get_or_create(
+                bot=bot,
+                telegram_chat_id=chat_id,
+                defaults={"telegram_username": username},
+            )
+        except Exception as exc:
+            logger.error(
+                "Error retrieving/creating chat session for bot %s chat %s: %s",
+                bot.id,
+                chat_id,
+                exc,
+                exc_info=True,
+            )
+            session = TelegramChatSession.objects.filter(bot=bot, telegram_chat_id=chat_id).first()
+            if not session:
+                return
+
         if username and session.telegram_username != username:
             session.telegram_username = username
-            session.save(update_fields=["telegram_username", "updated_at"])
+            try:
+                session.save(update_fields=["telegram_username", "updated_at"])
+            except Exception as exc:
+                logger.warning("Could not update username for session %s: %s", session.id, exc)
 
         # 1. Feedback action: fb:<log_id>:<action>
         if data.startswith("fb:"):
@@ -97,6 +113,15 @@ def handle_telegram_update(
                         save_log_feedback(log)
                 except (ValueError, TypeError) as exc:
                     logger.warning("Invalid log_id in callback: %s", exc)
+                except Exception as exc:
+                    # Log DB or feedback service errors without blocking callback response
+                    logger.error(
+                        "Failed to save feedback for log %s in bot %s: %s",
+                        log_id_str,
+                        bot.id,
+                        exc,
+                        exc_info=True,
+                    )
 
             ans_text = "Запит передано фахівцю!" if action == "handoff" else "Дякуємо за відгук!"
             client.answer_callback_query(token, cq_id, text=ans_text)
@@ -134,14 +159,30 @@ def handle_telegram_update(
         if not chat_id or not text:
             return
 
-        session, _ = TelegramChatSession.objects.get_or_create(
-            bot=bot,
-            telegram_chat_id=chat_id,
-            defaults={"telegram_username": username},
-        )
+        try:
+            session, _ = TelegramChatSession.objects.get_or_create(
+                bot=bot,
+                telegram_chat_id=chat_id,
+                defaults={"telegram_username": username},
+            )
+        except Exception as exc:
+            logger.error(
+                "Error retrieving/creating chat session for bot %s chat %s: %s",
+                bot.id,
+                chat_id,
+                exc,
+                exc_info=True,
+            )
+            session = TelegramChatSession.objects.filter(bot=bot, telegram_chat_id=chat_id).first()
+            if not session:
+                return
+
         if username and session.telegram_username != username:
             session.telegram_username = username
-            session.save(update_fields=["telegram_username", "updated_at"])
+            try:
+                session.save(update_fields=["telegram_username", "updated_at"])
+            except Exception as exc:
+                logger.warning("Could not update username for session %s: %s", session.id, exc)
 
         # Check commands: /start, /reset, /clear
         first_word = text.split()[0].lower()
@@ -149,7 +190,10 @@ def handle_telegram_update(
             ("/start@", "/reset@", "/clear@")
         ):
             session.messages = []
-            session.save(update_fields=["messages", "updated_at"])
+            try:
+                session.save(update_fields=["messages", "updated_at"])
+            except Exception as exc:
+                logger.warning("Failed to reset session messages: %s", exc)
 
             greeting = (bot.workspace.embed_greeting or "").strip()
             if not greeting:
@@ -185,17 +229,27 @@ def handle_telegram_update(
     model = model_names[0]
     client.send_chat_action(token, chat_id, action="typing")
 
+    # Sliding context window: 12 messages preserve multi-turn context within Ollama RAM limits
     history = session.messages[-12:] if session.messages else []
     messages = [*history, {"role": "user", "content": prompt}]
 
-    response = run_chat(
-        model=model,
-        messages=messages,
-        stream=False,
-        workspace=bot.workspace,
-        user=None,
-        prompt=prompt,
-    )
+    try:
+        response = run_chat(
+            model=model,
+            messages=messages,
+            stream=False,
+            workspace=bot.workspace,
+            user=None,
+            prompt=prompt,
+        )
+    except Exception as exc:
+        logger.exception("Error executing run_chat for bot %s: %s", bot.id, exc)
+        client.send_message(
+            token,
+            chat_id,
+            "Вибачте, виникла помилка під час обробки вашого запиту.",
+        )
+        return
 
     if response.status_code == 200:
         resp_data = response.data if hasattr(response, "data") else {}
@@ -215,7 +269,10 @@ def handle_telegram_update(
             {"role": "assistant", "content": answer},
         ]
         session.messages = new_messages[-12:]
-        session.save(update_fields=["messages", "updated_at"])
+        try:
+            session.save(update_fields=["messages", "updated_at"])
+        except Exception as exc:
+            logger.warning("Failed to save session messages for chat %s: %s", chat_id, exc)
 
         reply_markup = None
         if log_id:

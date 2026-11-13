@@ -14,6 +14,7 @@ from workspaces.telegram.handlers import handle_telegram_update
 
 logger = logging.getLogger(__name__)
 
+# Atomic Lua script: extends TTL if key is held by this worker UUID, else acquires with SET NX EX
 _RENEW_OR_ACQUIRE_LUA = """
 if redis.call('get', KEYS[1]) == ARGV[1] then
     redis.call('expire', KEYS[1], ARGV[2])
@@ -23,6 +24,7 @@ else
 end
 """
 
+# Atomic release: ensures worker only deletes its own lock, avoiding freeing a successor's lock
 _RELEASE_LOCK_LUA = """
 if redis.call('get', KEYS[1]) == ARGV[1] then
     return redis.call('del', KEYS[1])
@@ -207,6 +209,10 @@ class TelegramBotManager:
                 self.sync_bots()
             except Exception as exc:
                 logger.exception("Error during bot sync: %s", exc)
+            finally:
+                from django.db import connection
+
+                connection.close_if_unusable_or_obsolete()
 
             deadline = time.monotonic() + poll_interval
             while not self._stopped and time.monotonic() < deadline:
