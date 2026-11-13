@@ -13,8 +13,9 @@ if [ "$ROLE" = "web" ]; then
   python manage.py ensure_admin
   python manage.py collectstatic --noinput
 elif [ "$ROLE" = "worker" ] || [ "$ROLE" = "poller" ]; then
-  # Легкий migrate (ідемпотентний), без collectstatic/admin — уникаємо гонки з web.
-  python manage.py migrate --noinput
+  # Worker та poller стартують після готовності web (service_healthy) і не запускають міграції,
+  # що виключає гонку створення таблиць у Postgres (pg_type_typname_nsp_index).
+  :
 else
   echo "Unknown APP_ROLE=$ROLE (expected web|worker|poller)" >&2
   exit 1
