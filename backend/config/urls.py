@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from config.health import HealthView
+from workspaces.urls import router as workspaces_router
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -13,4 +14,5 @@ urlpatterns = [
     path('api/widget/', include('workspaces.widget_urls')),
     path('api/ollama/', include('ollama_proxy.urls')),
     path('api/backups/', include('backups.urls')),
+    path('api/', include(workspaces_router.urls)),
 ]

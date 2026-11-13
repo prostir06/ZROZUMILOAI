@@ -2,7 +2,8 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import WidgetToken, Workspace
+from .models import TelegramBot, WidgetToken, Workspace
+from .telegram.serializers import TelegramBotSerializer
 
 User = get_user_model()
 
@@ -23,6 +24,13 @@ class WorkspaceSerializer(serializers.ModelSerializer):
         many=True,
         queryset=User.objects.all(),
         source='users',
+        write_only=True,
+        required=False,
+    )
+    telegram_bots = TelegramBotSerializer(many=True, read_only=True)
+    telegram_bot_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=TelegramBot.objects.all(),
         write_only=True,
         required=False,
     )
@@ -63,6 +71,8 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             'embed_faq_questions',
             'users',
             'user_ids',
+            'telegram_bots',
+            'telegram_bot_ids',
             'created_at',
             'updated_at',
         )
@@ -193,26 +203,45 @@ class WorkspaceSerializer(serializers.ModelSerializer):
 
             instance.meilisearch_api_key = encrypt_secret(api_key)
 
+    def _sync_telegram_bots(self, instance, telegram_bots_or_ids):
+        if telegram_bots_or_ids is None:
+            return
+        bot_ids = [
+            b.id if hasattr(b, 'id') else b for b in telegram_bots_or_ids
+        ]
+        TelegramBot.objects.filter(workspace=instance).exclude(
+            id__in=bot_ids
+        ).update(workspace=None)
+        TelegramBot.objects.filter(id__in=bot_ids).update(workspace=instance)
+        if hasattr(instance, '_prefetched_objects_cache'):
+            instance._prefetched_objects_cache.pop('telegram_bots', None)
+
     def create(self, validated_data):
         users = validated_data.pop('users', [])
         api_key = validated_data.pop('meilisearch_api_key', None)
+        telegram_bots = validated_data.pop('telegram_bot_ids', None)
         workspace = Workspace.objects.create(**validated_data)
         self._apply_api_key(workspace, api_key)
         if api_key is not None:
             workspace.save(update_fields=['meilisearch_api_key'])
         if users:
             workspace.users.set(users)
+        if telegram_bots is not None:
+            self._sync_telegram_bots(workspace, telegram_bots)
         return workspace
 
     def update(self, instance, validated_data):
         users = validated_data.pop('users', None)
         api_key = validated_data.pop('meilisearch_api_key', None)
+        telegram_bots = validated_data.pop('telegram_bot_ids', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         self._apply_api_key(instance, api_key)
         instance.save()
         if users is not None:
             instance.users.set(users)
+        if telegram_bots is not None:
+            self._sync_telegram_bots(instance, telegram_bots)
         return instance
 
 

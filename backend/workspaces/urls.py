@@ -1,5 +1,6 @@
 """URL routes for workspaces app."""
 from django.urls import path
+from rest_framework.routers import DefaultRouter
 
 from chats.analytics_views import (
     WorkspaceAnalyticsExportView,
@@ -13,8 +14,12 @@ from .document_views import (
     WorkspaceDocumentRetryView,
     WorkspaceRagStatsView,
 )
+from .telegram.views import TelegramBotViewSet
 from .views import MyWorkspacesView, WorkspaceDetailView, WorkspaceListCreateView
 from .widget_views import WidgetTokenDeleteView, WidgetTokenListCreateView
+
+router = DefaultRouter()
+router.register(r'telegram-bots', TelegramBotViewSet, basename='telegram-bot')
 
 urlpatterns = [
     path('my/', MyWorkspacesView.as_view(), name='workspace_my'),
@@ -69,4 +74,4 @@ urlpatterns = [
         WorkspaceKnowledgeGapResolveView.as_view(),
         name='workspace_gap_resolve',
     ),
-]
+] + router.urls
