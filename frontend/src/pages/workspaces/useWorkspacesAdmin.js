@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client';
 
 export const emptyForm = {
@@ -6,6 +6,7 @@ export const emptyForm = {
   system_prompt: '',
   temperature: 0.7,
   user_ids: [],
+  telegram_bot_ids: [],
   model_name: '',
   search_source: 'internal',
   meilisearch_url: '',
@@ -24,15 +25,44 @@ export const parseIndexes = (value) => (value || '')
 
 export const formatIndexes = (indexes) => (indexes?.length ? indexes.join(', ') : '');
 
-export function useWorkspacesAdmin() {
-  const [workspaces, setWorkspaces] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [models, setModels] = useState([]);
+export function useWorkspacesAdmin({
+  initialWorkspaces = [],
+  initialUsers = [],
+  initialModels = [],
+  initialTelegramBots = [],
+  initialFormMode = null,
+  initialEditingId = null,
+  initialForm = null,
+} = {}) {
+  const [workspaces, setWorkspaces] = useState(initialWorkspaces);
+  const [users, setUsers] = useState(initialUsers);
+  const [models, setModels] = useState(initialModels);
+  const [telegramBots, setTelegramBots] = useState(initialTelegramBots);
   const [loading, setLoading] = useState(true);
-  const [formMode, setFormMode] = useState(null);
-  const [editingId, setEditingId] = useState(null);
+  const [, setFormModeState] = useState(initialFormMode);
+  const [editingId, setEditingIdState] = useState(initialEditingId);
   const [error, setError] = useState('');
-  const [form, setForm] = useState(emptyForm);
+  const [, setFormState] = useState(initialForm || emptyForm);
+
+  const formRef = useRef(initialForm || emptyForm);
+  const formModeRef = useRef(initialFormMode);
+  const editingIdRef = useRef(initialEditingId);
+
+  const setForm = useCallback((action) => {
+    const next = typeof action === 'function' ? action(formRef.current) : action;
+    formRef.current = next;
+    setFormState(next);
+  }, []);
+
+  const setFormMode = useCallback((val) => {
+    formModeRef.current = val;
+    setFormModeState(val);
+  }, []);
+
+  const setEditingId = useCallback((val) => {
+    editingIdRef.current = val;
+    setEditingIdState(val);
+  }, []);
   const [widgetTokens, setWidgetTokens] = useState([]);
   const [newWidgetToken, setNewWidgetToken] = useState('');
   const [widgetTokenLabel, setWidgetTokenLabel] = useState('');
@@ -48,17 +78,22 @@ export function useWorkspacesAdmin() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [workspacesData, usersData, modelsData] = await Promise.all([
+      const [workspacesData, usersData, modelsData, telegramBotsData] = await Promise.all([
         api.getWorkspaces(),
         api.getUsers(),
         api.getModels().catch((err) => {
           console.error('Failed to load models for workspaces form:', err);
           return { models: [] };
         }),
+        api.getTelegramBots().catch((err) => {
+          console.error('Failed to load telegram bots for workspaces form:', err);
+          return [];
+        }),
       ]);
       setWorkspaces(workspacesData);
       setUsers(usersData);
       setModels(modelsData.models || []);
+      setTelegramBots(telegramBotsData || []);
     } catch (err) {
       console.error('Failed to load workspaces data:', err);
       setError('Не вдалося завантажити дані');
@@ -142,6 +177,7 @@ export function useWorkspacesAdmin() {
       system_prompt: workspace.system_prompt || '',
       temperature: workspace.temperature ?? 0.7,
       user_ids: workspace.users ? workspace.users.map((user) => user.id) : [],
+      telegram_bot_ids: (workspace.telegram_bots || []).map((bot) => bot.id),
       model_name: workspace.model_names?.[0] || '',
       search_source: workspace.search_source || 'internal',
       meilisearch_url: workspace.meilisearch_url || '',
@@ -181,6 +217,15 @@ export function useWorkspacesAdmin() {
     }));
   };
 
+  const toggleTelegramBotId = (botId) => {
+    setForm((prev) => ({
+      ...prev,
+      telegram_bot_ids: (prev.telegram_bot_ids || []).includes(botId)
+        ? (prev.telegram_bot_ids || []).filter((id) => id !== botId)
+        : [...(prev.telegram_bot_ids || []), botId],
+    }));
+  };
+
   const handleModelChange = (event) => {
     setForm((prev) => ({ ...prev, model_name: event.target.value }));
   };
@@ -191,32 +236,37 @@ export function useWorkspacesAdmin() {
     }
     setError('');
 
+    const currentForm = formRef.current;
+    const currentMode = formModeRef.current;
+    const currentId = editingIdRef.current;
+
     const payload = {
-      name: form.name.trim(),
-      system_prompt: form.system_prompt.trim(),
-      temperature: form.temperature,
-      user_ids: form.user_ids,
-      model_names: form.model_name ? [form.model_name] : [],
-      search_source: form.search_source,
-      meilisearch_url: form.meilisearch_url.trim(),
-      meilisearch_index_prefix: form.meilisearch_index_prefix.trim(),
-      meilisearch_indexes: parseIndexes(form.meilisearch_indexes),
-      meilisearch_course_id: form.meilisearch_course_id.trim(),
-      embed_greeting: form.embed_greeting.trim(),
-      embed_faq_questions: form.embed_faq_questions
+      name: currentForm.name.trim(),
+      system_prompt: currentForm.system_prompt.trim(),
+      temperature: currentForm.temperature,
+      user_ids: currentForm.user_ids,
+      telegram_bot_ids: currentForm.telegram_bot_ids || [],
+      model_names: currentForm.model_name ? [currentForm.model_name] : [],
+      search_source: currentForm.search_source,
+      meilisearch_url: currentForm.meilisearch_url.trim(),
+      meilisearch_index_prefix: currentForm.meilisearch_index_prefix.trim(),
+      meilisearch_indexes: parseIndexes(currentForm.meilisearch_indexes),
+      meilisearch_course_id: currentForm.meilisearch_course_id.trim(),
+      embed_greeting: currentForm.embed_greeting.trim(),
+      embed_faq_questions: currentForm.embed_faq_questions
         .split('\n')
         .map((line) => line.trim())
         .filter(Boolean)
         .slice(0, 8),
     };
 
-    if (form.meilisearch_api_key.trim()) {
-      payload.meilisearch_api_key = form.meilisearch_api_key.trim();
+    if (currentForm.meilisearch_api_key.trim()) {
+      payload.meilisearch_api_key = currentForm.meilisearch_api_key.trim();
     }
 
     try {
-      if (formMode === 'edit') {
-        await api.updateWorkspace(editingId, payload);
+      if (currentMode === 'edit') {
+        await api.updateWorkspace(currentId, payload);
       } else {
         await api.createWorkspace(payload);
       }
@@ -365,16 +415,24 @@ export function useWorkspacesAdmin() {
     setUsers,
     models,
     setModels,
+    telegramBots,
+    setTelegramBots,
     providerModels,
     loading,
     setLoading,
-    formMode,
+    get formMode() {
+      return formModeRef.current;
+    },
     setFormMode,
-    editingId,
+    get editingId() {
+      return editingIdRef.current;
+    },
     setEditingId,
     error,
     setError,
-    form,
+    get form() {
+      return formRef.current;
+    },
     setForm,
     widgetTokens,
     setWidgetTokens,
@@ -405,6 +463,7 @@ export function useWorkspacesAdmin() {
     handlePromptChange,
     handleTemperatureChange,
     toggleUserId,
+    toggleTelegramBotId,
     handleModelChange,
     handleCreateWidgetToken,
     handleDeleteWidgetToken,

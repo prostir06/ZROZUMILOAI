@@ -10,6 +10,8 @@ export default function WorkspaceModal({
   setForm,
   users = [],
   providerModels = [],
+  telegramBots = [],
+  toggleTelegramBotId,
   handleNameChange,
   handlePromptChange,
   handleTemperatureChange,
@@ -162,6 +164,39 @@ export default function WorkspaceModal({
                   </option>
                 ))}
               </select>
+            )}
+          </div>
+        </div>
+
+        <div className="form__group">
+          <span className="form__group-label">Телеграм-боти</span>
+          <div className="checkbox-list">
+            {telegramBots.length === 0 ? (
+              <p className="empty-state">
+                Немає створених Телеграм-ботів. Додайте їх у розділі «Телеграм-бот».
+              </p>
+            ) : (
+              telegramBots.map((bot) => (
+                <label key={bot.id} className="checkbox">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(form.telegram_bot_ids?.includes(bot.id))}
+                    onChange={() => toggleTelegramBotId?.(bot.id)}
+                  />
+                  <span>
+                    {bot.name}
+                    {bot.bot_username ? ` (@${bot.bot_username})` : ''}
+                    {bot.workspace && bot.workspace !== editingId && (
+                      <small
+                        className="text-muted"
+                        style={{ color: 'var(--color-text-muted)' }}
+                      >
+                        {` (зараз у: ${bot.workspace_name})`}
+                      </small>
+                    )}
+                  </span>
+                </label>
+              ))
             )}
           </div>
         </div>

@@ -48,6 +48,7 @@ function WorkspacesPage() {
                   <th>Температура</th>
                   <th>Користувачі</th>
                   <th>Модель</th>
+                  <th>Телеграм-боти</th>
                   <th>Оновлено</th>
                   <th>Дії</th>
                 </tr>
@@ -63,6 +64,19 @@ function WorkspacesPage() {
                         : '—'}
                     </td>
                     <td>{workspace.model_names?.[0] || '—'}</td>
+                    <td>
+                      {workspace.telegram_bots?.length > 0 ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                          {workspace.telegram_bots.map((bot) => (
+                            <span key={bot.id} className="badge">
+                              {bot.name}{bot.bot_username ? ` (@${bot.bot_username})` : ''}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
                     <td>
                       {new Date(workspace.updated_at).toLocaleString('uk-UA')}
                     </td>
