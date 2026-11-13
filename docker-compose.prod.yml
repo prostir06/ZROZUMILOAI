@@ -89,6 +89,18 @@ services:
       RAG_EMBED_CONCURRENCY: ${PROD_RAG_EMBED_CONCURRENCY:-2}
       DJANGO_LOG_FORMAT: ${DJANGO_LOG_FORMAT:-json}
 
+  telegram_poller:
+    mem_limit: 512m
+    cpus: 0.5
+    environment:
+      DJANGO_DEBUG: "False"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY}
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:?Set FIELD_ENCRYPTION_KEY}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      DJANGO_LOG_FORMAT: ${DJANGO_LOG_FORMAT:-json}
+
   frontend:
     mem_limit: 256m
     cpus: 0.5

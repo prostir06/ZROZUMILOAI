@@ -12,11 +12,11 @@ if [ "$ROLE" = "web" ]; then
   python manage.py migrate --noinput
   python manage.py ensure_admin
   python manage.py collectstatic --noinput
-elif [ "$ROLE" = "worker" ]; then
+elif [ "$ROLE" = "worker" ] || [ "$ROLE" = "poller" ]; then
   # Легкий migrate (ідемпотентний), без collectstatic/admin — уникаємо гонки з web.
   python manage.py migrate --noinput
 else
-  echo "Unknown APP_ROLE=$ROLE (expected web|worker)" >&2
+  echo "Unknown APP_ROLE=$ROLE (expected web|worker|poller)" >&2
   exit 1
 fi
 

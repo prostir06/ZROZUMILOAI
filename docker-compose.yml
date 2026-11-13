@@ -154,6 +154,32 @@ services:
       start_period: 50s
     restart: unless-stopped
 
+  telegram_poller:
+    build: ./backend
+    command: python manage.py run_telegram_bots
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      APP_ROLE: poller
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      POSTGRES_DB: ${POSTGRES_DB:-zrozumiloai}
+      POSTGRES_USER: ${POSTGRES_USER:-zrozumiloai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_HOST: db
+      USE_SQLITE: "False"
+      OLLAMA_BASE_URL: http://ollama:11434
+      REDIS_URL: redis://redis:6379/0
+      CELERY_TASK_ALWAYS_EAGER: "False"
+      FIELD_ENCRYPTION_KEY: ${FIELD_ENCRYPTION_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     ports:
