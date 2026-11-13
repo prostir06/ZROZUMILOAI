@@ -50,6 +50,77 @@ export class ApiClient extends BaseApiClient {
     return true;
   }
 
+  async getTelegramBots() {
+    const response = await this.request('/telegram-bots/');
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.detail || error.error || 'Не вдалося отримати список телеграм-ботів');
+    }
+    return response.json();
+  }
+
+  async createTelegramBot(data) {
+    const response = await this.request('/telegram-bots/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(
+        error.token?.[0]
+        || error.name?.[0]
+        || error.workspace?.[0]
+        || error.detail
+        || error.error
+        || Object.values(error).flat()[0]
+        || 'Не вдалося створити телеграм-бота',
+      );
+    }
+    return response.json();
+  }
+
+  async updateTelegramBot(botId, data) {
+    const response = await this.request(`/telegram-bots/${botId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(
+        error.token?.[0]
+        || error.name?.[0]
+        || error.workspace?.[0]
+        || error.detail
+        || error.error
+        || Object.values(error).flat()[0]
+        || 'Не вдалося оновити телеграм-бота',
+      );
+    }
+    return response.json();
+  }
+
+  async deleteTelegramBot(botId) {
+    const response = await this.request(`/telegram-bots/${botId}/`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.detail || error.error || 'Не вдалося видалити телеграм-бота');
+    }
+    return true;
+  }
+
+  async verifyTelegramBot(botId) {
+    const response = await this.request(`/telegram-bots/${botId}/verify/`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.error || error.detail || 'Не вдалося перевірити токен телеграм-бота');
+    }
+    return response.json();
+  }
+
   async getWidgetTokens(workspaceId) {
     const response = await this.request(`/workspaces/${workspaceId}/widget-tokens/`);
     if (!response.ok) throw new Error('Не вдалося отримати widget tokens');

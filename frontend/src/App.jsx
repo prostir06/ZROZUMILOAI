@@ -16,6 +16,7 @@ const UsersPage = lazy(() => import('./pages/UsersPage'));
 const BackupPage = lazy(() => import('./pages/BackupPage'));
 const ModelsPage = lazy(() => import('./pages/ModelsPage'));
 const WorkspacesPage = lazy(() => import('./pages/WorkspacesPage'));
+const TelegramBotsPage = lazy(() => import('./pages/TelegramBotsPage'));
 const WorkspaceChatsPage = lazy(() => import('./pages/WorkspaceChatsPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 
@@ -110,6 +111,7 @@ function App() {
             <Route index element={<Navigate to="/admin/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
             <Route path="workspaces" element={<WorkspacesPage />} />
+            <Route path="telegram-bots" element={<TelegramBotsPage />} />
             <Route path="chats" element={<WorkspaceChatsPage />} />
             <Route path="models" element={<ModelsPage />} />
             <Route path="users" element={<UsersPage />} />
