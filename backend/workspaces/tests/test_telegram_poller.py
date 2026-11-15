@@ -2,7 +2,7 @@
 import threading
 from unittest.mock import MagicMock, patch
 
-from django.test import TransactionTestCase
+from django.test import TransactionTestCase, override_settings
 
 from workspaces.models import TelegramBot, Workspace
 from workspaces.telegram.poller import TelegramBotManager, TelegramBotWorker
@@ -93,3 +93,40 @@ class TelegramPollerTests(TransactionTestCase):
 
         manager.stop()
         self.assertEqual(len(manager.workers), 0)
+
+    @override_settings(REDIS_URL="redis://localhost:6379/0")
+    @patch("workspaces.telegram.poller._get_redis_client")
+    def test_worker_skips_polling_when_redis_fails_and_redis_url_set(self, mock_get_redis):
+        mock_redis = MagicMock()
+        mock_redis.eval.side_effect = ConnectionError("redis down")
+        mock_get_redis.return_value = mock_redis
+
+        worker = TelegramBotWorker(
+            bot_id=self.bot.id,
+            client=self.client_mock,
+        )
+
+        self.assertFalse(worker._acquire_or_renew_lock())
+        worker.step()
+        self.client_mock.get_updates.assert_not_called()
+
+    @override_settings(REDIS_URL="")
+    def test_worker_polls_when_redis_url_empty(self):
+        worker = TelegramBotWorker(
+            bot_id=self.bot.id,
+            client=self.client_mock,
+        )
+        self.assertTrue(worker._acquire_or_renew_lock())
+
+    @override_settings(REDIS_URL="redis://localhost:6379/0")
+    @patch("workspaces.telegram.poller._get_redis_client", return_value=None)
+    def test_worker_skips_polling_when_redis_client_none_and_redis_url_set(self, _mock_get_redis):
+        worker = TelegramBotWorker(
+            bot_id=self.bot.id,
+            client=self.client_mock,
+        )
+        self.assertFalse(worker._acquire_or_renew_lock())
+        worker.step()
+        self.client_mock.get_updates.assert_not_called()
+
+

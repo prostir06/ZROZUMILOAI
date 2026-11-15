@@ -62,17 +62,31 @@ class TelegramBotWorker(threading.Thread):
         self.lock_token = uuid.uuid4().hex
 
     def _acquire_or_renew_lock(self) -> bool:
+        redis_url = (getattr(settings, "REDIS_URL", "") or "").strip()
+        if not redis_url:
+            # Local dev without Redis: proceed without distributed lock
+            return True
+
         redis_client = _get_redis_client()
         if redis_client is None:
-            return True
+            logger.error(
+                "Redis client unavailable for bot %s while REDIS_URL is set (failing closed)",
+                self.bot_id,
+            )
+            return False
 
         key = f"telegram:poll_lock:{self.bot_id}"
         try:
             res = redis_client.eval(_RENEW_OR_ACQUIRE_LUA, 1, key, self.lock_token, 60)
             return bool(res)
         except Exception as exc:
-            logger.warning("Redis error acquiring poll lock for bot %s (failing open): %s", self.bot_id, exc)
-            return True
+            logger.error(
+                "Redis error acquiring poll lock for bot %s while REDIS_URL is set (failing closed): %s",
+                self.bot_id,
+                exc,
+                exc_info=True,
+            )
+            return False
 
     def _release_lock(self) -> None:
         redis_client = _get_redis_client()
