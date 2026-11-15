@@ -5,6 +5,8 @@ import re
 
 from django.db.models import Count, Q
 
+from .models import WorkspaceChatLog
+
 logger = logging.getLogger(__name__)
 
 MAX_SAMPLE_ROWS = 12
@@ -54,11 +56,19 @@ def build_table_digest(logs):
         handoff=Count('id', filter=Q(needs_handoff=True)),
         feedback_up=Count('id', filter=Q(feedback='up')),
         feedback_down=Count('id', filter=Q(feedback='down')),
+        channel_web=Count('id', filter=Q(channel=WorkspaceChatLog.Channel.WEB)),
+        channel_telegram=Count('id', filter=Q(channel=WorkspaceChatLog.Channel.TELEGRAM)),
+        channel_widget=Count('id', filter=Q(channel=WorkspaceChatLog.Channel.WIDGET)),
     )
     total = totals['total'] or 0
     handoff = totals['handoff'] or 0
     feedback_up = totals['feedback_up'] or 0
     feedback_down = totals['feedback_down'] or 0
+    channels = {
+        'web': totals['channel_web'] or 0,
+        'telegram': totals['channel_telegram'] or 0,
+        'widget': totals['channel_widget'] or 0,
+    }
     workspace_rows = (
         logs.values('workspace__name')
         .annotate(count=Count('id'))
@@ -73,6 +83,7 @@ def build_table_digest(logs):
     for log in sample:
         rows.append({
             'workspace': log.workspace.name if log.workspace_id else '',
+            'channel': getattr(log, 'channel', '') or 'web',
             'prompt': (log.prompt or '')[:FIELD_CHARS],
             'response': (log.response or '')[:FIELD_CHARS],
             'feedback': log.feedback or '',
@@ -83,6 +94,7 @@ def build_table_digest(logs):
         'handoff': handoff,
         'feedback_up': feedback_up,
         'feedback_down': feedback_down,
+        'channels': channels,
         'workspaces': workspaces,
         'rows': rows,
     }
@@ -137,6 +149,7 @@ def analyze_chat_table(logs, provider, model):
         'handoff': digest['handoff'],
         'feedback_up': digest['feedback_up'],
         'feedback_down': digest['feedback_down'],
+        'channels': digest['channels'],
         'summary': '',
         'topics': [],
         'problems': [],
@@ -168,8 +181,15 @@ def analyze_chat_table(logs, provider, model):
 
 
 def _prompt_text(digest):
+    channels = digest.get('channels') or {}
+    channel_summary = (
+        f"Web={channels.get('web', 0)}, "
+        f"Telegram={channels.get('telegram', 0)}, "
+        f"Widget={channels.get('widget', 0)}"
+    )
     lines = [
         f"Записів: {digest['total']}",
+        f'Канали: {channel_summary}',
         f"Handoff: {digest['handoff']}",
         f"Корисні оцінки: {digest['feedback_up']}",
         f"Некорисні оцінки: {digest['feedback_down']}",
@@ -178,8 +198,9 @@ def _prompt_text(digest):
     for row in digest['rows']:
         mark = row['feedback'] or 'без оцінки'
         handoff = 'handoff' if row['handoff'] else 'без handoff'
+        channel = row.get('channel') or 'web'
         lines.append(
-            f"- {row['prompt']} | {row['response']} | {mark}, {handoff}",
+            f"- [{channel}] {row['prompt']} | {row['response']} | {mark}, {handoff}",
         )
     lines.append('Почни відповідь словом «Висновок:».')
     return '\n'.join(lines)

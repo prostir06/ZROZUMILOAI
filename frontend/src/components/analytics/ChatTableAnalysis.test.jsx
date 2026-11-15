@@ -13,6 +13,7 @@ describe('ChatTableAnalysis', () => {
           handoff: 2,
           feedback_up: 4,
           feedback_down: 1,
+          channels: { web: 6, telegram: 3, widget: 2 },
           summary: 'Найчастіше питають про сертифікат.',
           topics: [{ title: 'Сертифікат', detail: 'Кілька схожих запитів' }],
           problems: ['Мало оцінок'],
@@ -26,5 +27,11 @@ describe('ChatTableAnalysis', () => {
     expect(html).toContain('Сертифікат');
     expect(html).toContain('Додати коротку відповідь у FAQ');
     expect(html).toContain('>11<');
+    expect(html).toContain('badge badge--web');
+    expect(html).toContain('Web: 6');
+    expect(html).toContain('badge badge--telegram');
+    expect(html).toContain('Telegram: 3');
+    expect(html).toContain('badge badge--widget');
+    expect(html).toContain('Widget: 2');
   });
 });

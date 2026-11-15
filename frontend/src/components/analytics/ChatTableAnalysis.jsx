@@ -10,6 +10,10 @@ export default function ChatTableAnalysis({
   const topics = analysis?.topics || [];
   const problems = analysis?.problems || [];
   const recommendations = analysis?.recommendations || [];
+  const channels = analysis?.channels || {};
+  const webCount = Number(channels.web ?? 0);
+  const telegramCount = Number(channels.telegram ?? 0);
+  const widgetCount = Number(channels.widget ?? 0);
 
   return (
     <section className="chat-analysis" aria-live="polite" aria-busy={loading}>
@@ -46,6 +50,17 @@ export default function ChatTableAnalysis({
             <article className="kpi-card">
               <h4 className="kpi-card__title">Записів</h4>
               <p className="kpi-card__value">{analysis.total ?? 0}</p>
+              <div className="kpi-card__channels" aria-label="Розподіл за каналами">
+                <span className="badge badge--web" title="Веб-інтерфейс">
+                  {`Web: ${Number.isFinite(webCount) ? webCount : 0}`}
+                </span>
+                <span className="badge badge--telegram" title="Telegram-бот">
+                  {`Telegram: ${Number.isFinite(telegramCount) ? telegramCount : 0}`}
+                </span>
+                <span className="badge badge--widget" title="Вбудований віджет">
+                  {`Widget: ${Number.isFinite(widgetCount) ? widgetCount : 0}`}
+                </span>
+              </div>
             </article>
             <article className="kpi-card">
               <h4 className="kpi-card__title">Handoff</h4>

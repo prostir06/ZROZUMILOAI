@@ -96,6 +96,7 @@ class WorkspaceChatLogAnalysisApiTests(APITestCase):
             response = self.client.post(self.url, {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['total'], 0)
+        self.assertEqual(response.data['channels'], {'web': 0, 'telegram': 0, 'widget': 0})
         provider_cls.assert_not_called()
 
     @patch('chats.log_views.release_ollama_slot')
@@ -117,8 +118,12 @@ class WorkspaceChatLogAnalysisApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['model'], 'qwen3:latest')
         self.assertEqual(response.data['total'], 1)
+        self.assertEqual(response.data['channels'], {'web': 1, 'telegram': 0, 'widget': 0})
         self.assertIn('сертифікат', response.data['summary'])
         provider.chat.assert_called_once()
+        prompt_msg = provider.chat.call_args.args[1][1]['content']
+        self.assertIn('Канали: Web=1, Telegram=0, Widget=0', prompt_msg)
+        self.assertIn('- [web] Як отримати сертифікат?', prompt_msg)
         self.assertEqual(provider.chat.call_args.kwargs['options']['num_ctx'], 2048)
         release.assert_called_once_with('token-1')
 

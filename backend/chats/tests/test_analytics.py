@@ -290,6 +290,8 @@ class WorkspaceAnalyticsServiceTests(APITestCase):
         self.assertEqual(digest['handoff'], 1)
         self.assertEqual(digest['feedback_up'], 1)
         self.assertEqual(digest['feedback_down'], 0)
+        self.assertEqual(digest['channels'], {'web': 1, 'telegram': 0, 'widget': 0})
+        self.assertEqual(digest['rows'][0]['channel'], 'web')
 
     def test_build_analytics_csv_and_serialize_logs_use_iterator(self):
         WorkspaceChatLog.objects.create(
