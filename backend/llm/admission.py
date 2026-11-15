@@ -23,9 +23,14 @@ class OllamaBusy(Exception):
     """Слот генерації вже зайнятий."""
 
 
+class AdmissionUnavailable(Exception):
+    """Інфраструктура допуску недоступна (Redis не відповідає при заданому REDIS_URL)."""
+
+
 def acquire_ollama_slot(client=None, wait_seconds=None, poll_interval=0.05):
-    """Повернути токен власника, None для fail-open, або кинути OllamaBusy."""
-    if client is None and not (getattr(settings, 'REDIS_URL', '') or '').strip():
+    """Повернути токен власника, None для fail-open, або кинути OllamaBusy / AdmissionUnavailable."""
+    is_redis_configured = bool((getattr(settings, 'REDIS_URL', '') or '').strip())
+    if client is None and not is_redis_configured:
         return None
     if wait_seconds is None:
         wait_seconds = float(
@@ -45,9 +50,15 @@ def acquire_ollama_slot(client=None, wait_seconds=None, poll_interval=0.05):
                 redis_client = get_redis_connection('default')
             written = redis_client.set(ADMISSION_KEY, token, nx=True, ex=ttl)
         except Exception as exc:
-            # Без Redis чат лишається доступним; слот тоді ніхто не тримає.
+            if is_redis_configured:
+                logger.error(
+                    'Ollama admission unavailable, failing closed: %s',
+                    exc,
+                    exc_info=True,
+                )
+                raise AdmissionUnavailable(str(exc)) from exc
             logger.warning(
-                'Ollama admission unavailable, failing open: %s',
+                'Ollama admission unavailable without REDIS_URL, failing open: %s',
                 exc,
                 exc_info=True,
             )

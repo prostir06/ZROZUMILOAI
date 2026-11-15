@@ -30,6 +30,7 @@ from .admission import (
     OLLAMA_BUSY_CODE,
     OLLAMA_BUSY_MESSAGE,
     RETRY_AFTER_SECONDS,
+    AdmissionUnavailable,
     OllamaBusy,
     acquire_ollama_slot,
     release_ollama_slot,
@@ -145,6 +146,17 @@ def run_chat(
             getattr(workspace, 'pk', None),
         )
         return _ollama_busy_response()
+    except AdmissionUnavailable as exc:
+        logger.error('Admission infrastructure unavailable: %s', exc)
+        if stream:
+            return _provider_error_response(
+                'Сервіс тимчасово недоступний через збій черги запитів.',
+                stream=True,
+            )
+        return Response(
+            {'error': 'Сервіс тимчасово недоступний. Спробуйте пізніше.'},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
     if stream:
         def event_stream():

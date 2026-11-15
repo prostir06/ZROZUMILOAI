@@ -7,7 +7,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework import status
 
-from llm.admission import OllamaBusy
+from llm.admission import AdmissionUnavailable, OllamaBusy
 from llm.base import LLMProviderError
 from llm.chat import run_chat
 from workspaces.models import Workspace
@@ -122,6 +122,63 @@ class RunChatTests(TestCase):
             'Модель зайнята. Спробуйте ще раз за хвилину.',
         )
         self.assertEqual(response['Retry-After'], '60')
+        provider.chat.assert_not_called()
+        mock_release.assert_not_called()
+
+    @patch('llm.chat.release_ollama_slot')
+    @patch('llm.chat.acquire_ollama_slot', side_effect=AdmissionUnavailable('redis down'))
+    @patch('llm.chat.resolve_provider')
+    @patch('llm.chat.prepare_chat_messages')
+    def test_admission_unavailable_non_stream_returns_503(
+        self, mock_prepare, mock_resolve, mock_acquire, mock_release,
+    ):
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
+        provider = MagicMock()
+        mock_resolve.return_value = provider
+
+        response = run_chat(
+            model='llama3',
+            messages=[{'role': 'user', 'content': 'Hi'}],
+            stream=False,
+            workspace=self.workspace,
+            user=self.user,
+            prompt='Hi',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response.data['error'],
+            'Сервіс тимчасово недоступний. Спробуйте пізніше.',
+        )
+        provider.chat.assert_not_called()
+        mock_release.assert_not_called()
+
+    @patch('llm.chat.release_ollama_slot')
+    @patch('llm.chat.acquire_ollama_slot', side_effect=AdmissionUnavailable('redis down'))
+    @patch('llm.chat.resolve_provider')
+    @patch('llm.chat.prepare_chat_messages')
+    def test_admission_unavailable_stream_returns_provider_error_payload(
+        self, mock_prepare, mock_resolve, mock_acquire, mock_release,
+    ):
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
+        provider = MagicMock()
+        mock_resolve.return_value = provider
+
+        response = run_chat(
+            model='llama3',
+            messages=[{'role': 'user', 'content': 'Hi'}],
+            stream=True,
+            workspace=self.workspace,
+            user=self.user,
+            prompt='Hi',
+        )
+
+        self.assertTrue(response.startswith('data: '))
+        payload = json.loads(response.removeprefix('data: ').strip())
+        self.assertEqual(
+            payload['error'],
+            'Сервіс тимчасово недоступний через збій черги запитів.',
+        )
         provider.chat.assert_not_called()
         mock_release.assert_not_called()
 

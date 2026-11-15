@@ -5,6 +5,7 @@ from django.test import SimpleTestCase, override_settings
 
 from llm.admission import (
     ADMISSION_KEY,
+    AdmissionUnavailable,
     OllamaBusy,
     acquire_ollama_slot,
     release_ollama_slot,
@@ -40,10 +41,18 @@ class AdmissionTests(SimpleTestCase):
         release_ollama_slot(token, client=client)
         self.assertNotIn(ADMISSION_KEY, client.store)
 
-    def test_redis_error_fails_open_with_warning(self):
+    def test_redis_error_raises_admission_unavailable_when_redis_url_set(self):
         client = MagicMock()
         client.set.side_effect = ConnectionError('redis down')
         with override_settings(REDIS_URL='redis://localhost:6379/0'):
+            with self.assertLogs('llm.admission', level=logging.ERROR):
+                with self.assertRaises(AdmissionUnavailable):
+                    acquire_ollama_slot(client=client)
+
+    def test_redis_error_fails_open_when_redis_url_empty(self):
+        client = MagicMock()
+        client.set.side_effect = ConnectionError('redis down')
+        with override_settings(REDIS_URL=''):
             with self.assertLogs('llm.admission', level=logging.WARNING):
                 token = acquire_ollama_slot(client=client)
         self.assertIsNone(token)
