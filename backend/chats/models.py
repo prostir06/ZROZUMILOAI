@@ -63,6 +63,18 @@ class WorkspaceChatLog(models.Model):
         help_text='Чи опрацьовано цю прогалину викладачем/адміністратором',
     )
     resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Channel(models.TextChoices):
+        WEB = 'web', 'Web'
+        TELEGRAM = 'telegram', 'Telegram'
+        WIDGET = 'widget', 'Widget'
+
+    channel = models.CharField(
+        max_length=20,
+        choices=Channel.choices,
+        default=Channel.WEB,
+        help_text='Джерело чату: web | telegram | widget',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -73,6 +85,7 @@ class WorkspaceChatLog(models.Model):
             models.Index(fields=['workspace', 'created_at']),
             models.Index(fields=['workspace', 'needs_handoff']),
             models.Index(fields=['workspace', 'is_resolved']),
+            models.Index(fields=['workspace', 'channel']),
         ]
 
     def __str__(self):

@@ -29,6 +29,7 @@ from .export_service import (
 from .feedback import ALLOWED_FEEDBACK, apply_feedback_fields, save_log_feedback
 from .models import WorkspaceChatLog
 from .serializers import WorkspaceChatLogSerializer
+from .services import ALLOWED_CHANNELS
 from .table_analysis import analyze_chat_table, pick_chat_model
 
 logger = logging.getLogger(__name__)
@@ -63,6 +64,10 @@ def filtered_chat_logs(params):
     date_range = params.get('range')
     if date_range in ('today', '7d', '30d'):
         logs = filter_logs_by_date_range(logs, date_range)
+
+    channel = params.get('channel')
+    if channel in ALLOWED_CHANNELS:
+        logs = logs.filter(channel=channel)
 
     return logs
 

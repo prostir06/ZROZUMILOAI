@@ -122,6 +122,39 @@ class WidgetCourseScopeTests(APITestCase):
         kwargs = mock_run_chat.call_args.kwargs
         self.assertEqual(kwargs['meilisearch_course_id'], 'course-v1:ORG+FREE+1')
 
+    @patch('workspaces.widget_views.run_chat')
+    def test_widget_chat_sets_widget_channel_and_sent_by(self, mock_run_chat):
+        """Запит через віджет передає channel='widget' і мітку токена в sent_by."""
+        mock_run_chat.return_value = Response(
+            {'message': {'content': 'ok'}},
+            status=status.HTTP_200_OK,
+        )
+
+        response = self.client.post(
+            self.url,
+            {'model': 'llama3', 'messages': [{'role': 'user', 'content': 'Hi'}], 'stream': False},
+            format='json',
+            HTTP_AUTHORIZATION=f'Widget-Token {self.raw}',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        kwargs = mock_run_chat.call_args.kwargs
+        self.assertEqual(kwargs['channel'], 'widget')
+        self.assertEqual(kwargs['sent_by'], 'Widget (locked)')
+
+        # Без label використовується token_prefix
+        raw_unlabeled, token_unlabeled = WidgetToken.create_for_workspace(self.workspace, label='')
+        resp_unlabeled = self.client.post(
+            self.url,
+            {'model': 'llama3', 'messages': [{'role': 'user', 'content': 'Hi'}], 'stream': False},
+            format='json',
+            HTTP_AUTHORIZATION=f'Widget-Token {raw_unlabeled}',
+        )
+        self.assertEqual(resp_unlabeled.status_code, status.HTTP_200_OK)
+        kwargs_unlabeled = mock_run_chat.call_args.kwargs
+        self.assertEqual(kwargs_unlabeled['channel'], 'widget')
+        self.assertEqual(kwargs_unlabeled['sent_by'], f'Widget ({token_unlabeled.token_prefix})')
+
 
 class ChatSerializerLimitsTests(TestCase):
     def setUp(self):

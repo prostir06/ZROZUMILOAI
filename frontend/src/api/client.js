@@ -518,6 +518,7 @@ export class ApiClient extends BaseApiClient {
     workspace_id,
     workspaceId,
     range,
+    channel,
   } = {}) {
     const params = new URLSearchParams();
     params.set('limit', String(limit));
@@ -533,6 +534,9 @@ export class ApiClient extends BaseApiClient {
     }
     if (range && range !== 'all') {
       params.set('range', range);
+    }
+    if (channel && channel !== 'all') {
+      params.set('channel', channel);
     }
     const response = await this.request(`/chats/logs/?${params.toString()}`);
     if (!response.ok) {
@@ -581,6 +585,7 @@ export class ApiClient extends BaseApiClient {
     workspace_id,
     workspaceId,
     range,
+    channel,
   } = {}) {
     const params = new URLSearchParams();
     params.set('export_format', format);
@@ -596,6 +601,9 @@ export class ApiClient extends BaseApiClient {
     }
     if (range && range !== 'all') {
       params.set('range', range);
+    }
+    if (channel && channel !== 'all') {
+      params.set('channel', channel);
     }
     return `${this.baseUrl}/chats/logs/export/?${params.toString()}`;
   }

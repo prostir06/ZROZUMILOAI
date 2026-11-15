@@ -54,12 +54,16 @@ def handle_telegram_update(
     # Extract user and chat info
     chat_id: int | None = None
     username: str = ""
+    tg_user_label: str = ""
     prompt: str = ""
 
     if callback_query:
         cq_id = callback_query.get("id", "")
         from_user = callback_query.get("from", {})
+        raw_tg_username = (from_user.get("username") or "").strip()
+        raw_first_name = (from_user.get("first_name") or "").strip()
         username = from_user.get("username") or from_user.get("first_name") or ""
+        tg_user_label = f"@{raw_tg_username}" if raw_tg_username else raw_first_name
         msg = callback_query.get("message") or {}
         chat_id = msg.get("chat", {}).get("id")
         message_id = msg.get("message_id")
@@ -152,7 +156,10 @@ def handle_telegram_update(
 
     elif message:
         from_user = message.get("from", {})
+        raw_tg_username = (from_user.get("username") or "").strip()
+        raw_first_name = (from_user.get("first_name") or "").strip()
         username = from_user.get("username") or from_user.get("first_name") or ""
+        tg_user_label = f"@{raw_tg_username}" if raw_tg_username else raw_first_name
         chat_id = message.get("chat", {}).get("id")
         text = (message.get("text") or "").strip()
 
@@ -233,6 +240,10 @@ def handle_telegram_update(
     history = session.messages[-12:] if session.messages else []
     messages = [*history, {"role": "user", "content": prompt}]
 
+    user_part = tg_user_label or f"id:{chat_id}"
+    bot_label = f"@{bot.bot_username}" if bot.bot_username else bot.name
+    tg_sent_by = f"{user_part} ({bot_label})"[:150] if bot_label else user_part[:150]
+
     try:
         response = run_chat(
             model=model,
@@ -240,6 +251,8 @@ def handle_telegram_update(
             stream=False,
             workspace=bot.workspace,
             user=None,
+            sent_by=tg_sent_by,
+            channel="telegram",
             prompt=prompt,
         )
     except Exception as exc:

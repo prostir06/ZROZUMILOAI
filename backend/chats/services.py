@@ -13,6 +13,8 @@ logger = logging.getLogger(__name__)
 # Мітка для анонімних користувачів (widget без авторизації).
 UNKNOWN_USER_LABEL = 'unknown user'
 
+ALLOWED_CHANNELS = frozenset(WorkspaceChatLog.Channel.values)
+
 
 def sent_by_label_for_user(user):
     """
@@ -96,6 +98,7 @@ def log_workspace_chat_exchange(
     workspace,
     user=None,
     sent_by='',
+    channel=WorkspaceChatLog.Channel.WEB,
     prompt='',
     response='',
     needs_handoff=False,
@@ -113,11 +116,13 @@ def log_workspace_chat_exchange(
     authenticated_user = (
         user if user and getattr(user, 'is_authenticated', False) else None
     )
+    resolved_channel = channel if channel in ALLOWED_CHANNELS else WorkspaceChatLog.Channel.WEB
 
     try:
         return WorkspaceChatLog.objects.create(
             user=authenticated_user,
             sent_by=label,
+            channel=resolved_channel,
             workspace=workspace,
             prompt=prompt,
             response=response or '',

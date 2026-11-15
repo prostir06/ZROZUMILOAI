@@ -147,6 +147,8 @@ class TelegramHandlerTests(TestCase):
         self.assertEqual(rkwargs["model"], "llama3")
         self.assertEqual(rkwargs["prompt"], "Де знайти розклад?")
         self.assertEqual(rkwargs["workspace"], self.workspace)
+        self.assertEqual(rkwargs["channel"], "telegram")
+        self.assertEqual(rkwargs["sent_by"], "@student (@help_bot)")
         self.assertEqual(
             rkwargs["messages"],
             [{"role": "user", "content": "Де знайти розклад?"}],

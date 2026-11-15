@@ -15,6 +15,17 @@ const PROMPT_PREVIEW_LENGTH = 80;
 const RESPONSE_PREVIEW_LENGTH = 120;
 export const PAGE_SIZE = 50;
 
+export const CHANNEL_META = {
+  web: { label: 'Web', className: 'badge badge--web' },
+  telegram: { label: 'Telegram', className: 'badge badge--telegram' },
+  widget: { label: 'Widget', className: 'badge badge--widget' },
+};
+
+export function ChannelBadge({ channel }) {
+  const meta = CHANNEL_META[channel || 'web'] || CHANNEL_META.web;
+  return <span className={meta.className}>{meta.label}</span>;
+}
+
 export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
   const [logs, setLogs] = useState([]);
   const [total, setTotal] = useState(0);
@@ -23,6 +34,7 @@ export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
   const [feedbackFilter, setFeedbackFilter] = useState('all');
   const [workspaceFilter, setWorkspaceFilter] = useState('');
   const [rangeFilter, setRangeFilter] = useState('all');
+  const [channelFilter, setChannelFilter] = useState('all');
   const [workspaces, setWorkspaces] = useState(initialWorkspaces);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -65,6 +77,8 @@ export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
           overrides.handoffFilter !== undefined ? overrides.handoffFilter : handoffFilter;
         const activeFeedback =
           overrides.feedbackFilter !== undefined ? overrides.feedbackFilter : feedbackFilter;
+        const activeChannel =
+          overrides.channelFilter !== undefined ? overrides.channelFilter : channelFilter;
         const activeOffset = overrides.offset !== undefined ? overrides.offset : offset;
 
         const params = {
@@ -76,6 +90,7 @@ export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
         if (activeHandoff === 'yes') params.needsHandoff = true;
         if (activeHandoff === 'no') params.needsHandoff = false;
         if (activeFeedback !== 'all') params.feedback = activeFeedback;
+        if (activeChannel !== 'all') params.channel = activeChannel;
 
         const data = await api.getWorkspaceChatLogs(params);
         setLogs(data.results || []);
@@ -87,7 +102,7 @@ export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
         setLoading(false);
       }
     },
-    [offset, handoffFilter, feedbackFilter, workspaceFilter, rangeFilter],
+    [offset, handoffFilter, feedbackFilter, workspaceFilter, rangeFilter, channelFilter],
   );
 
   useEffect(() => {
@@ -143,6 +158,7 @@ export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
       if (feedbackFilter !== 'all') payload.feedback = feedbackFilter;
       if (workspaceFilter) payload.workspace_id = workspaceFilter;
       if (rangeFilter !== 'all') payload.range = rangeFilter;
+      if (channelFilter !== 'all') payload.channel = channelFilter;
       setAnalysis(await api.analyzeWorkspaceChatLogs(payload));
     } catch (err) {
       console.error('Failed to analyze chat table:', err);
@@ -155,7 +171,7 @@ export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
     } finally {
       setAnalysisLoading(false);
     }
-  }, [feedbackFilter, handoffFilter, workspaceFilter, rangeFilter]);
+  }, [feedbackFilter, handoffFilter, workspaceFilter, rangeFilter, channelFilter]);
 
   useEffect(() => {
     if (!analysisOpen) {
@@ -169,6 +185,7 @@ export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
     range: rangeFilter !== 'all' ? rangeFilter : undefined,
     needs_handoff: handoffFilter === 'yes' ? true : handoffFilter === 'no' ? false : undefined,
     feedback: feedbackFilter !== 'all' ? feedbackFilter : undefined,
+    channel: channelFilter !== 'all' ? channelFilter : undefined,
   };
 
   const exportItems = EXPORT_FORMATS.map((item) => ({
@@ -209,6 +226,11 @@ export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
     setFeedbackFilter(value);
   };
 
+  const onChannelFilterChange = (value) => {
+    setOffset(0);
+    setChannelFilter(value);
+  };
+
   const canPrev = offset > 0;
   const canNext = offset + PAGE_SIZE < total;
 
@@ -223,6 +245,9 @@ export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
     feedbackFilter,
     setFeedbackFilter,
     onFeedbackFilterChange,
+    channelFilter,
+    setChannelFilter,
+    onChannelFilterChange,
     workspaceFilter,
     setWorkspaceFilter,
     onWorkspaceFilterChange,
@@ -262,6 +287,8 @@ function WorkspaceChatsPage({ initialWorkspaces } = {}) {
     onHandoffFilterChange,
     feedbackFilter,
     onFeedbackFilterChange,
+    channelFilter,
+    onChannelFilterChange,
     workspaceFilter,
     onWorkspaceFilterChange,
     rangeFilter,
@@ -386,6 +413,20 @@ function WorkspaceChatsPage({ initialWorkspaces } = {}) {
             </select>
           </div>
           <div className="form__group">
+            <label htmlFor="filter_channel">Джерело</label>
+            <select
+              id="filter_channel"
+              className="select"
+              value={channelFilter}
+              onChange={(e) => onChannelFilterChange(e.target.value)}
+            >
+              <option value="all">Усі</option>
+              <option value="web">Web</option>
+              <option value="telegram">Telegram</option>
+              <option value="widget">Widget</option>
+            </select>
+          </div>
+          <div className="form__group">
             <label htmlFor="filter_handoff">Handoff</label>
             <select
               id="filter_handoff"
@@ -444,7 +485,12 @@ function WorkspaceChatsPage({ initialWorkspaces } = {}) {
                   {logs.map((log) => (
                     <tr key={log.id}>
                       <td>{log.id}</td>
-                      <td>{log.sent_by}</td>
+                      <td>
+                        <div className="sent-by-cell">
+                          <span>{log.sent_by}</span>
+                          <ChannelBadge channel={log.channel} />
+                        </div>
+                      </td>
                       <td>{log.workspace}</td>
                       <td className="table__cell--truncate" title={log.prompt}>
                         {truncateText(log.prompt, PROMPT_PREVIEW_LENGTH)}

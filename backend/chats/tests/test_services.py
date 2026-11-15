@@ -190,3 +190,31 @@ class LogWorkspaceChatExchangeTests(TestCase):
             response='Hello',
         )
         self.assertEqual(entry.sent_by, 'widget-guest')
+        self.assertEqual(entry.channel, 'web')
+
+    def test_persists_channel_and_normalizes_invalid_value(self):
+        """Джерело channel зберігається для відомих каналів і відкочується на web для невалідного."""
+        tg_entry = log_workspace_chat_exchange(
+            workspace=self.workspace,
+            sent_by='@student (@bot)',
+            channel='telegram',
+            prompt='Питання з Telegram',
+            response='Відповідь',
+        )
+        widget_entry = log_workspace_chat_exchange(
+            workspace=self.workspace,
+            sent_by='Widget (Site)',
+            channel='widget',
+            prompt='Питання з віджета',
+            response='Відповідь',
+        )
+        fallback_entry = log_workspace_chat_exchange(
+            workspace=self.workspace,
+            user=self.user,
+            channel='unknown-channel',
+            prompt='Невалідний канал',
+            response='Відповідь',
+        )
+        self.assertEqual(tg_entry.channel, 'telegram')
+        self.assertEqual(widget_entry.channel, 'widget')
+        self.assertEqual(fallback_entry.channel, 'web')

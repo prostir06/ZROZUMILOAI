@@ -19,7 +19,7 @@ SUPPORTED_EXPORT_FORMATS = frozenset({
     'json-alpaca',
 })
 
-EXPORT_FIELDNAMES = ('id', 'sent_by', 'workspace', 'prompt', 'response', 'sent_at')
+EXPORT_FIELDNAMES = ('id', 'sent_by', 'channel', 'workspace', 'prompt', 'response', 'sent_at')
 
 
 def _get_query_param(request, key):
@@ -58,6 +58,7 @@ def serialize_log_row(log):
     return {
         'id': log.id,
         'sent_by': log.sent_by,
+        'channel': getattr(log, 'channel', '') or 'web',
         'workspace': workspace_name,
         'prompt': log.prompt,
         'response': log.response,

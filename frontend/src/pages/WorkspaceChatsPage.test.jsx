@@ -1,7 +1,7 @@
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import WorkspaceChatsPage, { useWorkspaceChats } from './WorkspaceChatsPage';
+import WorkspaceChatsPage, { ChannelBadge, useWorkspaceChats } from './WorkspaceChatsPage';
 import { api } from '../api/client';
 
 function findSelects(element) {
@@ -41,6 +41,13 @@ describe('WorkspaceChatsPage filters', () => {
     expect(html).toContain('Сьогодні');
     expect(html).toContain('Останні 7 днів');
     expect(html).toContain('Останні 30 днів');
+
+    // Channel filter
+    expect(html).toContain('id="filter_channel"');
+    expect(html).toContain('Джерело');
+    expect(html).toContain('<option value="web">Web</option>');
+    expect(html).toContain('<option value="telegram">Telegram</option>');
+    expect(html).toContain('<option value="widget">Widget</option>');
   });
 
   it('renders workspace options populated from workspaces state', () => {
@@ -109,13 +116,15 @@ describe('WorkspaceChatsPage filters', () => {
 
     expect(hookResult.workspaceFilter).toBe('');
     expect(hookResult.rangeFilter).toBe('all');
+    expect(hookResult.channelFilter).toBe('all');
 
-    // Test loadLogs with workspace and range filters
+    // Test loadLogs with workspace, range, and channel filters
     await hookResult.loadLogs({
       workspace_id: '2',
       range: '7d',
       handoffFilter: 'yes',
       feedbackFilter: 'up',
+      channelFilter: 'telegram',
     });
 
     expect(api.getWorkspaceChatLogs).toHaveBeenCalledWith(
@@ -124,6 +133,7 @@ describe('WorkspaceChatsPage filters', () => {
         range: '7d',
         needsHandoff: true,
         feedback: 'up',
+        channel: 'telegram',
       }),
     );
   });
@@ -165,6 +175,7 @@ describe('ApiClient chats logs parameters and export URL generator', () => {
       range: 'today',
       needs_handoff: true,
       feedback: 'up',
+      channel: 'widget',
     });
 
     expect(url).toContain('export_format=csv');
@@ -172,6 +183,7 @@ describe('ApiClient chats logs parameters and export URL generator', () => {
     expect(url).toContain('range=today');
     expect(url).toContain('needs_handoff=true');
     expect(url).toContain('feedback=up');
+    expect(url).toContain('channel=widget');
   });
 
   it('passes workspace_id and range query parameters in getWorkspaceChatLogs', async () => {
@@ -186,6 +198,7 @@ describe('ApiClient chats logs parameters and export URL generator', () => {
         workspace_id: 12,
         range: '30d',
         needsHandoff: true,
+        channel: 'web',
       });
 
       expect(api.request).toHaveBeenCalledTimes(1);
@@ -193,6 +206,7 @@ describe('ApiClient chats logs parameters and export URL generator', () => {
       expect(requestedPath).toContain('workspace_id=12');
       expect(requestedPath).toContain('range=30d');
       expect(requestedPath).toContain('needs_handoff=true');
+      expect(requestedPath).toContain('channel=web');
     } finally {
       api.request = originalRequest;
     }
@@ -211,5 +225,21 @@ describe('ApiClient chats logs parameters and export URL generator', () => {
     renderToString(React.createElement(TestComponent));
     await expect(hookResult.loadLogs()).resolves.not.toThrow();
     expect(consoleSpy).toHaveBeenCalledWith('Failed to load workspace chat logs:', expect.any(Error));
+  });
+
+  it('renders channel badges for web, telegram, widget and defaults unknown channels to web', () => {
+    const webHtml = renderToString(<ChannelBadge channel="web" />);
+    const tgHtml = renderToString(<ChannelBadge channel="telegram" />);
+    const widgetHtml = renderToString(<ChannelBadge channel="widget" />);
+    const fallbackHtml = renderToString(<ChannelBadge channel="" />);
+
+    expect(webHtml).toContain('badge badge--web');
+    expect(webHtml).toContain('Web');
+    expect(tgHtml).toContain('badge badge--telegram');
+    expect(tgHtml).toContain('Telegram');
+    expect(widgetHtml).toContain('badge badge--widget');
+    expect(widgetHtml).toContain('Widget');
+    expect(fallbackHtml).toContain('badge badge--web');
+    expect(fallbackHtml).toContain('Web');
   });
 });

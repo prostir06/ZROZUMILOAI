@@ -216,3 +216,44 @@ class WorkspaceChatLogApiTests(APITestCase):
         self.assertNotIn(old_log.id, ids)
         self.assertIn(self.log.id, ids)
 
+    def test_filter_by_channel_and_serializer_exposes_channel(self):
+        """Фільтр ?channel= відбирає лише записи відповідного каналу, а API повертає поле channel."""
+        tg_log = WorkspaceChatLog.objects.create(
+            sent_by='@student (@help_bot)',
+            channel='telegram',
+            workspace=self.workspace,
+            prompt='TG prompt',
+            response='TG response',
+        )
+        widget_log = WorkspaceChatLog.objects.create(
+            sent_by='Widget (Site)',
+            channel='widget',
+            workspace=self.workspace,
+            prompt='Widget prompt',
+            response='Widget response',
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        resp_tg = self.client.get(f'{self.list_url}?channel=telegram')
+        self.assertEqual(resp_tg.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_tg.data['count'], 1)
+        self.assertEqual(resp_tg.data['results'][0]['id'], tg_log.id)
+        self.assertEqual(resp_tg.data['results'][0]['channel'], 'telegram')
+
+        resp_widget = self.client.get(f'{self.list_url}?channel=widget')
+        self.assertEqual(resp_widget.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_widget.data['count'], 1)
+        self.assertEqual(resp_widget.data['results'][0]['id'], widget_log.id)
+        self.assertEqual(resp_widget.data['results'][0]['channel'], 'widget')
+
+        resp_web = self.client.get(f'{self.list_url}?channel=web')
+        self.assertEqual(resp_web.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_web.data['count'], 1)
+        self.assertEqual(resp_web.data['results'][0]['id'], self.log.id)
+        self.assertEqual(resp_web.data['results'][0]['channel'], 'web')
+
+        # Невідоме значення channel ігнорується (повертаються всі записи)
+        resp_invalid = self.client.get(f'{self.list_url}?channel=sms')
+        self.assertEqual(resp_invalid.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_invalid.data['count'], 3)
+

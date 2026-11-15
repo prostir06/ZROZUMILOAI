@@ -68,6 +68,7 @@ class WorkspaceChatLogSerializer(serializers.ModelSerializer):
         fields = (
             'id',
             'sent_by',
+            'channel',
             'workspace',
             'prompt',
             'response',

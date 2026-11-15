@@ -210,6 +210,7 @@ class ChatView(APIView):
             stream=stream,
             workspace=workspace,
             user=request.user,
+            channel='web',
             prompt=extract_prompt_from_messages(messages),
             meilisearch_course_id=course_id,
         )

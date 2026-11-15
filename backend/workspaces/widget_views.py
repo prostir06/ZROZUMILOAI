@@ -134,6 +134,14 @@ class WidgetChatView(APIView):
                 (request.data.get('openedx_course_id') or '').strip() or None
             )
 
+        widget_token = getattr(request, 'auth', None)
+        token_label = (
+            ((getattr(widget_token, 'label', '') or '').strip() or getattr(widget_token, 'token_prefix', ''))
+            if widget_token is not None
+            else ''
+        )
+        widget_sender = f'Widget ({token_label})'[:150] if token_label else 'Widget guest'
+
         try:
             return run_chat(
                 model=model,
@@ -141,6 +149,8 @@ class WidgetChatView(APIView):
                 stream=stream,
                 workspace=workspace,
                 user=None,
+                sent_by=widget_sender,
+                channel='widget',
                 prompt=extract_prompt_from_messages(messages),
                 meilisearch_course_id=course_id,
             )

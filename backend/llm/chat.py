@@ -130,6 +130,8 @@ def run_chat(
     workspace,
     user,
     prompt,
+    sent_by='',
+    channel='web',
     meilisearch_course_id=None,
 ):
     """
@@ -239,6 +241,8 @@ def run_chat(
                     log = _safe_log_exchange(
                         workspace=workspace,
                         user=user,
+                        sent_by=sent_by,
+                        channel=channel,
                         prompt=log_prompt,
                         response=''.join(accumulated),
                         needs_handoff=needs_handoff,
@@ -296,6 +300,8 @@ def run_chat(
         log = _safe_log_exchange(
             workspace=workspace,
             user=user,
+            sent_by=sent_by,
+            channel=channel,
             prompt=log_prompt,
             response=extract_response_from_ollama_payload(parsed),
             needs_handoff=needs_handoff,
