@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Daily DB backup via Django management command (RPO target: 24h).
+# Daily backup via Django management command (outputs .tar.gz containing DB dump, media/, manifest.json; RPO target: 24h).
 # Install (Linux VPS, from repo root):
 #   chmod +x scripts/backup-cron.sh
 #   crontab -e
@@ -15,6 +15,7 @@ COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.prod.yml)
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
 
 echo "[$(date -Iseconds)] backup start"
+# create_backup outputs a complete .tar.gz archive containing database dump, media/, and manifest.json
 FILENAME="$("${COMPOSE[@]}" exec -T backend python manage.py create_backup)"
 echo "[$(date -Iseconds)] created: ${FILENAME}"
 
@@ -23,7 +24,8 @@ if [ -n "${BACKUP_OFFBOX_CMD:-}" ]; then
   sh -c "${BACKUP_OFFBOX_CMD}"
 fi
 
-# Prune local files older than KEEP_DAYS (off-box copies are the source of truth).
+# Prune local backups older than KEEP_DAYS (off-box copies are the source of truth).
+# Primary format is *.tar.gz; legacy formats (*.sql.gz, *.sql, *.sqlite3, *.db) are kept for cleanup.
 if [[ -d ./backup ]]; then
   find ./backup -type f \( -name '*.tar.gz' -o -name '*.sql.gz' -o -name '*.sql' -o -name '*.sqlite3' -o -name '*.db' \) -mtime "+${KEEP_DAYS}" -print -delete || true
 fi

@@ -44,7 +44,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec ollama olla
 
 ## Backup (RPO 24h)
 
-Створення (повний архів `.tar.gz` з дампом БД та `media/` або legacy `.sql.gz`/`.sql`):
+Створення (повний архів `.tar.gz` з дампом БД, `media/` та `manifest.json`):
 
 ```bash
 ./scripts/backup-cron.sh
@@ -69,8 +69,8 @@ export BACKUP_OFFBOX_CMD="rclone copy ./backup remote:zrozumiloai-backups"
 ### Restore drill (раз на квартал)
 
 1. Зупиніть write-навантаження / візьміть maintenance window.
-2. Покладіть потрібний архів `.tar.gz` (або `.sql.gz` / `.sql`) у `./backup/` (найновіший підхопить `find_latest_backup`).
-3. Відновлення через entrypoint:
+2. Покладіть найновіший архів `.tar.gz` у `./backup/` (найновіший архів `.tar.gz` підхопить `find_latest_backup`).
+3. Встановіть `FORCE_DB_RESTORE=1` і перезапустіть backend для відновлення через entrypoint:
 
 ```bash
 FORCE_DB_RESTORE=1 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d backend
@@ -79,7 +79,11 @@ FORCE_DB_RESTORE=1 docker compose -f docker-compose.yml -f docker-compose.prod.y
 Або вручну: `docker compose … exec backend python manage.py restore_backup` (потрібен `FORCE_DB_RESTORE=1` у env контейнера).
 
 4. Перевірте health (`/api/health/?strict=1`), логін, один widget chat, один документ у RAG.
-5. Зніміть `FORCE_DB_RESTORE` назад на `0`.
+5. Зніміть `FORCE_DB_RESTORE` назад на `0` (revert `FORCE_DB_RESTORE` back to `0`) і перезапустіть backend без прапорця відновлення, щоб запобігти випадковому повторному відновленню при наступних перезапусках:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d backend
+```
 
 ## Incidents
 
