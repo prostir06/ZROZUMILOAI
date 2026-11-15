@@ -24,6 +24,10 @@ class HealthEndpointTests(TestCase):
         self.assertEqual(data['ollama'], 'ok')
         self.assertIn(data.get('cache'), ('ok', 'miss', 'error', 'unknown'))
 
+        res_strict = self.client.get(f"{reverse('api_health')}?strict=1")
+        self.assertEqual(res_strict.status_code, 200)
+        self.assertEqual(res_strict.json()['status'], 'ok')
+
     @patch('config.health.OllamaService')
     def test_health_degraded_200_by_default_and_503_with_strict_when_ollama_down(
         self,
@@ -42,6 +46,24 @@ class HealthEndpointTests(TestCase):
         self.assertEqual(res_strict.json()['ollama'], 'error')
 
     @patch('config.health.OllamaService')
+    def test_health_degraded_when_ollama_raises_exception(
+        self,
+        mock_ollama_cls,
+    ):
+        mock_ollama_cls.return_value.health.side_effect = ConnectionError('Ollama unreachable')
+
+        res_default = self.client.get(reverse('api_health'))
+        self.assertEqual(res_default.status_code, 200)
+        self.assertEqual(res_default.json()['status'], 'degraded')
+        self.assertEqual(res_default.json()['ollama'], 'error')
+
+        cache.clear()
+        res_strict = self.client.get(f"{reverse('api_health')}?strict=1")
+        self.assertEqual(res_strict.status_code, 503)
+        self.assertEqual(res_strict.json()['status'], 'degraded')
+        self.assertEqual(res_strict.json()['ollama'], 'error')
+
+    @patch('config.health.OllamaService')
     @patch('config.health.connection')
     def test_health_degraded_when_database_fails(
         self,
@@ -50,11 +72,20 @@ class HealthEndpointTests(TestCase):
     ):
         mock_ollama_cls.return_value.health.return_value = True
         mock_connection.ensure_connection.side_effect = DatabaseError('down')
+
+        # Non-strict must return HTTP 503
         response = self.client.get(reverse('api_health'))
         self.assertEqual(response.status_code, 503)
         data = response.json()
         self.assertEqual(data['status'], 'degraded')
         self.assertEqual(data['database'], 'error')
+
+        # Strict must also return HTTP 503
+        res_strict = self.client.get(f"{reverse('api_health')}?strict=1")
+        self.assertEqual(res_strict.status_code, 503)
+        data_strict = res_strict.json()
+        self.assertEqual(data_strict['status'], 'degraded')
+        self.assertEqual(data_strict['database'], 'error')
 
     @patch('config.health.OllamaService')
     def test_check_ollama_status_caches_result_for_subsequent_calls(

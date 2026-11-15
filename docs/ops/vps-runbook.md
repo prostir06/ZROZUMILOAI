@@ -28,15 +28,26 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec ollama olla
 
 **Remote Ollama (пізніше):** у `.env` задайте `OLLAMA_BASE_URL=http://gpu-host:11434` і за потреби вимкніть локальний сервіс `ollama` (scale 0 / окремий compose без ollama).
 
-## Health
+## Health & Monitoring Contract
 
-| Check | Як |
-|-------|-----|
-| App (Docker / proxy) | `curl -fsS https://your.domain/api/health/` → 200 (поки жива БД; містить поля `database`, `cache`, `ollama`) |
-| Strict (Uptime monitor) | `curl -fsS "https://your.domain/api/health/?strict=1"` → 200 якщо всі сервіси `ok`, або 503 якщо `ollama != ok` (`status: degraded`) |
-| Containers | `docker compose -f docker-compose.yml -f docker-compose.prod.yml ps` |
-| Ollama (auth) | `GET /api/ollama/health/` з JWT / API key |
-| External uptime | HTTP GET `/api/health/?strict=1` і `/` кожні 1–5 хв (UptimeRobot тощо; статус Ollama кешується на 10 с) |
+Система має чіткий дуальний контракт для внутрішнього liveness check та зовнішнього моніторингу:
+
+1. **`/api/health/` (Docker Compose / internal container liveness):**
+   - **Контракт:** повертає **HTTP 200**, поки доступна база даних (`database: "ok"`). Якщо БД недоступна, повертає **HTTP 503** (`status: "degraded"`, `database: "error"`).
+   - **Мета:** запобігти деструктивним каскадним перезапускам контейнера `backend` під час пікового навантаження на Ollama, завантаження великих моделей або рестарту самого контейнера `ollama`. Поки БД доступна, бекенд залишається живим і повертає контрольовані відповіді (наприклад, `503 ollama_busy` або кешовані дані).
+
+2. **`/api/health/?strict=1` (External alerting / UptimeRobot / BetterUptime):**
+   - **Контракт:** повертає **HTTP 200** тільки якщо всі підсистеми у статусі `ok`. Якщо будь-яка підсистема деградувала (зокрема `ollama: "error"` або `database: "error"`), повертає **HTTP 503** (`status: "degraded"`).
+   - **Мета:** негайно тригерити сповіщення для чергових інженерів (SLA / Ops alert) про деградацію генерації відповідей чи ембедингів без перезапуску самого контейнера бекенда.
+   - **Кешування:** статус Ollama кешується на 10 с (`OLLAMA_HEALTH_CACHE_TTL`), щоб регулярні проби моніторингу не створювали паразитне навантаження на Ollama.
+
+| Check | Як | Очікувана поведінка |
+|-------|-----|----------------------|
+| App (Docker Compose liveness) | `curl -fsS https://your.domain/api/health/` | HTTP 200 (поки жива БД; стан може бути `degraded`, але без рестарту контейнера). HTTP 503 якщо впала БД. |
+| Strict (External uptime monitor) | `curl -fsS "https://your.domain/api/health/?strict=1"` | HTTP 200 якщо всі сервіси `ok`; HTTP 503 як тільки будь-яка підсистема (`ollama`, `database`) деградує. |
+| Containers | `docker compose -f docker-compose.yml -f docker-compose.prod.yml ps` | Перегляд стану контейнерів. |
+| Ollama (auth) | `GET /api/ollama/health/` з JWT / API key | Діагностика працездатності Ollama через проксі. |
+| External uptime | HTTP GET `/api/health/?strict=1` і `/` кожні 1–5 хв | UptimeRobot / BetterUptime (alerting при HTTP != 200). |
 
 Логи: JSON з `request_id` при `DJANGO_LOG_FORMAT=json` (prod default).
 
