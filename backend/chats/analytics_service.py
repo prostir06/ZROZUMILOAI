@@ -55,7 +55,15 @@ def get_workspace_analytics(
         handoff_count=Count('id', filter=Q(needs_handoff=True)),
         feedback_up=Count('id', filter=Q(feedback='up')),
         feedback_down=Count('id', filter=Q(feedback='down')),
+        channel_web=Count('id', filter=Q(channel=WorkspaceChatLog.Channel.WEB)),
+        channel_telegram=Count('id', filter=Q(channel=WorkspaceChatLog.Channel.TELEGRAM)),
+        channel_widget=Count('id', filter=Q(channel=WorkspaceChatLog.Channel.WIDGET)),
     )
+    channels = {
+        'web': totals['channel_web'] or 0,
+        'telegram': totals['channel_telegram'] or 0,
+        'widget': totals['channel_widget'] or 0,
+    }
     total_queries = totals['total_queries'] or 0
     unique_users = totals['unique_users'] or 0
     handoff_count = totals['handoff_count'] or 0
@@ -89,6 +97,8 @@ def get_workspace_analytics(
         {
             'id': log.id,
             'created_at': log.created_at.isoformat() if log.created_at else '',
+            'sent_by': log.sent_by or '',
+            'channel': log.channel or 'web',
             'prompt': log.prompt,
             'response_snippet': (log.response or '')[:160],
             'needs_handoff': log.needs_handoff,
@@ -129,6 +139,7 @@ def get_workspace_analytics(
         'range': date_range,
         'total_queries': total_queries,
         'unique_users': unique_users,
+        'channels': channels,
         'handoff_count': handoff_count,
         'handoff_rate': handoff_rate,
         'feedback_up': feedback_up,

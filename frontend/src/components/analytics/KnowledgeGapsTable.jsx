@@ -41,6 +41,16 @@ function renderReasonBadge(reason) {
   return <span className="gap-badge">{reason || '—'}</span>;
 }
 
+function renderChannelBadge(channel) {
+  if (channel === 'telegram') {
+    return <span className="badge badge--telegram">Telegram</span>;
+  }
+  if (channel === 'widget') {
+    return <span className="badge badge--widget">Widget</span>;
+  }
+  return <span className="badge badge--web">Web</span>;
+}
+
 function renderStatusBadge(isResolved) {
   if (isResolved) {
     return (
@@ -139,6 +149,7 @@ export default function KnowledgeGapsTable({
             <thead>
               <tr>
                 <th>Дата</th>
+                <th>Джерело</th>
                 <th>Питання</th>
                 <th>Причина</th>
                 <th>Статус</th>
@@ -152,6 +163,14 @@ export default function KnowledgeGapsTable({
                 return (
                   <tr key={gap.id}>
                     <td className="knowledge-gaps-table__date">{formatDate(gap.created_at)}</td>
+                    <td className="knowledge-gaps-table__channel">
+                      {renderChannelBadge(gap.channel)}
+                      {gap.sent_by && (
+                        <span className="knowledge-gaps-table__sender" title={gap.sent_by}>
+                          {gap.sent_by}
+                        </span>
+                      )}
+                    </td>
                     <td className="knowledge-gaps-table__prompt">
                       <strong>{gap.prompt}</strong>
                     </td>

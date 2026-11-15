@@ -30,6 +30,10 @@ class WorkspaceAnalyticsServiceTests(APITestCase):
         analytics = get_workspace_analytics(self.workspace, date_range='all')
         self.assertEqual(analytics['total_queries'], 0)
         self.assertEqual(analytics['unique_users'], 0)
+        self.assertEqual(
+            analytics['channels'],
+            {'web': 0, 'telegram': 0, 'widget': 0},
+        )
         self.assertEqual(analytics['handoff_count'], 0)
         self.assertEqual(analytics['handoff_rate'], 0.0)
         self.assertEqual(analytics['feedback_up'], 0)
@@ -360,6 +364,42 @@ class WorkspaceAnalyticsServiceTests(APITestCase):
         resolved_ids = [g['id'] for g in resolved_analytics['knowledge_gaps']]
         self.assertNotIn(log_open.id, resolved_ids)
         self.assertIn(log_resolved.id, resolved_ids)
+
+    def test_channels_breakdown_and_gap_channel_metadata(self):
+        """Розподіл каналів (web/telegram/widget) та метадані джерела в knowledge_gaps."""
+        WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='web_user',
+            channel='web',
+            prompt='Web питання',
+            response='Web відповідь',
+        )
+        tg_gap = WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='@tg_student (@help_bot)',
+            channel='telegram',
+            prompt='Telegram питання без відповіді',
+            response='Звертаюсь до викладача',
+            needs_handoff=True,
+        )
+        WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='Widget (Site)',
+            channel='widget',
+            prompt='Widget питання',
+            response='Widget відповідь',
+        )
+
+        analytics = get_workspace_analytics(self.workspace, date_range='all')
+        self.assertEqual(
+            analytics['channels'],
+            {'web': 1, 'telegram': 1, 'widget': 1},
+        )
+        self.assertEqual(len(analytics['knowledge_gaps']), 1)
+        gap = analytics['knowledge_gaps'][0]
+        self.assertEqual(gap['id'], tg_gap.id)
+        self.assertEqual(gap['channel'], 'telegram')
+        self.assertEqual(gap['sent_by'], '@tg_student (@help_bot)')
 
 
 class WorkspaceAnalyticsApiTests(APITestCase):

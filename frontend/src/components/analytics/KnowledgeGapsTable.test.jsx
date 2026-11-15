@@ -23,6 +23,8 @@ describe('KnowledgeGapsTable component', () => {
     {
       id: 1,
       created_at: '2026-11-06T12:00:00Z',
+      sent_by: '@student (@help_bot)',
+      channel: 'telegram',
       prompt: 'Як отримати сертифікат після курсу?',
       response_snippet: 'На жаль, у наданих матеріалах немає точної інформації.',
       needs_handoff: true,
@@ -33,6 +35,8 @@ describe('KnowledgeGapsTable component', () => {
     {
       id: 2,
       created_at: '2026-11-06T13:30:00Z',
+      sent_by: 'Widget (Main)',
+      channel: 'widget',
       prompt: 'Які дедлайни другого модуля?',
       response_snippet: 'Дедлайн 15 числа.',
       needs_handoff: false,
@@ -42,7 +46,7 @@ describe('KnowledgeGapsTable component', () => {
     },
   ];
 
-  it('renders table with prompt, reason badges, response snippet, and action button', () => {
+  it('renders table with prompt, source badges, reason badges, response snippet, and action button', () => {
     const html = renderToString(
       <KnowledgeGapsTable gaps={mockGaps} onUploadClick={() => {}} />,
     );
@@ -50,11 +54,20 @@ describe('KnowledgeGapsTable component', () => {
     // Table container and headers
     expect(html).toContain('knowledge-gaps-table');
     expect(html).toContain('Дата');
+    expect(html).toContain('Джерело');
     expect(html).toContain('Питання');
     expect(html).toContain('Причина');
     expect(html).toContain('Статус');
     expect(html).toContain('Відповідь ШІ');
     expect(html).toContain('Дія');
+
+    // Source channel badges and senders
+    expect(html).toContain('badge badge--telegram');
+    expect(html).toContain('Telegram');
+    expect(html).toContain('@student (@help_bot)');
+    expect(html).toContain('badge badge--widget');
+    expect(html).toContain('Widget');
+    expect(html).toContain('Widget (Main)');
 
     // Row contents & prompts
     expect(html).toContain('Як отримати сертифікат після курсу?');

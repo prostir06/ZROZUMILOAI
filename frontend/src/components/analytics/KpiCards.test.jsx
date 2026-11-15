@@ -79,5 +79,28 @@ describe('KpiCards component', () => {
     expect(htmlNull).toContain('kpi-grid');
     expect(htmlNull).not.toContain('NaN');
     expect(htmlNull).toContain('Всього запитів');
+    expect(htmlNull).toContain('Web: 0');
+    expect(htmlNull).toContain('Telegram: 0');
+    expect(htmlNull).toContain('Widget: 0');
+  });
+
+  it('renders channel breakdown badges from analytics.channels', () => {
+    const html = renderToString(
+      <KpiCards
+        analytics={{
+          total_queries: 15,
+          unique_users: 7,
+          channels: { web: 8, telegram: 4, widget: 3 },
+        }}
+      />,
+    );
+
+    expect(html).toContain('Розподіл за каналами');
+    expect(html).toContain('badge badge--web');
+    expect(html).toContain('Web: 8');
+    expect(html).toContain('badge badge--telegram');
+    expect(html).toContain('Telegram: 4');
+    expect(html).toContain('badge badge--widget');
+    expect(html).toContain('Widget: 3');
   });
 });

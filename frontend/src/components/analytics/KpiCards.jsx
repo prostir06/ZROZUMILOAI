@@ -12,6 +12,10 @@ export default function KpiCards({ analytics = null, isLoading = false }) {
 
   const totalQueries = Number(data.total_queries ?? 0);
   const uniqueUsers = Number(data.unique_users ?? 0);
+  const channels = data.channels || {};
+  const webCount = Number(channels.web ?? 0);
+  const telegramCount = Number(channels.telegram ?? 0);
+  const widgetCount = Number(channels.widget ?? 0);
   const csatScore = Number(data.csat_score ?? 0);
   const feedbackUp = Number(data.feedback_up ?? 0);
   const feedbackDown = Number(data.feedback_down ?? 0);
@@ -39,10 +43,21 @@ export default function KpiCards({ analytics = null, isLoading = false }) {
         <div className="kpi-card__value">
           {formattedTotalQueries}
         </div>
-        <footer className="kpi-card__footer">
+        <footer className="kpi-card__footer kpi-card__footer--stacked">
           <span className="kpi-card__badge">
             <span className="kpi-card__badge-count">{uniqueUsers}</span> унікальних користувачів
           </span>
+          <div className="kpi-card__channels" aria-label="Розподіл за каналами">
+            <span className="badge badge--web" title="Веб-інтерфейс">
+              {`Web: ${Number.isFinite(webCount) ? webCount : 0}`}
+            </span>
+            <span className="badge badge--telegram" title="Telegram-бот">
+              {`Telegram: ${Number.isFinite(telegramCount) ? telegramCount : 0}`}
+            </span>
+            <span className="badge badge--widget" title="Вбудований віджет">
+              {`Widget: ${Number.isFinite(widgetCount) ? widgetCount : 0}`}
+            </span>
+          </div>
         </footer>
       </article>
 
