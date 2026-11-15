@@ -1,6 +1,7 @@
 """Аналіз таблиці Chats Info локальною моделлю."""
 from unittest.mock import MagicMock, patch
 
+import requests
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
@@ -8,7 +9,7 @@ from rest_framework.test import APITestCase
 
 from chats.models import WorkspaceChatLog
 from chats.table_analysis import parse_model_analysis, pick_chat_model
-from llm.admission import OllamaBusy
+from llm.admission import AdmissionUnavailable, OllamaBusy
 from llm.base import LLMProviderError
 from workspaces.models import Workspace
 
@@ -140,6 +141,36 @@ class WorkspaceChatLogAnalysisApiTests(APITestCase):
         provider = MagicMock()
         provider.list_models.return_value = {'models': [{'name': 'qwen3:latest'}]}
         provider.chat.side_effect = LLMProviderError('down')
+        provider_cls.return_value = provider
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.post(self.url, {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        release.assert_called_once_with('token-1')
+
+    @patch('chats.log_views.release_ollama_slot')
+    @patch('chats.log_views.acquire_ollama_slot', side_effect=AdmissionUnavailable('redis down'))
+    @patch('chats.log_views.OllamaProvider')
+    def test_admission_unavailable_returns_503(self, provider_cls, _acquire, release):
+        provider_cls.return_value.list_models.return_value = {
+            'models': [{'name': 'qwen3:latest'}],
+        }
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.post(self.url, {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        provider_cls.return_value.chat.assert_not_called()
+        release.assert_called_once_with(None)
+
+    @patch('chats.log_views.release_ollama_slot')
+    @patch('chats.log_views.acquire_ollama_slot', return_value='token-1')
+    @patch('chats.log_views.OllamaProvider')
+    def test_request_exception_returns_503_and_releases_slot(self, provider_cls, _acquire, release):
+        provider = MagicMock()
+        provider.list_models.return_value = {'models': [{'name': 'qwen3:latest'}]}
+        provider.chat.side_effect = requests.RequestException('timeout')
         provider_cls.return_value = provider
         self.client.force_authenticate(user=self.admin)
 

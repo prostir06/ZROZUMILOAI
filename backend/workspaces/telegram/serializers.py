@@ -1,7 +1,33 @@
 """Serializers for Telegram bot integration."""
+import logging
+
 from rest_framework import serializers
 
 from workspaces.models import TelegramBot
+from workspaces.telegram.client import TelegramClient
+
+logger = logging.getLogger(__name__)
+
+
+def _apply_and_verify_token(bot: TelegramBot, token: str) -> None:
+    """Зашифрувати токен і перевірити профіль бота через Telegram getMe."""
+    bot.set_token(token)
+    try:
+        me = TelegramClient().get_me(token)
+    except Exception as exc:
+        logger.warning('Unexpected error verifying Telegram token: %s', exc, exc_info=True)
+        bot.last_error = str(exc) or 'Не вдалося перевірити токен'
+        return
+
+    if isinstance(me, dict) and me.get('ok') and isinstance(me.get('result'), dict):
+        bot.bot_username = me['result'].get('username') or ''
+        bot.last_error = ''
+    elif isinstance(me, dict) and me.get('ok'):
+        bot.last_error = 'Некоректна відповідь Telegram API'
+    elif isinstance(me, dict):
+        bot.last_error = me.get('description') or 'Не вдалося перевірити токен'
+    else:
+        bot.last_error = 'Некоректна відповідь Telegram API'
 
 
 class TelegramBotSerializer(serializers.ModelSerializer):
@@ -36,15 +62,7 @@ class TelegramBotSerializer(serializers.ModelSerializer):
         token = validated_data.pop('token', None)
         bot = TelegramBot(**validated_data)
         if token:
-            bot.set_token(token)
-            from workspaces.telegram.client import TelegramClient
-
-            me = TelegramClient().get_me(token)
-            if me.get('ok') and 'result' in me:
-                bot.bot_username = me['result'].get('username', '')
-                bot.last_error = ''
-            elif not me.get('ok'):
-                bot.last_error = me.get('description', 'Не вдалося перевірити токен')
+            _apply_and_verify_token(bot, token)
         bot.save()
         return bot
 
@@ -53,14 +71,6 @@ class TelegramBotSerializer(serializers.ModelSerializer):
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         if token:
-            instance.set_token(token)
-            from workspaces.telegram.client import TelegramClient
-
-            me = TelegramClient().get_me(token)
-            if me.get('ok') and 'result' in me:
-                instance.bot_username = me['result'].get('username', '')
-                instance.last_error = ''
-            elif not me.get('ok'):
-                instance.last_error = me.get('description', 'Не вдалося перевірити токен')
+            _apply_and_verify_token(instance, token)
         instance.save()
         return instance

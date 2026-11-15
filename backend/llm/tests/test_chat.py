@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 from django.contrib.auth import get_user_model
+from django.http import StreamingHttpResponse
 from django.test import TestCase, override_settings
 from rest_framework import status
 
@@ -173,14 +174,38 @@ class RunChatTests(TestCase):
             prompt='Hi',
         )
 
-        self.assertTrue(response.startswith('data: '))
-        payload = json.loads(response.removeprefix('data: ').strip())
+        self.assertIsInstance(response, StreamingHttpResponse)
+        body = b''.join(response.streaming_content).decode('utf-8')
+        self.assertTrue(body.startswith('data: '))
+        payload = json.loads(body.removeprefix('data: ').strip())
         self.assertEqual(
             payload['error'],
             'Сервіс тимчасово недоступний через збій черги запитів.',
         )
         provider.chat.assert_not_called()
         mock_release.assert_not_called()
+
+    @patch('llm.chat.resolve_provider', side_effect=RuntimeError('missing config'))
+    @patch('llm.chat.prepare_chat_messages')
+    def test_resolve_provider_error_stream_returns_streaming_http_response(
+        self, mock_prepare, _mock_resolve,
+    ):
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
+
+        response = run_chat(
+            model='llama3',
+            messages=[{'role': 'user', 'content': 'Hi'}],
+            stream=True,
+            workspace=self.workspace,
+            user=self.user,
+            prompt='Hi',
+        )
+
+        self.assertIsInstance(response, StreamingHttpResponse)
+        body = b''.join(response.streaming_content).decode('utf-8')
+        self.assertTrue(body.startswith('data: '))
+        payload = json.loads(body.removeprefix('data: ').strip())
+        self.assertEqual(payload['error'], 'missing config')
 
     @patch('llm.chat.release_ollama_slot')
     @patch('llm.chat.acquire_ollama_slot', return_value='token-1')
@@ -404,3 +429,51 @@ class RunChatTests(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get('sources'), [])
+
+    @patch('llm.chat.log_workspace_chat_exchange', side_effect=RuntimeError('log crash'))
+    @patch('llm.chat.resolve_provider')
+    @patch('llm.chat.prepare_chat_messages')
+    def test_log_exchange_unexpected_exception_does_not_drop_response(
+        self, mock_prepare, mock_resolve, _mock_log,
+    ):
+        """Непередбачена помилка логування не скасовує відповідь користувачу (stream & non-stream)."""
+        mock_prepare.return_value = ([{'role': 'user', 'content': 'Hi'}], [])
+        provider = MagicMock()
+        provider.chat.return_value = {
+            'message': {'role': 'assistant', 'content': 'Hello'},
+            'done': True,
+        }
+        mock_resolve.return_value = provider
+
+        with self.assertLogs('llm.chat', level='ERROR'):
+            non_stream_res = run_chat(
+                model='llama3',
+                messages=[{'role': 'user', 'content': 'Hi'}],
+                stream=False,
+                workspace=self.workspace,
+                user=self.user,
+                prompt='Hi',
+            )
+        self.assertEqual(non_stream_res.status_code, status.HTTP_200_OK)
+        self.assertEqual(non_stream_res.data['message']['content'], 'Hello')
+        self.assertNotIn('log_id', non_stream_res.data)
+
+        chunk = json.dumps({
+            'message': {'role': 'assistant', 'content': 'Hi'},
+            'done': False,
+        })
+        stream_mock = MagicMock()
+        stream_mock.iter_lines.return_value = [chunk.encode('utf-8')]
+        provider.chat.return_value = stream_mock
+
+        with self.assertLogs('llm.chat', level='ERROR'):
+            stream_res = run_chat(
+                model='llama3',
+                messages=[{'role': 'user', 'content': 'Hi'}],
+                stream=True,
+                workspace=self.workspace,
+                user=self.user,
+                prompt='Hi',
+            )
+            body = b''.join(stream_res.streaming_content).decode('utf-8')
+        self.assertIn('Hi', body)

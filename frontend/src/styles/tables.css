@@ -123,6 +123,31 @@
   border-color: color-mix(in srgb, var(--color-primary) 20%, transparent);
 }
 
+.badge-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.bot-status-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+.bot-status-meta {
+  color: var(--color-text-muted);
+}
+
+.bot-status-error {
+  font-size: 0.75rem;
+  max-width: 15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Pagination Controls */
 .pagination {
   display: flex;

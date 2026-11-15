@@ -62,6 +62,24 @@ def _provider_error_response(exc, *, stream=False):
     )
 
 
+def _stream_error_http_response(exc):
+    """StreamingHttpResponse з одиничним SSE-фреймом помилки до старту потоку."""
+    # DRF APIView вимагає HttpResponse/StreamingHttpResponse, а не голий SSE-рядок.
+    return StreamingHttpResponse(
+        iter((_provider_error_response(exc, stream=True),)),
+        content_type='text/event-stream',
+    )
+
+
+def _safe_log_exchange(**kwargs):
+    """Безпечний запис у chat log: збій логування не повинен губити відповідь LLM."""
+    try:
+        return log_workspace_chat_exchange(**kwargs)
+    except Exception as exc:
+        logger.exception('Unexpected error logging chat exchange: %s', exc)
+        return None
+
+
 def _safe_score(value):
     """Перетворити score у float; некоректні значення → 0.0."""
     try:
@@ -132,10 +150,10 @@ def run_chat(
         provider = resolve_provider(workspace=workspace, model_name=model)
     except Exception as exc:
         logger.exception('Failed to resolve LLM provider')
-        return _provider_error_response(
-            LLMProviderError(str(exc) or 'Провайдер недоступний'),
-            stream=stream,
-        )
+        err = LLMProviderError(str(exc) or 'Провайдер недоступний')
+        if stream:
+            return _stream_error_http_response(err)
+        return _provider_error_response(err, stream=False)
     log_prompt = prompt if prompt is not None else ''
 
     try:
@@ -149,9 +167,8 @@ def run_chat(
     except AdmissionUnavailable as exc:
         logger.error('Admission infrastructure unavailable: %s', exc)
         if stream:
-            return _provider_error_response(
+            return _stream_error_http_response(
                 'Сервіс тимчасово недоступний через збій черги запитів.',
-                stream=True,
             )
         return Response(
             {'error': 'Сервіс тимчасово недоступний. Спробуйте пізніше.'},
@@ -219,7 +236,7 @@ def run_chat(
                         stream=True,
                     )
                 else:
-                    log = log_workspace_chat_exchange(
+                    log = _safe_log_exchange(
                         workspace=workspace,
                         user=user,
                         prompt=log_prompt,
@@ -276,7 +293,7 @@ def run_chat(
             parsed['sources'] = sources
             parsed['needs_handoff'] = needs_handoff
 
-        log = log_workspace_chat_exchange(
+        log = _safe_log_exchange(
             workspace=workspace,
             user=user,
             prompt=log_prompt,

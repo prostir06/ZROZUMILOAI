@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import DatabaseError
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -88,3 +89,50 @@ class TelegramBotAPITests(APITestCase):
         bot2.refresh_from_db()
         self.assertIsNone(bot1.workspace)
         self.assertEqual(bot2.workspace_id, self.workspace.id)
+
+    @patch('workspaces.telegram.client.TelegramClient.get_me', side_effect=RuntimeError('unexpected error'))
+    def test_verify_token_handles_unexpected_exception(self, _mock_get_me):
+        bot = TelegramBot(name='Bot Err', workspace=self.workspace)
+        bot.set_token('12345:validtoken123456789')
+        bot.save()
+
+        res = self.client.post(f'/api/telegram-bots/{bot.id}/verify/')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        bot.refresh_from_db()
+        self.assertEqual(bot.last_error, 'unexpected error')
+
+    @patch('workspaces.telegram.client.TelegramClient.get_me', return_value={'ok': True, 'result': None})
+    def test_verify_token_handles_malformed_result(self, _mock_get_me):
+        bot = TelegramBot(name='Bot Malformed', workspace=self.workspace)
+        bot.set_token('12345:validtoken123456789')
+        bot.save()
+
+        res = self.client.post(f'/api/telegram-bots/{bot.id}/verify/')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        bot.refresh_from_db()
+        self.assertEqual(bot.last_error, 'Некоректна відповідь Telegram API')
+
+    @patch(
+        'workspaces.telegram.client.TelegramClient.get_me',
+        return_value={'ok': True, 'result': {'username': 'ok_bot'}},
+    )
+    def test_verify_token_handles_database_error_on_save(self, _mock_get_me):
+        bot = TelegramBot(name='Bot DB', workspace=self.workspace)
+        bot.set_token('12345:validtoken123456789')
+        bot.save()
+
+        with patch.object(TelegramBot, 'save', side_effect=DatabaseError('db down')):
+            res = self.client.post(f'/api/telegram-bots/{bot.id}/verify/')
+        self.assertEqual(res.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @patch('workspaces.telegram.client.TelegramClient.get_me', side_effect=RuntimeError('api down'))
+    def test_create_bot_handles_get_me_unexpected_exception(self, _mock_get_me):
+        payload = {
+            'name': 'Бот при збої Telegram',
+            'token': '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11',
+            'workspace': self.workspace.id,
+            'is_active': True,
+        }
+        res = self.client.post('/api/telegram-bots/', payload)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data['last_error'], 'api down')

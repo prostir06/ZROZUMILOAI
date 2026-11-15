@@ -1,6 +1,7 @@
 """Admin API for workspace chat logs (Chats Info dashboard)."""
 import logging
 
+import requests
 from rest_framework import status
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
@@ -10,6 +11,7 @@ from llm.admission import (
     OLLAMA_BUSY_CODE,
     OLLAMA_BUSY_MESSAGE,
     RETRY_AFTER_SECONDS,
+    AdmissionUnavailable,
     OllamaBusy,
     acquire_ollama_slot,
     release_ollama_slot,
@@ -217,7 +219,13 @@ class WorkspaceChatLogAnalysisView(APIView):
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
                 headers={'Retry-After': RETRY_AFTER_SECONDS},
             )
-        except LLMProviderError as exc:
+        except AdmissionUnavailable as exc:
+            logger.error('Admission unavailable during table analysis: %s', exc, exc_info=True)
+            return Response(
+                {'error': 'Сервіс тимчасово недоступний. Спробуйте пізніше.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        except (LLMProviderError, requests.RequestException) as exc:
             logger.warning('Chat table analysis failed: %s', exc, exc_info=True)
             return Response(
                 {'error': 'Не вдалося проаналізувати таблицю'},

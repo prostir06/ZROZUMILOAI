@@ -39,7 +39,10 @@ export function useTelegramBots({
     try {
       const [fetchedBots, fetchedWorkspaces] = await Promise.all([
         getTelegramBots(),
-        api.getWorkspaces().catch(() => []),
+        api.getWorkspaces().catch((err) => {
+          console.error('Failed to load workspaces for telegram bots form:', err);
+          return [];
+        }),
       ]);
       setBots(fetchedBots);
       setWorkspaces(fetchedWorkspaces);
@@ -55,6 +58,7 @@ export function useTelegramBots({
 
   useEffect(() => {
     if (initialBots === null) {
+      // Помилка вже залогована та збережена у стані error всередині loadData.
       loadData().catch(() => {});
     }
   }, [initialBots, loadData]);
@@ -467,7 +471,7 @@ export default function TelegramBotsPage({
                       )}
                     </td>
                     <td>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                      <div className="bot-status-stack">
                         <span
                           className={`status-badge ${
                             bot.is_active ? 'status-badge--ok' : 'status-badge--error'
@@ -475,22 +479,15 @@ export default function TelegramBotsPage({
                         >
                           {bot.is_active ? 'Активний' : 'Вимкнений'}
                         </span>
-                        <small style={{ color: 'var(--color-text-muted)' }}>
+                        <small className="bot-status-meta">
                           {bot.last_poll_at
                             ? new Date(bot.last_poll_at).toLocaleString('uk-UA')
                             : 'Ще не опитувався'}
                         </small>
                         {bot.last_error && (
                           <span
-                            className="status-badge status-badge--error"
+                            className="status-badge status-badge--error bot-status-error"
                             title={bot.last_error}
-                            style={{
-                              fontSize: '0.75rem',
-                              maxWidth: '240px',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
                           >
                             {bot.last_error}
                           </span>

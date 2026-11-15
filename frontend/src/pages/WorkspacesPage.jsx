@@ -36,7 +36,9 @@ function WorkspacesPage() {
 
       <section className="section">
         {loading ? (
-          <div className="page-loading"><div className="spinner" /></div>
+          <div className="page-loading">
+            <div className="spinner" role="status" aria-label="Завантаження" />
+          </div>
         ) : workspaces.length === 0 ? (
           <p className="empty-state">Ще немає workspace. Створіть перший.</p>
         ) : (
@@ -66,7 +68,7 @@ function WorkspacesPage() {
                     <td>{workspace.model_names?.[0] || '—'}</td>
                     <td>
                       {workspace.telegram_bots?.length > 0 ? (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                        <div className="badge-list">
                           {workspace.telegram_bots.map((bot) => (
                             <span key={bot.id} className="badge">
                               {bot.name}{bot.bot_username ? ` (@${bot.bot_username})` : ''}

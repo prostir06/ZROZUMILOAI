@@ -15,8 +15,10 @@ from llm.admission import (
 class FakeRedis:
     def __init__(self):
         self.store = {}
+        self.last_ex = None
 
     def set(self, key, value, nx=False, ex=None):
+        self.last_ex = ex
         if nx and key in self.store:
             return None
         self.store[key] = value
@@ -91,3 +93,19 @@ class AdmissionTests(SimpleTestCase):
         )
         self.assertTrue(token)
         self.assertEqual(calls['count'], 2)
+
+    def test_invalid_settings_fallback_to_safe_defaults(self):
+        client = FakeRedis()
+        with override_settings(
+            OLLAMA_CHAT_SLOT_WAIT_SECONDS='invalid',
+            OLLAMA_ADMISSION_TTL_SECONDS='invalid',
+        ):
+            token = acquire_ollama_slot(client=client)
+        self.assertTrue(token)
+        self.assertEqual(client.last_ex, 180)
+
+        client_zero = FakeRedis()
+        with override_settings(OLLAMA_ADMISSION_TTL_SECONDS=0):
+            token_zero = acquire_ollama_slot(client=client_zero)
+        self.assertTrue(token_zero)
+        self.assertGreaterEqual(client_zero.last_ex, 1)

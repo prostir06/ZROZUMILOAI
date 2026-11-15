@@ -188,6 +188,33 @@ describe('useTelegramBots hook logic', () => {
     expect(result.workspaces).toEqual(mockWorkspaces);
   });
 
+  it('logs console.error and falls back to empty workspaces when getWorkspaces fails', async () => {
+    const mockBots = [
+      { id: 1, name: 'Bot 1', token_masked: '111:***', is_active: true },
+    ];
+    const wsError = new Error('workspaces endpoint failed');
+
+    vi.spyOn(telegramBotsApi, 'getTelegramBots').mockResolvedValue(mockBots);
+    vi.spyOn(api, 'getWorkspaces').mockRejectedValue(wsError);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    let hookValue;
+    function TestComponent() {
+      hookValue = useTelegramBots({ initialBots: [] });
+      return React.createElement('div');
+    }
+    renderToString(React.createElement(TestComponent));
+
+    const result = await hookValue.loadData();
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      'Failed to load workspaces for telegram bots form:',
+      wsError,
+    );
+    expect(result.bots).toEqual(mockBots);
+    expect(result.workspaces).toEqual([]);
+  });
+
   it('handles adding a bot (create mode)', async () => {
     const createdBot = {
       id: 3,
