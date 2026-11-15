@@ -101,7 +101,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d backend
 | Симптом | Дія |
 |---------|-----|
 | OOM / хост swap | Знизьте `OLLAMA_NUM_PARALLEL=1`, `OLLAMA_MEM_LIMIT`; не робіть model pull / mass reindex |
-| Redis down | Chat/сесії можуть деградувати; перевірте пароль і `redis` health |
+| Redis down | При налаштованому `REDIS_URL` система працює у fail-closed режимі: чат-слоти Ollama віддають `HTTP 503`, а `telegram_poller` призупиняє цикл опитування, щоб уникнути дублювання воркерів; перевірте пароль і `redis` health |
 | Ingest FAILED | Повтор у UI / Celery; перевірте worker + Ollama embed model та параметри батчингу (`RAG_EMBED_BATCH_SIZE`, `RAG_EMBED_BATCH_PAUSE_SECONDS`, `OLLAMA_INGEST_SLOT_WAIT_SECONDS`) |
 | 429 на chat (`ollama_busy` або rate limit) | Якщо `"code": "ollama_busy"` (з заголовком `Retry-After`) — слот генерації Ollama зайнятий; налаштуйте `OLLAMA_CHAT_SLOT_WAIT_SECONDS` або зменшіть конкурентний ingest (`RAG_EMBED_BATCH_SIZE`, `RAG_EMBED_BATCH_PAUSE_SECONDS`). Інакше — DRF throttle `WIDGET_CHAT_RATE` / `USER_CHAT_RATE` (prod ~30/min) |
 | TLS fail | DNS, `CADDY_SITE_ADDRESS`, порти 80/443 |

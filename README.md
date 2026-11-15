@@ -10,17 +10,20 @@
 - **RAG** — завантаження документів (**TXT, MD, PDF, DOCX, HTML**); структурний chunking та індексація через Celery/Redis
 - **Гібридний пошук (Hybrid Search)** — RRF (Reciprocal Rank Fusion) об'єднання векторного пошуку (pgvector HNSW) та повнотекстового пошуку PostgreSQL FTS
 - **Аналітика та Knowledge Gaps** — дашборд запитів, відстеження прогалин у знаннях з чергою резолюції для викладачів, експорт у CSV/JSON
+- **Chats Info та розмежування каналів (`Web`, `Telegram`, `Widget`)** — автоматичне тегування джерела повідомлень (`channel`: `web` | `telegram` | `widget`) та відправника (`username/email`, `@username (@bot_username)`, `Widget (<label|prefix>)`), кольорові бейджі в таблиці, фільтрація за джерелом, робочим простором, періодом (`today`, `7d`, `30d`), `needs_handoff`, `feedback` та `is_resolved`, AI-аналіз вибірки та експорт у CSV/JSON/JSONL/Alpaca
 - **Feedback / handoff** — 👍/👎 на відповіді, ескалація при низькій релевантності RAG
 - **Meilisearch / hybrid** — пошук у Open edX (Tutor) разом із локальним RAG (RRF)
 - Збережені чати на сервері (історія діалогів)
 - Embed-віджет для сторонніх сайтів (Widget-Token, course-scoped, кастомізація логотипу, заголовка та кольорів)
+- **Telegram-боти** — Long Polling демон (`telegram_poller`), шифрування токенів у БД (`FIELD_ENCRYPTION_KEY`), перевірка токена через Telegram `getMe`, прив'язка ботів до робочих просторів, привітання та кнопки швидких FAQ із налаштувань workspace, ковзне вікно контексту сесії (12 останніх повідомлень) й inline-кнопки оцінки 👍/👎
 - Перегляд моделей (фільтр за workspace); pull/delete — лише адміністратор
 - Реєстрація та авторизація (JWT + API-ключі)
-- Адмін-панель: користувачі, workspaces, аналітика, моделі, резервні копії БД
+- Адмін-панель: користувачі, workspaces, Telegram-боти, Chats Info, аналітика, моделі, резервні копії БД
 - Налаштування зовнішнього вигляду (теми)
 - Адаптивний інтерфейс (мобільні, планшети, десктоп)
-- Docker Compose: Ollama, PostgreSQL (pgvector), Redis, Celery worker, Django, Caddy
-- CI: GitHub Actions (`manage.py test`, `npm test` / lint / build)
+- Docker Compose: Ollama, PostgreSQL (pgvector), Redis, Celery worker, Django, `telegram_poller`, Caddy
+- **Надійність та моніторинг (Ops)** — fail-closed Redis admission control (`HTTP 503` при недоступному Redis) та fail-closed Redis-блокування у `telegram_poller`, дуальні health-ендпоінти (`/api/health/` і `/api/health/?strict=1`), повні `.tar.gz`-бекапи (дамп БД + `media/` + `manifest.json`)
+- CI: GitHub Actions (`ruff`, `eslint`, `manage.py test`, `npm test` / build, перевірка ліцензій)
 
 ## Структура
 
@@ -28,11 +31,11 @@
 ZROZUMILOAI/
 ├── backend/          # Django REST API
 │   ├── accounts/     # Авторизація, користувачі, API-ключі
-│   ├── chats/        # Збережені діалоги + Chats Info
-│   ├── workspaces/   # Workspaces, RAG, widget tokens
-│   ├── llm/          # Провайдер Ollama
+│   ├── chats/        # Збережені діалоги + Chats Info (Web/Telegram/Widget) + аналітика
+│   ├── workspaces/   # Workspaces, RAG, widget tokens, Telegram-боти (client/handlers/poller)
+│   ├── llm/          # Провайдер Ollama та concurrency admission
 │   ├── ollama_proxy/ # HTTP API чату / моделей
-│   └── backups/      # Резервні копії БД
+│   └── backups/      # Резервні копії БД та media (.tar.gz)
 ├── frontend/         # React (Vite) + embed widget
 ├── TeplateTutor/     # Тема Open edX + Tutor plugin
 ├── .github/          # CI workflows
@@ -51,15 +54,16 @@ docker compose up --build -d
 Після запуску:
 - Frontend / API через Caddy: http://localhost
 - Ollama: лише `127.0.0.1:11434` (не публікується на всі інтерфейси)
-- Redis + Celery worker — для черги ingest документів
+- Redis + Celery worker — для черги ingest документів та координації слотів/блокувань
+- `telegram_poller` — сервіс Long Polling для активних Telegram-ботів (стартує після переходу `backend` у стан `healthy`)
 - Backend API слухає лише всередині Docker-мережі (`backend:8000`), не на хості
 
 **Безпека перед GitHub / продакшеном:**
 1. Скопіюйте `.env.example` → `.env` і задайте унікальні `DJANGO_SECRET_KEY`, `FIELD_ENCRYPTION_KEY`, паролі БД.
-2. Не комітьте `.env`, реальні widget tokens, backup з продакшен-даними. Якщо token потрапив у git — revoke у Workspaces і створіть новий.
+2. Не комітьте `.env`, реальні widget tokens, токени Telegram-ботів або backup з продакшен-даними. Якщо token потрапив у git — вилучіть його (revoke у Workspaces або оновіть у `@BotFather`) і створіть новий.
 3. `docker-compose.yml` вимагає `DJANGO_SECRET_KEY` і `POSTGRES_PASSWORD` з `.env` (без слабких fallback). При `DJANGO_DEBUG=False` placeholder-секрети **відхиляються**.
 4. Для продакшену використовуйте `docker compose -f docker-compose.yml -f docker-compose.prod.yml` (resource limits, жорсткіші concurrency defaults).
-5. Workspace API keys (Meilisearch) шифруються at rest (`FIELD_ENCRYPTION_KEY`).
+5. Конфіденційні ключі у БД (Meilisearch API keys та токени Telegram-ботів) шифруються at rest (`FIELD_ENCRYPTION_KEY`).
 
 ### Продакшен (один VPS)
 
@@ -67,7 +71,7 @@ docker compose up --build -d
 - Overlay: `docker-compose.prod.yml` — `mem_limit`/`cpus`, `OLLAMA_NUM_PARALLEL=1`, Gunicorn/Celery caps, Redis password.
 - Remote LLM пізніше: лише `OLLAMA_BASE_URL` у `.env`.
 - Ops: [docs/ops/vps-runbook.md](docs/ops/vps-runbook.md) (deploy, backup cron, restore drill, overload).
-- Observability: `/api/health/` + JSON logs + зовнішній uptime ping (**без** Prometheus на цьому VPS).
+- Observability: дуальний контракт health-check — `/api/health/` (внутрішня liveness-перевірка Docker, HTTP 200 поки жива БД) та `/api/health/?strict=1` (зовнішній моніторинг, HTTP 503 при деградації БД чи Ollama) + JSON logs (**без** Prometheus на цьому VPS).
 
 Завантажте модель:
 
@@ -94,6 +98,8 @@ set CELERY_TASK_ALWAYS_EAGER=True
 python manage.py migrate
 ..\scripts\ensure_admin.ps1
 python manage.py runserver
+# Опційно (локальний Telegram Long Polling демон):
+python manage.py run_telegram_poller
 ```
 
 Локально без Redis ingest виконується синхронно (`CELERY_TASK_ALWAYS_EAGER=True` за замовчуванням, якщо `REDIS_URL` порожній).
@@ -125,6 +131,8 @@ ollama pull llama3.2
 | Перегляд моделей (фільтр за workspace) | ✓ | ✓ (усі моделі) |
 | Завантаження / видалення моделей | — | ✓ |
 | Керування workspaces | — | ✓ |
+| Керування Telegram-ботами | — | ✓ |
+| Перегляд та експорт Chats Info | — | ✓ |
 | Керування користувачами | — | ✓ |
 | Резервні копії БД | — | ✓ |
 | Зміна пароля / теми | ✓ | ✓ |
@@ -149,25 +157,54 @@ API-ключ генерується автоматично при реєстра
 | GET/POST | `/api/auth/users/` | admin | Список / створення користувачів |
 | GET/PATCH/DELETE | `/api/auth/users/<id>/` | admin | Перегляд / редагування / видалення |
 
-### Чати
+### Чати та Chats Info
 
 | Метод | URL | Доступ | Опис |
 |-------|-----|--------|------|
 | GET/POST | `/api/chats/` | auth | Список / створення чатів |
 | GET/PATCH/DELETE | `/api/chats/<id>/` | auth | Перегляд / оновлення / видалення |
+| GET | `/api/chats/logs/` | admin | Логи обмінів (фільтри: `workspace_id`, `range=today\|7d\|30d`, `channel=web\|telegram\|widget`, `needs_handoff`, `feedback`, `is_resolved`) |
+| GET | `/api/chats/logs/export/` | admin | Експорт логів (`export_format=csv\|json\|jsonl\|alpaca`, із тими ж фільтрами) |
+| POST | `/api/chats/logs/analysis/` | admin | AI-аналіз поточної відфільтрованої таблиці чатів |
+| DELETE | `/api/chats/logs/clear/` | admin | Очищення всіх логів Chats Info |
+| PATCH/DELETE | `/api/chats/logs/<id>/` | admin | Оновлення feedback/handoff або видалення окремого запису логу |
+| POST | `/api/chats/logs/<id>/feedback/` | auth | Оцінка відповіді (`up` / `down`, власник запису або admin; embed-віджет використовує Widget-Token API) |
+
+**Розмежування каналів (`channel` / `sent_by`):**
+- `web` — авторизовані користувачі веб-інтерфейсу (формат `sent_by`: `username` / `email`)
+- `telegram` — користувачі Telegram-бота (формат `sent_by`: `@username \| first_name \| id:<chat_id> (@bot_username \| bot.name)`)
+- `widget` — гості вбудованого вебвіджета (формат `sent_by`: `Widget (<label \| token_prefix>)` або `Widget guest`)
 
 ### Workspaces
 
 | Метод | URL | Доступ | Опис |
 |-------|-----|--------|------|
 | GET | `/api/workspaces/my/` | auth | Workspaces поточного користувача |
-| GET/POST | `/api/workspaces/` | admin | Список / створення |
+| GET/POST | `/api/workspaces/` | admin | Список / створення (зокрема прив'язка `telegram_bot_ids`) |
 | GET/PATCH/DELETE | `/api/workspaces/<id>/` | admin | Перегляд / редагування / видалення |
+| GET/POST | `/api/workspaces/<id>/widget-tokens/` | admin | Список / створення токенів віджета |
+| DELETE | `/api/workspaces/<id>/widget-tokens/<token_id>/` | admin | Видалення токена віджета |
 | GET/POST | `/api/workspaces/<id>/documents/` | admin | Список / завантаження документів (RAG) |
 | DELETE | `/api/workspaces/<id>/documents/<doc_id>/` | admin | Видалити документ |
-| GET | `/api/workspaces/<id>/analytics/overview/` | teacher/admin | Загальна статистика, тренди, популярні теми |
-| GET | `/api/workspaces/<id>/analytics/export/` | teacher/admin | Експорт аналітики у CSV або JSON |
-| GET/PATCH | `/api/workspaces/<id>/knowledge-gaps/` | teacher/admin | Черга прогалин знань та статус резолюції |
+| POST | `/api/workspaces/<id>/documents/<doc_id>/retry/` | admin | Повторна індексація документа |
+| GET | `/api/workspaces/<id>/rag-stats/` | admin | Статистика RAG-індексу workspace |
+| GET | `/api/workspaces/<id>/analytics/` | teacher/admin | Загальна статистика, тренди, популярні теми |
+| GET | `/api/workspaces/<id>/analytics/export/` | teacher/admin | Експорт аналітики у CSV |
+| PATCH | `/api/workspaces/<id>/analytics/gaps/<log_id>/resolve/` | teacher/admin | Позначення прогалини знань як опрацьованої |
+
+### Telegram-боти
+
+| Метод | URL | Доступ | Опис |
+|-------|-----|--------|------|
+| GET/POST | `/api/workspaces/telegram-bots/` | admin | Список / створення Telegram-бота (також доступно на `/api/telegram-bots/`) |
+| GET/PATCH/DELETE | `/api/workspaces/telegram-bots/<id>/` | admin | Перегляд / оновлення / видалення бота |
+| POST | `/api/workspaces/telegram-bots/<id>/verify/` | admin | Перевірка токена через Telegram Bot API (`getMe`) |
+
+**Як працює `telegram_poller`:**
+1. Отримує активних ботів, прив'язаних до workspace, і розшифровує токен (`FIELD_ENCRYPTION_KEY`).
+2. За наявності `REDIS_URL` утримує розподілений Redis poll lock із fail-closed захистом, щоб уникнути дублювання polling-воркерів при збоях Redis або кількох репліках.
+3. Обробляє команди `/start`, `/reset`, `/clear` (скидання історії сесії, привітання з `embed_greeting` + кнопки швидких FAQ з `embed_faq_questions`), текстові запити й `callback_query` (FAQ та 👍/👎 фідбек), передаючи контекст останніх 12 повідомлень (`TelegramChatSession`) і зберігаючи обміни в `WorkspaceChatLog` із `channel='telegram'`.
+4. **Рекомендовані налаштування у `@BotFather`:** додати команди `start`, `reset`, `clear` через `/setcommands`, вимкнути inline-режим (`/setinline` → Disable), увімкнути Privacy Mode для груп (`/setprivacy` → Enable) та налаштувати `/setjoingroups` відповідно до політики доступу.
 
 ### RAG (документи workspace)
 
@@ -224,7 +261,7 @@ Workspace може брати контекст з **Meilisearch Tutor/Open edX**
 | GET | `/api/backups/<file>/download/` | admin | Завантажити backup |
 | DELETE | `/api/backups/<file>/` | admin | Видалити backup |
 
-Резервні копії зберігаються в теці `backup/` (PostgreSQL — `.sql`, SQLite — `.sqlite3`).
+Резервні копії зберігаються в теці `backup/` у вигляді повного архіву `.tar.gz` (дамп БД PostgreSQL/SQLite + директорія `media/` + `manifest.json`; під час відновлення також зберігається зворотна сумісність із застарілими файлами `.sql` та `.sqlite3`).
 
 Для відновлення БД при старті встановіть `FORCE_DB_RESTORE=1` у `.env` — Docker entrypoint відновить найновіший backup перед `migrate`.
 
