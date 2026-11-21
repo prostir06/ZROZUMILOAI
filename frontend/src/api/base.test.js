@@ -125,4 +125,41 @@ describe('ApiBase error resilience', () => {
     );
     expect(setItem).not.toHaveBeenCalled();
   });
+
+  it('getSystemHealthDetails fetches /health/details/ and throws clean error on non-JSON failure', async () => {
+    globalThis.localStorage = {
+      getItem: () => 'token-1',
+      setItem: () => {},
+      removeItem: () => {},
+    };
+    const payload = {
+      status: 'ok',
+      celery: { status: 'ok', workers: 1 },
+      telegram_poller: { status: 'ok', active_bots: 1, bots_with_errors: 0 },
+      rag: { total_documents: 2, processing: 0, ready: 2, failed: 0 },
+    };
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => payload,
+    });
+    const api = new BaseApiClient();
+    await expect(api.getSystemHealthDetails()).resolves.toEqual(payload);
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      '/api/health/details/',
+      expect.any(Object),
+    );
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => {
+        throw new SyntaxError('Bad gateway');
+      },
+    });
+    await expect(api.getSystemHealthDetails()).rejects.toThrow(
+      'Не вдалося отримати деталі стану системи',
+    );
+  });
 });

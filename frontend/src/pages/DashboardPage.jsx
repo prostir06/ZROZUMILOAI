@@ -41,6 +41,7 @@ function DashboardPage() {
   const { user } = useAuth();
   const [health, setHealth] = useState(null);
   const [apiHealth, setApiHealth] = useState(null);
+  const [systemDetails, setSystemDetails] = useState(null);
   const [models, setModels] = useState([]);
   const [handoffCount, setHandoffCount] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +53,13 @@ function DashboardPage() {
     const load = async () => {
       setLoadError('');
       try {
-        const [healthData, modelsData, apiHealthData, logsData] = await Promise.all([
+        const [
+          healthData,
+          modelsData,
+          apiHealthData,
+          logsData,
+          detailsData,
+        ] = await Promise.all([
           api.getOllamaHealth().catch((err) => {
             console.error('Failed to load Ollama health for dashboard:', err);
             return null;
@@ -67,6 +74,10 @@ function DashboardPage() {
               console.error('Failed to load handoff count for dashboard:', err);
               return { count: null };
             }),
+          api.getSystemHealthDetails().catch((err) => {
+            console.error('Failed to load system health details:', err);
+            return null;
+          }),
         ]);
         if (cancelled) {
           return;
@@ -74,6 +85,7 @@ function DashboardPage() {
         setHealth(healthData);
         setModels(Array.isArray(modelsData?.models) ? modelsData.models : []);
         setApiHealth(apiHealthData);
+        setSystemDetails(detailsData);
         setHandoffCount(
           typeof logsData?.count === 'number' ? logsData.count : null,
         );
@@ -158,6 +170,97 @@ function DashboardPage() {
           <p className="card__text">Спілкуйтеся з AI-помічником</p>
           <Link to="/" className="card__link">Відкрити чат →</Link>
         </article>
+
+        {(() => {
+          const celery = systemDetails?.celery;
+          const celeryStatus = celery?.status;
+          const celeryBadgeClass = celeryStatus === 'ok'
+            ? 'status-badge--ok'
+            : celeryStatus === 'eager'
+              ? 'status-badge--warn'
+              : 'status-badge--error';
+          const celeryLabel = celeryStatus === 'ok'
+            ? 'Активний'
+            : celeryStatus === 'eager'
+              ? 'Синхронний'
+              : celeryStatus === 'error'
+                ? 'Недоступний'
+                : 'Невідомо';
+          const celeryMeta = celeryStatus === 'eager'
+            ? 'Локальний eager-режим'
+            : `Воркерів: ${celery?.workers ?? '—'}`;
+
+          return (
+            <article className="card" data-testid="dashboard-card-celery">
+              <h3 className="card__title">Celery Worker</h3>
+              <div className={`status-badge ${celeryBadgeClass}`}>{celeryLabel}</div>
+              <p className="card__meta">{celeryMeta}</p>
+            </article>
+          );
+        })()}
+
+        {(() => {
+          const poller = systemDetails?.telegram_poller;
+          const pollerStatus = poller?.status;
+          const pollerBadgeClass = pollerStatus === 'ok'
+            ? 'status-badge--ok'
+            : pollerStatus === 'stale'
+              ? 'status-badge--warn'
+              : 'status-badge--error';
+          const pollerLabel = pollerStatus === 'ok'
+            ? 'Активний'
+            : pollerStatus === 'stale'
+              ? 'Затримка'
+              : pollerStatus === 'offline'
+                ? 'Офлайн'
+                : 'Невідомо';
+
+          return (
+            <article className="card" data-testid="dashboard-card-poller">
+              <h3 className="card__title">Telegram Poller</h3>
+              <div className={`status-badge ${pollerBadgeClass}`}>{pollerLabel}</div>
+              <p className="card__meta">
+                Активних ботів: {poller?.active_bots ?? '—'}
+                {' · '}
+                Помилок: {poller?.bots_with_errors ?? '—'}
+              </p>
+              <Link to="/admin/telegram-bots" className="card__link">Телеграм-боти →</Link>
+            </article>
+          );
+        })()}
+
+        {(() => {
+          const rag = systemDetails?.rag;
+          const failedCount = rag?.failed ?? 0;
+          const processingCount = rag?.processing ?? 0;
+          const ragBadgeClass = !rag
+            ? 'status-badge--error'
+            : failedCount > 0
+              ? 'status-badge--error'
+              : processingCount > 0
+                ? 'status-badge--warn'
+                : 'status-badge--ok';
+          const ragLabel = !rag
+            ? 'Невідомо'
+            : failedCount > 0
+              ? `Помилки: ${failedCount}`
+              : processingCount > 0
+                ? `В обробці: ${processingCount}`
+                : 'OK';
+
+          return (
+            <article className="card" data-testid="dashboard-card-rag">
+              <h3 className="card__title">RAG Індексація</h3>
+              <div className={`status-badge ${ragBadgeClass}`}>{ragLabel}</div>
+              <p className="card__meta">
+                {rag
+                  ? `Готово: ${rag.ready ?? 0} / ${rag.total_documents ?? 0} · В обробці: ${processingCount}`
+                  : 'Готово: —'}
+              </p>
+              <Link to="/admin/workspaces" className="card__link">Робочі простори →</Link>
+            </article>
+          );
+        })()}
       </div>
 
       {models.length > 0 && (

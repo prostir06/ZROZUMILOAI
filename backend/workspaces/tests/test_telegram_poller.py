@@ -2,10 +2,15 @@
 import threading
 from unittest.mock import MagicMock, patch
 
+from django.core.cache import cache
 from django.test import TransactionTestCase, override_settings
 
 from workspaces.models import TelegramBot, Workspace
-from workspaces.telegram.poller import TelegramBotManager, TelegramBotWorker
+from workspaces.telegram.poller import (
+    TELEGRAM_POLLER_HEARTBEAT_CACHE_KEY,
+    TelegramBotManager,
+    TelegramBotWorker,
+)
 
 
 class TelegramPollerTests(TransactionTestCase):
@@ -200,5 +205,13 @@ class TelegramPollerTests(TransactionTestCase):
             self.assertIsNot(w1.client, w2.client)
             self.assertIsNot(w1.client.session, w2.client.session)
         manager.stop()
+
+    def test_touch_heartbeat_publishes_timestamp_to_cache(self):
+        cache.delete(TELEGRAM_POLLER_HEARTBEAT_CACHE_KEY)
+        manager = TelegramBotManager(client=self.client_mock)
+        manager._touch_heartbeat()
+        cached_ts = cache.get(TELEGRAM_POLLER_HEARTBEAT_CACHE_KEY)
+        self.assertIsNotNone(cached_ts)
+        self.assertGreater(float(cached_ts), 0.0)
 
 

@@ -254,4 +254,13 @@ export class BaseApiClient {
 
     return safeJson(response, null);
   }
+
+  async getSystemHealthDetails() {
+    const response = await this.request('/health/details/');
+    if (!response.ok) {
+      const error = await safeJson(response, {});
+      throw new Error(error.detail || error.error || 'Не вдалося отримати деталі стану системи');
+    }
+    return safeJson(response, null);
+  }
 }

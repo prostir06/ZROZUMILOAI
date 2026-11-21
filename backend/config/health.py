@@ -1,46 +1,49 @@
 """
-Публічний healthcheck для Docker / reverse-proxy.
+Healthcheck та observability endpoints для Docker, reverse-proxy і адмін-панелі.
 
-Повертає JSON без автентифікації. Не повинен кидати необроблені
-винятки — інакше healthcheck Compose/Kubernetes вважатиме контейнер мертвим.
+Публічний GET /api/health/ не вимагає автентифікації та не повинен кидати
+необроблені винятки. Деталі компонентів і Prometheus-метрики закриті IsAdminUser.
 """
 import logging
 
 from django.core.cache import cache
-from django.db import DatabaseError, connection
-from django.http import JsonResponse
+from django.db import connection
+from django.http import HttpResponse, JsonResponse
 from django.views import View
+from rest_framework import status
+from rest_framework.permissions import IsAdminUser
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from ollama_proxy.services import OllamaService
 
+from .observability import (
+    OLLAMA_HEALTH_CACHE_KEY,
+    OLLAMA_HEALTH_CACHE_TTL,
+    check_cache_status,
+    check_database_status,
+    check_ollama_status,
+    collect_system_health_details,
+    render_prometheus_metrics,
+)
+
 logger = logging.getLogger(__name__)
 
-OLLAMA_HEALTH_CACHE_KEY = 'health:ollama_status'
-OLLAMA_HEALTH_CACHE_TTL = 10
+__all__ = [
+    'OLLAMA_HEALTH_CACHE_KEY',
+    'OLLAMA_HEALTH_CACHE_TTL',
+    'HealthView',
+    'HealthDetailsView',
+    'HealthMetricsView',
+]
 
 
 def _check_ollama_status():
-    """Перевірити доступність Ollama з коротким кешем (10 с)."""
-    try:
-        cached = cache.get(OLLAMA_HEALTH_CACHE_KEY)
-        if cached in ('ok', 'error'):
-            return cached
-    except Exception as exc:  # noqa: BLE001
-        logger.debug('Health Ollama cache read failed: %s', exc)
-
-    status_val = 'error'
-    try:
-        if OllamaService().health():
-            status_val = 'ok'
-    except Exception as exc:  # noqa: BLE001
-        logger.warning('Health Ollama check failed: %s', exc)
-
-    try:
-        cache.set(OLLAMA_HEALTH_CACHE_KEY, status_val, timeout=OLLAMA_HEALTH_CACHE_TTL)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug('Health Ollama cache write failed: %s', exc)
-
-    return status_val
+    """Зворотна сумісність із тестами, що мокають config.health.OllamaService."""
+    return check_ollama_status(
+        service_cls=OllamaService,
+        cache_backend=cache,
+    )
 
 
 class HealthView(View):
@@ -55,43 +58,25 @@ class HealthView(View):
 
     def get(self, request):
         """Зібрати статус залежностей у JSON-відповідь."""
+        db_status = check_database_status(db_connection=connection)
+        cache_status = check_cache_status(cache_backend=cache)
+        ollama_status = _check_ollama_status()
+
         payload = {
             'status': 'ok',
-            'database': 'ok',
-            'cache': 'unknown',
-            'ollama': 'unknown',
+            'database': db_status,
+            'cache': cache_status,
+            'ollama': ollama_status,
         }
         http_status = 200
         strict = str(request.GET.get('strict', '')).strip().lower() in (
             '1', 'true', 'yes',
         )
 
-        # БД критична: без неї API не обслуговує запити.
-        try:
-            connection.ensure_connection()
-        except DatabaseError as exc:
-            logger.warning('Health DB check failed: %s', exc)
+        if db_status != 'ok':
             payload['status'] = 'degraded'
-            payload['database'] = 'error'
-            http_status = 503
-        except Exception as exc:  # noqa: BLE001 — health ніколи не повинен падати
-            logger.exception('Unexpected health DB error: %s', exc)
-            payload['status'] = 'degraded'
-            payload['database'] = 'error'
             http_status = 503
 
-        # Кеш опційний (FileBasedCache / LocMem також ок).
-        try:
-            cache.set('healthcheck', '1', timeout=5)
-            cached = cache.get('healthcheck')
-            payload['cache'] = 'ok' if cached == '1' else 'miss'
-        except Exception as exc:  # noqa: BLE001
-            logger.warning('Health cache check failed: %s', exc)
-            payload['cache'] = 'error'
-            # Не піднімаємо HTTP 503 лише через кеш — чат може працювати без Redis.
-
-        ollama_status = _check_ollama_status()
-        payload['ollama'] = ollama_status
         if ollama_status != 'ok':
             payload['status'] = 'degraded'
             if strict:
@@ -99,7 +84,7 @@ class HealthView(View):
 
         try:
             return JsonResponse(payload, status=http_status)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.exception('Health JsonResponse failed: %s', exc)
             return JsonResponse(
                 {
@@ -111,3 +96,43 @@ class HealthView(View):
                 status=503,
             )
 
+
+class HealthDetailsView(APIView):
+    """GET /api/health/details/ — розширений стан системи для адмін-дашборду."""
+
+    permission_classes = (IsAdminUser,)
+
+    def get(self, request):
+        """Повернути деталізований стан БД, Redis, Ollama, Celery, Poller і RAG."""
+        details = collect_system_health_details(
+            service_cls=OllamaService,
+            db_connection=connection,
+            cache_backend=cache,
+        )
+        strict = str(request.query_params.get('strict', '')).strip().lower() in (
+            '1', 'true', 'yes',
+        )
+        http_status = (
+            status.HTTP_503_SERVICE_UNAVAILABLE
+            if strict and details['status'] != 'ok'
+            else status.HTTP_200_OK
+        )
+        return Response(details, status=http_status)
+
+
+class HealthMetricsView(APIView):
+    """GET /api/health/metrics/ — Prometheus text exposition для адміна."""
+
+    permission_classes = (IsAdminUser,)
+
+    def get(self, request):
+        """Віддати поточні метрики сервісів у форматі Prometheus."""
+        body = render_prometheus_metrics(
+            service_cls=OllamaService,
+            db_connection=connection,
+            cache_backend=cache,
+        )
+        return HttpResponse(
+            body,
+            content_type='text/plain; version=0.0.4; charset=utf-8',
+        )

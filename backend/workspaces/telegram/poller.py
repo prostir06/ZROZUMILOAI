@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings
+from django.core.cache import cache
 from django.utils import timezone
 
 from workspaces.models import TelegramBot
@@ -23,6 +24,8 @@ HEARTBEAT_PATH = Path(
         str(Path(tempfile.gettempdir()) / "poller.heartbeat"),
     ),
 )
+TELEGRAM_POLLER_HEARTBEAT_CACHE_KEY = "health:telegram_poller_heartbeat"
+TELEGRAM_POLLER_HEARTBEAT_TTL = 60
 
 # Atomic Lua script: extends TTL if key is held by this worker UUID, else acquires with SET NX EX
 _RENEW_OR_ACQUIRE_LUA = """
@@ -222,10 +225,20 @@ class TelegramBotManager:
         self._stopped = False
 
     def _touch_heartbeat(self) -> None:
+        now_ts = time.time()
         try:
-            HEARTBEAT_PATH.write_text(str(time.time()), encoding="utf-8")
+            HEARTBEAT_PATH.write_text(str(now_ts), encoding="utf-8")
         except OSError as exc:
             logger.debug("Failed to write poller heartbeat %s: %s", HEARTBEAT_PATH, exc)
+        # Дублюємо heartbeat у Redis, щоб контейнер backend бачив стан poller.
+        try:
+            cache.set(
+                TELEGRAM_POLLER_HEARTBEAT_CACHE_KEY,
+                now_ts,
+                timeout=TELEGRAM_POLLER_HEARTBEAT_TTL,
+            )
+        except Exception as exc:
+            logger.debug("Failed to publish poller heartbeat to cache: %s", exc)
 
     def sync_bots(self) -> None:
         """Synchronize running worker threads with active bots in DB."""
