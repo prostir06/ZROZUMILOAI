@@ -7,6 +7,8 @@ import {
   updateTelegramBot,
   verifyTelegramBot,
 } from '../api/telegramBots.js';
+import TelegramBotFormModal from '../components/telegram/TelegramBotFormModal.jsx';
+import TelegramBotsTable from '../components/telegram/TelegramBotsTable.jsx';
 
 export const emptyForm = {
   name: '',
@@ -310,221 +312,24 @@ export default function TelegramBotsPage({
         </div>
       )}
 
-      {formMode && (
-        <div
-          className="modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="bot-modal-title"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeModal();
-          }}
-        >
-          <div className="modal">
-            <div className="modal__header">
-              <h3 id="bot-modal-title" className="modal__title">
-                {formMode === 'edit' ? 'Редагувати бота' : 'Додати телеграм-бота'}
-              </h3>
-              <button
-                type="button"
-                className="modal__close"
-                onClick={closeModal}
-                aria-label="Закрити"
-              >
-                ✕
-              </button>
-            </div>
-            <form
-              onSubmit={(e) => {
-                handleSubmit(e).catch(() => {});
-              }}
-              className="form"
-            >
-              <div className="modal__body">
-                <div className="form__group">
-                  <label htmlFor="bot_name">Назва</label>
-                  <input
-                    id="bot_name"
-                    name="name"
-                    value={form.name}
-                    onChange={handleFormChange}
-                    required
-                    maxLength={200}
-                    placeholder="Напр. Бот підтримки студентів"
-                  />
-                </div>
+      <TelegramBotFormModal
+        formMode={formMode}
+        form={form}
+        workspaces={workspaces}
+        saving={saving}
+        onClose={closeModal}
+        onChange={handleFormChange}
+        onSubmit={handleSubmit}
+      />
 
-                <div className="form__group">
-                  <label htmlFor="bot_token">Токен бота</label>
-                  <input
-                    id="bot_token"
-                    name="token"
-                    type="password"
-                    value={form.token}
-                    onChange={handleFormChange}
-                    required={formMode === 'create'}
-                    placeholder={
-                      formMode === 'edit'
-                        ? 'Залиште порожнім, щоб не змінювати'
-                        : '123456789:ABCdefGHIjklMNOpqrsTUVwxyz'
-                    }
-                  />
-                  <small className="form__help">
-                    {formMode === 'edit'
-                      ? 'Залиште поле порожнім, щоб зберегти поточний токен.'
-                      : 'Токен від @BotFather у форматі 123456:ABC-DEF...'}
-                  </small>
-                </div>
-
-                <div className="form__group">
-                  <label htmlFor="bot_workspace">Workspace</label>
-                  <select
-                    id="bot_workspace"
-                    name="workspace"
-                    value={form.workspace}
-                    onChange={handleFormChange}
-                  >
-                    <option value="">Не привʼязано</option>
-                    {workspaces.map((ws) => (
-                      <option key={ws.id} value={ws.id}>
-                        {ws.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="form__group">
-                  <label className="checkbox-label" htmlFor="bot_is_active">
-                    <input
-                      id="bot_is_active"
-                      name="is_active"
-                      type="checkbox"
-                      checked={form.is_active}
-                      onChange={handleFormChange}
-                    />
-                    <span>Активний</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className="modal__footer">
-                <button
-                  type="button"
-                  className="btn btn--ghost"
-                  onClick={closeModal}
-                  disabled={saving}
-                >
-                  Скасувати
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn--primary"
-                  disabled={saving}
-                >
-                  {saving ? 'Збереження...' : formMode === 'edit' ? 'Зберегти' : 'Створити'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <section className="section">
-        {loading ? (
-          <div className="page-loading">
-            <div className="spinner" role="status" aria-label="Завантаження" />
-          </div>
-        ) : bots.length === 0 ? (
-          <p className="empty-state">Телеграм-ботів ще немає. Додайте першого бота.</p>
-        ) : (
-          <div className="table-wrapper">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Назва</th>
-                  <th>Username</th>
-                  <th>Токен</th>
-                  <th>Workspace</th>
-                  <th>Статус</th>
-                  <th>Дії</th>
-                </tr>
-              </thead>
-              <tbody>
-                {bots.map((bot) => (
-                  <tr key={bot.id}>
-                    <td>
-                      <strong>{bot.name}</strong>
-                    </td>
-                    <td>
-                      {bot.bot_username ? `@${bot.bot_username}` : '—'}
-                    </td>
-                    <td>
-                      <code className="api-key api-key--muted">
-                        {bot.token_masked || '—'}
-                      </code>
-                    </td>
-                    <td>
-                      {bot.workspace_name ? (
-                        <span className="badge">{bot.workspace_name}</span>
-                      ) : (
-                        'Не привʼязано'
-                      )}
-                    </td>
-                    <td>
-                      <div className="bot-status-stack">
-                        <span
-                          className={`status-badge ${
-                            bot.is_active ? 'status-badge--ok' : 'status-badge--error'
-                          }`}
-                        >
-                          {bot.is_active ? 'Активний' : 'Вимкнений'}
-                        </span>
-                        <small className="bot-status-meta">
-                          {bot.last_poll_at
-                            ? new Date(bot.last_poll_at).toLocaleString('uk-UA')
-                            : 'Ще не опитувався'}
-                        </small>
-                        {bot.last_error && (
-                          <span
-                            className="status-badge status-badge--error bot-status-error"
-                            title={bot.last_error}
-                          >
-                            {bot.last_error}
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="table__actions">
-                      <button
-                        type="button"
-                        className="btn btn--ghost btn--sm"
-                        disabled={verifyingId === bot.id}
-                        onClick={() => handleVerify(bot.id)}
-                      >
-                        {verifyingId === bot.id ? 'Перевірка...' : 'Перевірити'}
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--ghost btn--sm"
-                        onClick={() => openEditModal(bot)}
-                      >
-                        Редагувати
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--danger btn--sm"
-                        onClick={() => handleDelete(bot.id, bot.name)}
-                      >
-                        Видалити
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      <TelegramBotsTable
+        bots={bots}
+        loading={loading}
+        verifyingId={verifyingId}
+        onVerify={handleVerify}
+        onEdit={openEditModal}
+        onDelete={handleDelete}
+      />
     </div>
   );
 }

@@ -1,5 +1,3 @@
-import React from 'react';
-
 /**
  * Formats relevance score safely into a percentage string (e.g. 85%).
  *

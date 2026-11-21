@@ -1,5 +1,3 @@
-import React from 'react';
-
 /**
  * Metric cards grid presenting high-level workspace analytics KPIs.
  *

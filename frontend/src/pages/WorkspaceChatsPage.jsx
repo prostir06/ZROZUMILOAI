@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api/client';
 import ChatTableAnalysis from '../components/analytics/ChatTableAnalysis';
+import WorkspaceChatsFilters from '../components/chats/WorkspaceChatsFilters';
+import WorkspaceChatsTable, {
+  CHANNEL_META,
+  ChannelBadge,
+} from '../components/chats/WorkspaceChatsTable';
 import { formatChatError } from '../utils/chatError.js';
-import { truncateText } from '../utils/text.js';
 
 export const EXPORT_FORMATS = [
   { id: 'csv', label: 'CSV' },
@@ -11,20 +15,9 @@ export const EXPORT_FORMATS = [
   { id: 'alpaca', label: 'JSON (Alpaca)' },
 ];
 
-const PROMPT_PREVIEW_LENGTH = 80;
-const RESPONSE_PREVIEW_LENGTH = 120;
 export const PAGE_SIZE = 50;
 
-export const CHANNEL_META = {
-  web: { label: 'Web', className: 'badge badge--web' },
-  telegram: { label: 'Telegram', className: 'badge badge--telegram' },
-  widget: { label: 'Widget', className: 'badge badge--widget' },
-};
-
-export function ChannelBadge({ channel }) {
-  const meta = CHANNEL_META[channel || 'web'] || CHANNEL_META.web;
-  return <span className={meta.className}>{meta.label}</span>;
-}
+export { CHANNEL_META, ChannelBadge };
 
 export function useWorkspaceChats({ initialWorkspaces = [] } = {}) {
   const [logs, setLogs] = useState([]);
@@ -381,161 +374,31 @@ function WorkspaceChatsPage({ initialWorkspaces } = {}) {
       )}
 
       <section className="section">
-        <div className="form__row" style={{ marginBottom: '1rem', gap: '1rem', flexWrap: 'wrap' }}>
-          <div className="form__group">
-            <label htmlFor="filter_workspace">Робочий простір</label>
-            <select
-              id="filter_workspace"
-              className="select"
-              value={workspaceFilter}
-              onChange={(e) => onWorkspaceFilterChange(e.target.value)}
-            >
-              <option value="">Всі робочі простори</option>
-              {workspaces.map((ws) => (
-                <option key={ws.id} value={ws.id}>
-                  {ws.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form__group">
-            <label htmlFor="filter_range">Період</label>
-            <select
-              id="filter_range"
-              className="select"
-              value={rangeFilter}
-              onChange={(e) => onRangeFilterChange(e.target.value)}
-            >
-              <option value="all">Весь час</option>
-              <option value="today">Сьогодні</option>
-              <option value="7d">Останні 7 днів</option>
-              <option value="30d">Останні 30 днів</option>
-            </select>
-          </div>
-          <div className="form__group">
-            <label htmlFor="filter_channel">Джерело</label>
-            <select
-              id="filter_channel"
-              className="select"
-              value={channelFilter}
-              onChange={(e) => onChannelFilterChange(e.target.value)}
-            >
-              <option value="all">Усі</option>
-              <option value="web">Web</option>
-              <option value="telegram">Telegram</option>
-              <option value="widget">Widget</option>
-            </select>
-          </div>
-          <div className="form__group">
-            <label htmlFor="filter_handoff">Handoff</label>
-            <select
-              id="filter_handoff"
-              className="select"
-              value={handoffFilter}
-              onChange={(e) => onHandoffFilterChange(e.target.value)}
-            >
-              <option value="all">Усі</option>
-              <option value="yes">Потрібен handoff</option>
-              <option value="no">Без handoff</option>
-            </select>
-          </div>
-          <div className="form__group">
-            <label htmlFor="filter_feedback">Feedback</label>
-            <select
-              id="filter_feedback"
-              className="select"
-              value={feedbackFilter}
-              onChange={(e) => onFeedbackFilterChange(e.target.value)}
-            >
-              <option value="all">Усі</option>
-              <option value="up">👍</option>
-              <option value="down">👎</option>
-              <option value="">Без оцінки</option>
-            </select>
-          </div>
-          <p className="auth-card__subtitle" style={{ alignSelf: 'end' }}>
-            Показано {logs.length} з {total}
-          </p>
-        </div>
+        <WorkspaceChatsFilters
+          workspaceFilter={workspaceFilter}
+          onWorkspaceFilterChange={onWorkspaceFilterChange}
+          workspaces={workspaces}
+          rangeFilter={rangeFilter}
+          onRangeFilterChange={onRangeFilterChange}
+          channelFilter={channelFilter}
+          onChannelFilterChange={onChannelFilterChange}
+          handoffFilter={handoffFilter}
+          onHandoffFilterChange={onHandoffFilterChange}
+          feedbackFilter={feedbackFilter}
+          onFeedbackFilterChange={onFeedbackFilterChange}
+          shownCount={logs.length}
+          total={total}
+        />
 
-        {loading ? (
-          <div className="page-loading">
-            <div className="spinner" aria-label="Завантаження" />
-          </div>
-        ) : logs.length === 0 ? (
-          <p className="empty-state">Записів чатів ще немає.</p>
-        ) : (
-          <>
-            <div className="table-wrapper">
-              <table className="table table--workspace-chats">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Sent By</th>
-                    <th>Workspace</th>
-                    <th>Prompt</th>
-                    <th>Response</th>
-                    <th>Feedback</th>
-                    <th>Handoff</th>
-                    <th>Sent At</th>
-                    <th aria-label="Дії" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {logs.map((log) => (
-                    <tr key={log.id}>
-                      <td>{log.id}</td>
-                      <td>
-                        <div className="sent-by-cell">
-                          <span>{log.sent_by}</span>
-                          <ChannelBadge channel={log.channel} />
-                        </div>
-                      </td>
-                      <td>{log.workspace}</td>
-                      <td className="table__cell--truncate" title={log.prompt}>
-                        {truncateText(log.prompt, PROMPT_PREVIEW_LENGTH)}
-                      </td>
-                      <td className="table__cell--truncate" title={log.response}>
-                        {truncateText(log.response, RESPONSE_PREVIEW_LENGTH)}
-                      </td>
-                      <td>{log.feedback || '—'}</td>
-                      <td>{log.needs_handoff ? 'так' : '—'}</td>
-                      <td>{log.sent_at}</td>
-                      <td className="table__actions">
-                        <button
-                          type="button"
-                          className="btn btn--ghost btn--sm"
-                          onClick={() => handleDelete(log.id)}
-                          aria-label={`Видалити запис ${log.id}`}
-                        >
-                          Видалити
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="form__actions" style={{ marginTop: '1rem' }}>
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                disabled={!canPrev}
-                onClick={() => setOffset((prev) => Math.max(0, prev - PAGE_SIZE))}
-              >
-                Назад
-              </button>
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                disabled={!canNext}
-                onClick={() => setOffset((prev) => prev + PAGE_SIZE)}
-              >
-                Далі
-              </button>
-            </div>
-          </>
-        )}
+        <WorkspaceChatsTable
+          logs={logs}
+          loading={loading}
+          canPrev={canPrev}
+          canNext={canNext}
+          onDelete={handleDelete}
+          onPrevPage={() => setOffset((prev) => Math.max(0, prev - PAGE_SIZE))}
+          onNextPage={() => setOffset((prev) => prev + PAGE_SIZE)}
+        />
       </section>
     </div>
   );

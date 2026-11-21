@@ -31,6 +31,8 @@ jobs:
           pip install -r requirements-dev.txt
       - name: Lint with ruff
         run: ruff check .
+      - name: Security scan with bandit
+        run: bandit -c pyproject.toml -r . -ll
       - name: License check (fail on GPL/AGPL)
         run: |
           pip install 'pip-licenses>=5.0,<6.0'
@@ -121,6 +123,8 @@ jobs:
         run: npm ci
       - name: License check (fail on GPL/AGPL)
         run: npx --yes license-checker --production --failOn 'GPL;AGPL;GPL-2.0;GPL-3.0;AGPL-3.0;GPL-2.0-only;GPL-3.0-only;AGPL-3.0-only'
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high
       - name: Lint
         run: npm run lint
       - name: Test

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import KpiCards from '../../components/analytics/KpiCards';
 import KnowledgeGapsTable from '../../components/analytics/KnowledgeGapsTable';

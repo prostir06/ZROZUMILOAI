@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 /**
  * ModelSelector handles workspace switching and LLM model selection

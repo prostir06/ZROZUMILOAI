@@ -21,3 +21,6 @@ known-first-party = [
     "ollama_proxy",
     "workspaces",
 ]
+
+[tool.bandit]
+exclude_dirs = [".venv", "staticfiles", "media", "tests"]

@@ -7,7 +7,16 @@ import { api } from '../api/client';
 function findSelects(element) {
   const selects = [];
   function traverse(node) {
-    if (!node || typeof node !== 'object') return;
+    if (!node) return;
+    if (Array.isArray(node)) {
+      node.forEach(traverse);
+      return;
+    }
+    if (typeof node !== 'object') return;
+    if (typeof node.type === 'function') {
+      traverse(node.type(node.props));
+      return;
+    }
     if (node.type === 'select') selects.push(node);
     if (Array.isArray(node.props?.children)) {
       node.props.children.forEach(traverse);
