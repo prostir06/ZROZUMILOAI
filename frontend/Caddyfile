@@ -21,26 +21,6 @@
 
 	root * /srv
 
-	handle /api/widget/* {
-		reverse_proxy backend:8000 {
-			flush_interval -1
-			transport http {
-				read_timeout 600s
-				write_timeout 600s
-			}
-		}
-	}
-
-	handle /api/ollama/chat/* {
-		reverse_proxy backend:8000 {
-			flush_interval -1
-			transport http {
-				read_timeout 600s
-				write_timeout 600s
-			}
-		}
-	}
-
 	handle /api/* {
 		reverse_proxy backend:8000 {
 			flush_interval -1
@@ -58,8 +38,8 @@
 
 	handle /embed.html {
 		header Cache-Control "no-cache, no-store, must-revalidate"
-		# Embed може відкриватись у iframe з LMS (інший origin).
-		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-ancestors *; base-uri 'self'"
+		# Embed може відкриватись у iframe з LMS (налаштовується через EMBED_FRAME_ANCESTORS).
+		header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com; frame-ancestors {$EMBED_FRAME_ANCESTORS:*}; base-uri 'self'"
 		header -X-Frame-Options
 		file_server
 	}

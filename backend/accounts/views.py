@@ -7,7 +7,11 @@ from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
+
+from config.pagination import OptionalLimitOffsetPagination
 
 from .serializers import (
     AdminCreateUserSerializer,
@@ -83,6 +87,7 @@ class UserListCreateView(generics.ListCreateAPIView):
 
     queryset = User.objects.select_related('api_key').all().order_by('username')
     permission_classes = (permissions.IsAdminUser,)
+    pagination_class = OptionalLimitOffsetPagination
 
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -159,3 +164,18 @@ class CustomTokenObtainPairView(TokenObtainPairView):
         else:
             logger.warning('Login failed: user=%s status=%s', username or '?', response.status_code)
         return response
+
+
+class LogoutView(APIView):
+    """Blacklist refresh token on user logout."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def post(self, request):
+        refresh = request.data.get('refresh')
+        if refresh:
+            try:
+                RefreshToken(refresh).blacklist()
+            except TokenError as exc:
+                logger.debug('Logout token blacklist skipped: %s', exc)
+        return Response({'detail': 'Вихід виконано'})

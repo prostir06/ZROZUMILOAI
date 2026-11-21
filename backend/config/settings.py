@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'accounts',
     'chats',
@@ -167,9 +168,14 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(
+        minutes=int(os.getenv('JWT_ACCESS_TOKEN_MINUTES', '60')),
+    ),
+    'REFRESH_TOKEN_LIFETIME': timedelta(
+        days=int(os.getenv('JWT_REFRESH_TOKEN_DAYS', '7')),
+    ),
     'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
 }
 
 CORS_ALLOWED_ORIGINS = [
@@ -198,7 +204,7 @@ OLLAMA_BASE_URL = os.getenv(
     'OLLAMA_BASE_URL',
     'http://localhost:11434',
 )
-OLLAMA_ADMISSION_LIMIT = 1
+OLLAMA_ADMISSION_LIMIT = max(1, int(os.getenv('OLLAMA_ADMISSION_LIMIT', '1')))
 OLLAMA_ADMISSION_TTL_SECONDS = int(os.getenv('OLLAMA_ADMISSION_TTL_SECONDS', '180'))
 OLLAMA_CHAT_SLOT_WAIT_SECONDS = float(os.getenv('OLLAMA_CHAT_SLOT_WAIT_SECONDS', '0.0'))
 OLLAMA_INGEST_SLOT_WAIT_SECONDS = float(os.getenv('OLLAMA_INGEST_SLOT_WAIT_SECONDS', '60.0'))

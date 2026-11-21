@@ -626,6 +626,26 @@ class BackupServiceTests(TestCase):
                 service.restore_backup(bad_archive.name)
             self.assertIn('не є файлом', str(ctx.exception))
 
+    def test_list_backups_uses_metadata_cache(self):
+        """list_backups не відкриває незмінений .tar.gz повторно завдяки кешу."""
+        tmp_path = Path(self.temp_dir)
+        backup_dir = tmp_path / 'backups'
+        service = BackupService(backup_dir=backup_dir)
+
+        test_db = tmp_path / 'test.sqlite3'
+        test_db.write_bytes(b'sqlite format 3\x00')
+
+        with override_settings(
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': str(test_db)}},
+        ):
+            service.create_backup(include_media=True)
+            with patch.object(service, '_read_manifest', wraps=service._read_manifest) as mock_manifest:
+                first = service.list_backups()
+                second = service.list_backups()
+                self.assertEqual(len(first), 1)
+                self.assertEqual(first, second)
+                self.assertEqual(mock_manifest.call_count, 1)
+
 
 
 

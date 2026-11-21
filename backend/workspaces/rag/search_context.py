@@ -141,7 +141,7 @@ def cached_query_embedding(workspace_id, query):
         ws_key = str(int(workspace_id))
     except (TypeError, ValueError):
         ws_key = 'anon'
-    cache_key = f'rag:qemb:{ws_key}:{embed_model}:{digest}'
+    cache_key = f'rag:qemb:{embed_model}:{digest}'
     ttl = int(getattr(settings, 'RAG_QUERY_EMBED_CACHE_TTL', 300))
 
     try:

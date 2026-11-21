@@ -1,8 +1,11 @@
 """Telegram Long Polling daemon and worker threads."""
 import logging
+import os
+import tempfile
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 from django.conf import settings
@@ -13,6 +16,13 @@ from workspaces.telegram.client import TelegramClient
 from workspaces.telegram.handlers import handle_telegram_update
 
 logger = logging.getLogger(__name__)
+
+HEARTBEAT_PATH = Path(
+    os.getenv(
+        "TELEGRAM_POLLER_HEARTBEAT_PATH",
+        str(Path(tempfile.gettempdir()) / "poller.heartbeat"),
+    ),
+)
 
 # Atomic Lua script: extends TTL if key is held by this worker UUID, else acquires with SET NX EX
 _RENEW_OR_ACQUIRE_LUA = """
@@ -60,6 +70,7 @@ class TelegramBotWorker(threading.Thread):
         self.stop_event = stop_event or threading.Event()
         self.client = client or TelegramClient()
         self.lock_token = uuid.uuid4().hex
+        self._error_streak = 0
 
     def _acquire_or_renew_lock(self) -> bool:
         redis_url = (getattr(settings, "REDIS_URL", "") or "").strip()
@@ -132,10 +143,18 @@ class TelegramBotWorker(threading.Thread):
         res: dict[str, Any] = self.client.get_updates(token, offset=offset, timeout=20)
 
         if res.get("ok") and "result" in res:
+            self._error_streak = 0
             updates = res["result"]
             highest_id = bot.last_update_id
             for update in updates:
                 if self.stop_event.is_set():
+                    break
+                # Продовжуємо TTL блокування перед кожним update на випадок довгих відповідей LLM.
+                if not self._acquire_or_renew_lock():
+                    logger.warning(
+                        "Bot %s lost poll lock mid-batch, stopping batch cleanly.",
+                        self.bot_id,
+                    )
                     break
                 try:
                     handle_telegram_update(bot, update, client=self.client)
@@ -144,16 +163,33 @@ class TelegramBotWorker(threading.Thread):
                 uid = update.get("update_id")
                 if uid is not None and uid > highest_id:
                     highest_id = uid
+                    bot.last_update_id = highest_id
+                    bot.last_poll_at = timezone.now()
+                    bot.last_error = ""
+                    bot.save(
+                        update_fields=["last_update_id", "last_poll_at", "last_error", "updated_at"],
+                    )
 
-            bot.last_update_id = highest_id
-            bot.last_poll_at = timezone.now()
-            bot.last_error = ""
-            bot.save(update_fields=["last_update_id", "last_poll_at", "last_error", "updated_at"])
+            if not updates:
+                bot.last_poll_at = timezone.now()
+                bot.last_error = ""
+                bot.save(update_fields=["last_poll_at", "last_error", "updated_at"])
         else:
             err = res.get("description", "Помилка запиту до Telegram API")
             bot.last_error = err
             bot.save(update_fields=["last_error", "updated_at"])
-            self.stop_event.wait(5)
+            retry_after = (res.get("parameters") or {}).get("retry_after")
+            try:
+                retry_sec = float(retry_after) if retry_after is not None else 0.0
+            except (TypeError, ValueError):
+                retry_sec = 0.0
+            if retry_sec > 0:
+                self._error_streak = 0
+                wait_sec = min(retry_sec, 60.0)
+            else:
+                self._error_streak += 1
+                wait_sec = min(5 * (2 ** (self._error_streak - 1)), 60)
+            self.stop_event.wait(wait_sec)
 
         return True
 
@@ -181,9 +217,15 @@ class TelegramBotManager:
     """Manager for orchestrating long polling workers for all active bots."""
 
     def __init__(self, client: TelegramClient | None = None):
-        self.client = client or TelegramClient()
+        self._shared_client = client
         self.workers: dict[int, tuple[TelegramBotWorker, threading.Event, str]] = {}
         self._stopped = False
+
+    def _touch_heartbeat(self) -> None:
+        try:
+            HEARTBEAT_PATH.write_text(str(time.time()), encoding="utf-8")
+        except OSError as exc:
+            logger.debug("Failed to write poller heartbeat %s: %s", HEARTBEAT_PATH, exc)
 
     def sync_bots(self) -> None:
         """Synchronize running worker threads with active bots in DB."""
@@ -199,7 +241,8 @@ class TelegramBotManager:
             bot = active_bot_map.get(bot_id)
             if not bot or not worker.is_alive() or bot.encrypted_token != token_hash:
                 stop_event.set()
-                worker.join(timeout=2.0)
+                if worker.ident is not None:
+                    worker.join(timeout=2.0)
                 del self.workers[bot_id]
 
         # 2. Start workers for newly active bots
@@ -210,7 +253,7 @@ class TelegramBotManager:
                     worker = TelegramBotWorker(
                         bot_id=bot.id,
                         stop_event=stop_event,
-                        client=self.client,
+                        client=self._shared_client or TelegramClient(),
                     )
                     worker.start()
                     self.workers[bot_id] = (worker, stop_event, bot.encrypted_token)
@@ -221,6 +264,7 @@ class TelegramBotManager:
         while not self._stopped:
             try:
                 self.sync_bots()
+                self._touch_heartbeat()
             except Exception as exc:
                 logger.exception("Error during bot sync: %s", exc)
             finally:
@@ -240,5 +284,6 @@ class TelegramBotManager:
         self._stopped = True
         for worker, stop_event, _ in list(self.workers.values()):
             stop_event.set()
-            worker.join(timeout=2.0)
+            if worker.ident is not None:
+                worker.join(timeout=2.0)
         self.workers.clear()

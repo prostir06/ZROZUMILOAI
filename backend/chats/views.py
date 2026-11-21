@@ -1,6 +1,8 @@
 """API views for saved chats."""
 from rest_framework import generics, permissions
 
+from config.pagination import OptionalLimitOffsetPagination
+
 from .models import Chat
 from .serializers import ChatListSerializer, ChatSerializer
 
@@ -9,6 +11,7 @@ class ChatListCreateView(generics.ListCreateAPIView):
     """List or create chats for the current user."""
 
     permission_classes = (permissions.IsAuthenticated,)
+    pagination_class = OptionalLimitOffsetPagination
 
     def get_serializer_class(self):
         if self.request.method == 'GET':

@@ -109,3 +109,18 @@ class AdmissionTests(SimpleTestCase):
             token_zero = acquire_ollama_slot(client=client_zero)
         self.assertTrue(token_zero)
         self.assertGreaterEqual(client_zero.last_ex, 1)
+
+    def test_multi_slot_admission_limit_allows_configured_concurrency(self):
+        client = FakeRedis()
+        with override_settings(OLLAMA_ADMISSION_LIMIT=2):
+            token1 = acquire_ollama_slot(client=client)
+            token2 = acquire_ollama_slot(client=client)
+            with self.assertRaises(OllamaBusy):
+                acquire_ollama_slot(client=client)
+
+            release_ollama_slot(token2, client=client)
+            token3 = acquire_ollama_slot(client=client)
+            self.assertTrue(token3)
+            release_ollama_slot(token1, client=client)
+            release_ollama_slot(token3, client=client)
+        self.assertEqual(client.store, {})

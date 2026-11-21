@@ -129,4 +129,76 @@ class TelegramPollerTests(TransactionTestCase):
         worker.step()
         self.client_mock.get_updates.assert_not_called()
 
+    @override_settings(REDIS_URL="redis://localhost:6379/0")
+    @patch("workspaces.telegram.poller._get_redis_client")
+    @patch("workspaces.telegram.poller.handle_telegram_update")
+    def test_worker_persists_each_update_id_and_renews_lock_mid_batch(
+        self,
+        mock_handle,
+        mock_get_redis,
+    ):
+        mock_redis = MagicMock()
+        mock_redis.eval.return_value = 1
+        mock_get_redis.return_value = mock_redis
+
+        self.client_mock.get_updates.return_value = {
+            "ok": True,
+            "result": [
+                {"update_id": 50, "message": {"text": "one"}},
+                {"update_id": 51, "message": {"text": "two"}},
+            ],
+        }
+        worker = TelegramBotWorker(bot_id=self.bot.id, client=self.client_mock)
+        worker.step()
+
+        self.bot.refresh_from_db()
+        self.assertEqual(self.bot.last_update_id, 51)
+        self.assertEqual(mock_handle.call_count, 2)
+        # 1 initial lock + 2 renewals before each update
+        self.assertEqual(mock_redis.eval.call_count, 3)
+
+    def test_worker_respects_retry_after_and_exponential_backoff(self):
+        stop_event = MagicMock()
+        stop_event.is_set.return_value = False
+        self.client_mock.get_updates.return_value = {
+            "ok": False,
+            "description": "Too Many Requests",
+            "parameters": {"retry_after": 12},
+        }
+        worker = TelegramBotWorker(
+            bot_id=self.bot.id,
+            stop_event=stop_event,
+            client=self.client_mock,
+        )
+        worker.step()
+        stop_event.wait.assert_called_once_with(12.0)
+
+        stop_event.reset_mock()
+        self.client_mock.get_updates.return_value = {
+            "ok": False,
+            "description": "Network glitch",
+        }
+        worker.step()
+        worker.step()
+        self.assertEqual(stop_event.wait.call_args_list[0].args[0], 5)
+        self.assertEqual(stop_event.wait.call_args_list[1].args[0], 10)
+
+    def test_manager_gives_each_worker_isolated_client_when_unshared(self):
+        bot2 = TelegramBot.objects.create(
+            name="PollerBot2",
+            workspace=self.workspace,
+            is_active=True,
+        )
+        bot2.set_token("333444:SECRET2")
+        bot2.save()
+
+        manager = TelegramBotManager()
+        with patch.object(TelegramBotWorker, "start"):
+            manager.sync_bots()
+            w1 = manager.workers[self.bot.id][0]
+            w2 = manager.workers[bot2.id][0]
+            self.assertIsNot(w1.client, w2.client)
+            self.assertIsNot(w1.client.session, w2.client.session)
+        manager.stop()
+
 

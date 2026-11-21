@@ -221,12 +221,32 @@ async function handleSend(text) {
   }
 }
 
+/** Обмежити apiUrl поточним origin, щоб не приймати підміну хоста через postMessage. */
+function normalizeEmbedConfig(nextConfig) {
+  const currentOrigin = window.location.origin;
+  const defaultApiUrl = `${currentOrigin}/api`;
+  const rawApiUrl = nextConfig?.apiUrl;
+  let safeApiUrl = defaultApiUrl;
+  if (rawApiUrl) {
+    try {
+      const parsed = new URL(rawApiUrl, currentOrigin);
+      if (parsed.origin === currentOrigin) {
+        safeApiUrl = parsed.toString().replace(/\/$/, '');
+      }
+    } catch {
+      safeApiUrl = defaultApiUrl;
+    }
+  }
+  return { ...nextConfig, apiUrl: safeApiUrl };
+}
+
 /** Застосувати конфіг від батьківського віджета. */
 async function applyConfig(nextConfig) {
+  const safeConfig = normalizeEmbedConfig(nextConfig);
   stopGreetingTypewriter();
-  applyThemeColor(nextConfig.color);
+  applyThemeColor(safeConfig.color);
   store.setState({
-    config: nextConfig,
+    config: safeConfig,
     initError: '',
     messages: [],
     typedGreeting: '',
@@ -234,7 +254,7 @@ async function applyConfig(nextConfig) {
 
   render();
   try {
-    const { workspace, model, initError } = await fetchWorkspaceConfig(nextConfig);
+    const { workspace, model, initError } = await fetchWorkspaceConfig(safeConfig);
     store.setState({ workspace, model, initError });
   } catch (err) {
     store.setState({
@@ -247,9 +267,9 @@ async function applyConfig(nextConfig) {
   render();
 }
 
-/** Слухач postMessage: приймає конфіг лише від довіреного origin. */
+/** Слухач postMessage: приймає конфіг лише від батьківського вікна та довіреного origin. */
 window.addEventListener('message', (event) => {
-  if (event.data?.type !== 'zrozumiloai-config') {
+  if (event.source !== window.parent || event.data?.type !== 'zrozumiloai-config') {
     return;
   }
   const trustedOrigin = store.getState().trustedOrigin;

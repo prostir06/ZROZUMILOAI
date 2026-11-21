@@ -13,6 +13,10 @@ from backups.engine.archive import ALLOWED_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
+# Кеш метаданих .tar.gz архівів за (path, mtime_ns, size), щоб не відкривати архіви при кожному GET.
+_BACKUP_META_CACHE: dict[tuple[str, int, int], dict] = {}
+_BACKUP_META_CACHE_MAX = 256
+
 
 class BackupService:
     """Create and manage database backup files."""
@@ -135,8 +139,15 @@ class BackupService:
         self._dump_sqlite(filepath)
         return self._file_info(filepath, has_media=False)
 
-    def _file_info(self, filepath, has_media=None):
+    def _file_info(self, filepath, has_media=None, *, use_cache=False):
         stat = filepath.stat()
+        cache_key = None
+        if use_cache and has_media is None and filepath.name.endswith('.tar.gz'):
+            cache_key = (str(filepath), stat.st_mtime_ns, stat.st_size)
+            cached = _BACKUP_META_CACHE.get(cache_key)
+            if cached is not None:
+                return dict(cached)
+
         engine = connection.settings_dict['ENGINE'].split('.')[-1]
 
         if filepath.name.endswith('.tar.gz'):
@@ -157,13 +168,18 @@ class BackupService:
             if has_media is None:
                 has_media = False
 
-        return {
+        info = {
             'filename': filepath.name,
             'size': stat.st_size,
             'created_at': datetime.fromtimestamp(stat.st_mtime).isoformat(),
             'engine': engine,
             'has_media': has_media,
         }
+        if cache_key is not None:
+            if len(_BACKUP_META_CACHE) >= _BACKUP_META_CACHE_MAX:
+                _BACKUP_META_CACHE.pop(next(iter(_BACKUP_META_CACHE)))
+            _BACKUP_META_CACHE[cache_key] = dict(info)
+        return info
 
     def list_backups(self):
         """Return sorted list of backup files (newest first)."""
@@ -181,7 +197,7 @@ class BackupService:
                     and not path.name.startswith('.')
                     and any(path.name.endswith(ext) for ext in ALLOWED_EXTENSIONS)
                 ):
-                    backups.append(self._file_info(path))
+                    backups.append(self._file_info(path, use_cache=True))
             except OSError as exc:
                 logger.warning('Skipping unreadable backup file %s: %s', path, exc)
 

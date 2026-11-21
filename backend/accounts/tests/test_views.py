@@ -185,3 +185,45 @@ class UserDetailGuardTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(User.objects.filter(pk=other.pk).exists())
+
+    def test_optional_limit_offset_pagination_on_user_list(self):
+        """Без ?limit повертається повний список, із ?limit=1 — пагінований об'єкт."""
+        User.objects.create_user(username='u2', email='u2@test.com', password=STRONG_PASSWORD)
+        url = reverse('user_list_create')
+
+        full_resp = self.client.get(url)
+        self.assertEqual(full_resp.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(full_resp.data, list)
+        self.assertGreaterEqual(len(full_resp.data), 2)
+
+        paged_resp = self.client.get(f'{url}?limit=1&offset=0')
+        self.assertEqual(paged_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(paged_resp.data['count'], len(full_resp.data))
+        self.assertEqual(len(paged_resp.data['results']), 1)
+
+    def test_logout_blacklists_refresh_token(self):
+        """POST /api/auth/logout/ додає refresh-токен до чорного списку."""
+        self.client.force_authenticate(user=None)
+        login_resp = self.client.post(
+            reverse('login'),
+            {'username': 'admin_guard', 'password': STRONG_PASSWORD},
+            format='json',
+        )
+        self.assertEqual(login_resp.status_code, status.HTTP_200_OK)
+        refresh = login_resp.data['refresh']
+        access = login_resp.data['access']
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access}')
+        logout_resp = self.client.post(
+            reverse('logout'),
+            {'refresh': refresh},
+            format='json',
+        )
+        self.assertEqual(logout_resp.status_code, status.HTTP_200_OK)
+
+        refresh_resp = self.client.post(
+            reverse('token_refresh'),
+            {'refresh': refresh},
+            format='json',
+        )
+        self.assertEqual(refresh_resp.status_code, status.HTTP_401_UNAUTHORIZED)

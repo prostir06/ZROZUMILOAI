@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
 
+# Виправляємо права на змонтованих директоріях і запускаємо сервіси від non-root appuser.
+if [ "$(id -u)" = "0" ]; then
+  mkdir -p /app/media /app/cache /app/staticfiles /backup
+  chown -R appuser:appuser /app/media /app/cache /app/staticfiles 2>/dev/null || true
+  chown appuser:appuser /backup 2>/dev/null || true
+  exec gosu appuser "$0" "$@"
+fi
+
 ROLE="${APP_ROLE:-web}"
 
 # Спільна ініціалізація БД лише для web; worker пропускає collectstatic/ensure_admin.

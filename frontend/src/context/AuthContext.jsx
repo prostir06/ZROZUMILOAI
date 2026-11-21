@@ -52,7 +52,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(() => {
-    api.clearTokens();
+    api.logout().catch((err) => console.warn('Logout cleanup failed:', err));
     setUser(null);
   }, []);
 

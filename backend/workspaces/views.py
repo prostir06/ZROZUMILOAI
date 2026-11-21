@@ -3,6 +3,8 @@ from rest_framework import generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from config.pagination import OptionalLimitOffsetPagination
+
 from .models import Workspace
 from .serializers import WorkspaceBriefSerializer, WorkspaceSerializer
 from .services import get_user_workspaces
@@ -24,7 +26,8 @@ class WorkspaceListCreateView(generics.ListCreateAPIView):
 
     permission_classes = (permissions.IsAdminUser,)
     serializer_class = WorkspaceSerializer
-    queryset = Workspace.objects.prefetch_related('users').all()
+    pagination_class = OptionalLimitOffsetPagination
+    queryset = Workspace.objects.prefetch_related('users', 'telegram_bots').all()
 
 
 class WorkspaceDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -32,5 +35,5 @@ class WorkspaceDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     permission_classes = (permissions.IsAdminUser,)
     serializer_class = WorkspaceSerializer
-    queryset = Workspace.objects.prefetch_related('users').all()
+    queryset = Workspace.objects.prefetch_related('users', 'telegram_bots').all()
     lookup_url_kwarg = 'workspace_id'

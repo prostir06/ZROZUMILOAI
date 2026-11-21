@@ -24,6 +24,22 @@ export class BaseApiClient {
     localStorage.removeItem('user');
   }
 
+  async logout() {
+    const refresh = localStorage.getItem('refresh_token');
+    try {
+      if (refresh && this.getToken()) {
+        await this.request('/auth/logout/', {
+          method: 'POST',
+          body: JSON.stringify({ refresh }),
+        });
+      }
+    } catch (err) {
+      console.warn('Logout request failed:', err);
+    } finally {
+      this.clearTokens();
+    }
+  }
+
   async _fetchWithAuth(path, options = {}, isRetry = false) {
     const headers = {
       ...options.headers,

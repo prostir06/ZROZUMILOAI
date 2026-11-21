@@ -53,6 +53,14 @@ def _safe_positive_int(value, default=180):
     return max(1, parsed)
 
 
+def _slot_keys(limit=1):
+    """Повернути список Redis-ключів слотів допуску для заданого ліміту."""
+    count = max(1, int(limit or 1))
+    if count == 1:
+        return [ADMISSION_KEY]
+    return [ADMISSION_KEY, *(f'{ADMISSION_KEY}:{idx}' for idx in range(2, count + 1))]
+
+
 def acquire_ollama_slot(client=None, wait_seconds=None, poll_interval=0.05):
     """Повернути токен власника, None для fail-open, або кинути OllamaBusy / AdmissionUnavailable."""
     is_redis_configured = bool((getattr(settings, 'REDIS_URL', '') or '').strip())
@@ -70,13 +78,17 @@ def acquire_ollama_slot(client=None, wait_seconds=None, poll_interval=0.05):
     redis_client = client
     token = uuid.uuid4().hex
     ttl = _safe_positive_int(getattr(settings, 'OLLAMA_ADMISSION_TTL_SECONDS', 180), default=180)
+    limit = _safe_positive_int(getattr(settings, 'OLLAMA_ADMISSION_LIMIT', 1), default=1)
+    slot_keys = _slot_keys(limit)
 
     while True:
         try:
             if redis_client is None:
                 from django_redis import get_redis_connection
                 redis_client = get_redis_connection('default')
-            written = redis_client.set(ADMISSION_KEY, token, nx=True, ex=ttl)
+            for slot_key in slot_keys:
+                if redis_client.set(slot_key, token, nx=True, ex=ttl):
+                    return token if slot_key == ADMISSION_KEY else f'{slot_key}|{token}'
         except Exception as exc:
             if is_redis_configured:
                 # Із заданим REDIS_URL працюємо fail-closed, щоб не перевантажити Ollama без черги.
@@ -92,8 +104,6 @@ def acquire_ollama_slot(client=None, wait_seconds=None, poll_interval=0.05):
                 exc_info=True,
             )
             return None
-        if written:
-            return token
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise OllamaBusy()
@@ -104,12 +114,16 @@ def release_ollama_slot(token, client=None):
     """Зняти слот лише своїм токеном."""
     if not token:
         return
+    if '|' in str(token):
+        slot_key, raw_token = str(token).split('|', 1)
+    else:
+        slot_key, raw_token = ADMISSION_KEY, token
     try:
         redis_client = client
         if redis_client is None:
             from django_redis import get_redis_connection
             redis_client = get_redis_connection('default')
-        redis_client.eval(_RELEASE_LUA, 1, ADMISSION_KEY, token)
+        redis_client.eval(_RELEASE_LUA, 1, slot_key, raw_token)
     except Exception as exc:
         # Ключ зникне по TTL, навіть якщо eval не пройшов.
         logger.warning(
