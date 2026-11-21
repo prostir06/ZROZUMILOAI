@@ -6,6 +6,7 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api';
 export class BaseApiClient {
   constructor() {
     this.baseUrl = API_BASE;
+    this._refreshPromise = null;
   }
 
   getToken() {
@@ -65,6 +66,17 @@ export class BaseApiClient {
   }
 
   async refreshToken() {
+    if (this._refreshPromise) {
+      return this._refreshPromise;
+    }
+
+    this._refreshPromise = this._performRefresh().finally(() => {
+      this._refreshPromise = null;
+    });
+    return this._refreshPromise;
+  }
+
+  async _performRefresh() {
     const refresh = localStorage.getItem('refresh_token');
     if (!refresh) return false;
 
@@ -77,8 +89,13 @@ export class BaseApiClient {
 
       if (!response.ok) return false;
 
-      const data = await response.json();
+      const data = await safeJson(response, null);
+      if (!data?.access) return false;
+
       localStorage.setItem('access_token', data.access);
+      if (data.refresh) {
+        localStorage.setItem('refresh_token', data.refresh);
+      }
       return true;
     } catch (err) {
       console.error('Token refresh request failed:', err);
@@ -137,7 +154,7 @@ export class BaseApiClient {
   async getCurrentUser() {
     const response = await this.request('/auth/me/');
     if (!response.ok) throw new Error('Не вдалося отримати профіль');
-    return response.json();
+    return safeJson(response, null);
   }
 
   async changePassword({ current_password, new_password, new_password_confirm }) {
@@ -151,7 +168,7 @@ export class BaseApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       const message = error.detail
         || error.current_password?.[0]
         || error.new_password?.[0]
@@ -161,13 +178,13 @@ export class BaseApiClient {
       throw new Error(message);
     }
 
-    return response.json();
+    return safeJson(response, {});
   }
 
   async getUsers() {
     const response = await this.request('/auth/users/');
-    if (!response.ok) throw new Error('Не вдалося отримати профільs');
-    return response.json();
+    if (!response.ok) throw new Error('Не вдалося отримати список користувачів');
+    return safeJson(response, []);
   }
 
   async createUser(userData) {
@@ -177,11 +194,11 @@ export class BaseApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(JSON.stringify(error));
+      const error = await safeJson(response, {});
+      throw new Error(error.detail || error.non_field_errors?.[0] || JSON.stringify(error));
     }
 
-    return response.json();
+    return safeJson(response, null);
   }
 
   async deleteUser(userId) {
@@ -190,7 +207,7 @@ export class BaseApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(
         error.detail
         || error.non_field_errors?.[0]
@@ -207,7 +224,7 @@ export class BaseApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(
         error.detail
         || error.non_field_errors?.[0]
@@ -216,6 +233,6 @@ export class BaseApiClient {
       );
     }
 
-    return response.json();
+    return safeJson(response, null);
   }
 }

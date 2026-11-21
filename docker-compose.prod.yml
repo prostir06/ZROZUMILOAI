@@ -26,8 +26,9 @@ services:
       - ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
       - --maxmemory
       - 384mb
+      # volatile-lru: захищає ключі черги Celery без TTL від витіснення кешем.
       - --maxmemory-policy
-      - allkeys-lru
+      - volatile-lru
     healthcheck:
       test:
         [

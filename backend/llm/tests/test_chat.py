@@ -477,3 +477,4 @@ class RunChatTests(TestCase):
             )
             body = b''.join(stream_res.streaming_content).decode('utf-8')
         self.assertIn('Hi', body)
+        self.assertIn('"needs_handoff"', body)

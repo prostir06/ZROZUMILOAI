@@ -11,10 +11,14 @@ from celery import shared_task
 from django.conf import settings
 from django.db import close_old_connections, transaction
 
+from llm.admission import OllamaBusy
+
 logger = logging.getLogger(__name__)
 
+_TRANSIENT_INGEST_ERRORS = (ConnectionError, OSError, TimeoutError, OllamaBusy)
 
-def ingest_document_by_id(document_id, request_id='-'):
+
+def ingest_document_by_id(document_id, request_id='-', *, reraise_transient=False):
     """
     Завантажити документ з БД і виконати RAG ingest.
 
@@ -39,6 +43,20 @@ def ingest_document_by_id(document_id, request_id='-'):
         try:
             ingest_workspace_document(document)
             return {'ok': True, 'document_id': document_id}
+        except _TRANSIENT_INGEST_ERRORS as exc:
+            if reraise_transient:
+                logger.warning(
+                    'Transient ingest error for document %s, scheduling retry: %s',
+                    document_id,
+                    exc,
+                )
+                raise
+            logger.error(
+                'Background ingest failed for document %s: %s',
+                document_id,
+                exc,
+            )
+            return {'ok': False, 'error': str(exc)[:500]}
         except Exception as exc:
             logger.error(
                 'Background ingest failed for document %s: %s',
@@ -55,7 +73,7 @@ def ingest_document_by_id(document_id, request_id='-'):
     name='workspaces.ingest_document',
     max_retries=3,
     default_retry_delay=30,
-    autoretry_for=(ConnectionError, OSError, TimeoutError),
+    autoretry_for=_TRANSIENT_INGEST_ERRORS,
     retry_backoff=True,
     retry_jitter=True,
     soft_time_limit=600,
@@ -64,7 +82,13 @@ def ingest_document_by_id(document_id, request_id='-'):
 )
 def ingest_document_task(self, document_id, request_id='-'):
     """Celery task: індексація документа з автоматичним retry мережевих збоїв."""
-    result = ingest_document_by_id(document_id, request_id=request_id)
+    max_retries = getattr(self, 'max_retries', 0) or 0
+    retries = getattr(self.request, 'retries', 0) or 0
+    result = ingest_document_by_id(
+        document_id,
+        request_id=request_id,
+        reraise_transient=retries < max_retries,
+    )
     if result.get('ok'):
         return result
     # Бізнес-помилки ingest (bad file тощо) не ретраїмо — статус уже FAILED.

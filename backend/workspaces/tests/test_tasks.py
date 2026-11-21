@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase, override_settings
 
+from llm.admission import OllamaBusy
 from workspaces.rag.tasks import ingest_document_by_id, schedule_document_ingest
 
 
@@ -93,3 +94,27 @@ class IngestDocumentByIdTests(SimpleTestCase):
                 result = ingest_document_by_id(5)
         self.assertFalse(result['ok'])
         self.assertIn('boom', result['error'])
+
+    @patch('workspaces.rag.tasks.close_old_connections')
+    def test_ingest_reraises_transient_errors_when_requested(self, _mock_close):
+        document = MagicMock()
+        with patch('workspaces.models.WorkspaceDocument') as mock_model:
+            mock_model.DoesNotExist = type('DoesNotExist', (Exception,), {})
+            mock_model.objects.select_related.return_value.get.return_value = (
+                document
+            )
+            for transient_exc in (ConnectionError('net'), OllamaBusy('busy')):
+                with patch(
+                    'workspaces.rag.service.ingest_workspace_document',
+                    side_effect=transient_exc,
+                ):
+                    with self.assertRaises(type(transient_exc)):
+                        ingest_document_by_id(5, reraise_transient=True)
+
+            with patch(
+                'workspaces.rag.service.ingest_workspace_document',
+                side_effect=ValueError('bad pdf'),
+            ):
+                result = ingest_document_by_id(5, reraise_transient=True)
+        self.assertFalse(result['ok'])
+        self.assertIn('bad pdf', result['error'])

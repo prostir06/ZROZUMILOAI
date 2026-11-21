@@ -1,5 +1,6 @@
 """Telegram Bot API client."""
 import logging
+import re
 from typing import Any
 
 import requests
@@ -7,6 +8,15 @@ import requests
 logger = logging.getLogger(__name__)
 
 MAX_MESSAGE_CHUNK = 4000
+_BOT_TOKEN_PATH_RE = re.compile(r"/bot[^/\s]+/")
+
+
+def redact_telegram_token(text: str, token: str = "") -> str:
+    """Mask Telegram bot tokens in URLs and error messages before logging or storing."""
+    cleaned = _BOT_TOKEN_PATH_RE.sub("/bot<REDACTED>/", str(text or ""))
+    if token:
+        cleaned = cleaned.replace(token, "<REDACTED>")
+    return cleaned
 
 
 def chunk_text(text: str, max_length: int = MAX_MESSAGE_CHUNK) -> list[str]:
@@ -28,18 +38,24 @@ class TelegramClient:
     def _url(self, token: str, method: str) -> str:
         return f"{self.base_url}/bot{token}/{method}"
 
-    def _parse_response(self, resp: requests.Response, method: str) -> dict[str, Any]:
+    def _parse_response(
+        self,
+        resp: requests.Response,
+        method: str,
+        token: str = "",
+    ) -> dict[str, Any]:
         """Safely parse response JSON, capturing HTTP errors with status code when non-JSON."""
         try:
             return resp.json()
         except Exception as exc:
-            preview = (resp.text or "")[:200]
+            preview = redact_telegram_token((resp.text or "")[:200], token)
+            safe_exc = redact_telegram_token(str(exc), token)
             logger.warning(
                 "Telegram API %s returned non-JSON (status %s): %s (error: %s)",
                 method,
                 resp.status_code,
                 preview,
-                exc,
+                safe_exc,
             )
             return {
                 "ok": False,
@@ -51,10 +67,11 @@ class TelegramClient:
         url = self._url(token, "getMe")
         try:
             resp = self.session.get(url, timeout=timeout)
-            return self._parse_response(resp, "getMe")
+            return self._parse_response(resp, "getMe", token=token)
         except Exception as exc:
-            logger.warning("Failed to call getMe for bot: %s", exc)
-            return {"ok": False, "description": str(exc)}
+            safe_err = redact_telegram_token(str(exc), token)
+            logger.warning("Failed to call getMe for bot: %s", safe_err)
+            return {"ok": False, "description": safe_err}
 
     def get_updates(
         self,
@@ -71,10 +88,11 @@ class TelegramClient:
         http_timeout = timeout + 10
         try:
             resp = self.session.get(url, params=params, timeout=http_timeout)
-            return self._parse_response(resp, "getUpdates")
+            return self._parse_response(resp, "getUpdates", token=token)
         except Exception as exc:
-            logger.warning("Failed to call getUpdates for bot: %s", exc)
-            return {"ok": False, "description": str(exc)}
+            safe_err = redact_telegram_token(str(exc), token)
+            logger.warning("Failed to call getUpdates for bot: %s", safe_err)
+            return {"ok": False, "description": safe_err}
 
     def send_message(
         self,
@@ -103,13 +121,14 @@ class TelegramClient:
 
             try:
                 resp = self.session.post(url, json=payload, timeout=timeout)
-                last_result = self._parse_response(resp, "sendMessage")
+                last_result = self._parse_response(resp, "sendMessage", token=token)
                 if not last_result.get("ok"):
                     logger.warning("Telegram sendMessage chunk %s failed: %s", idx, last_result)
                     return last_result
             except Exception as exc:
-                logger.warning("Failed to call sendMessage: %s", exc)
-                return {"ok": False, "description": str(exc)}
+                safe_err = redact_telegram_token(str(exc), token)
+                logger.warning("Failed to call sendMessage: %s", safe_err)
+                return {"ok": False, "description": safe_err}
 
         return last_result
 
@@ -125,10 +144,11 @@ class TelegramClient:
         payload = {"chat_id": chat_id, "action": action}
         try:
             resp = self.session.post(url, json=payload, timeout=timeout)
-            return self._parse_response(resp, "sendChatAction")
+            return self._parse_response(resp, "sendChatAction", token=token)
         except Exception as exc:
-            logger.warning("Failed to call sendChatAction: %s", exc)
-            return {"ok": False, "description": str(exc)}
+            safe_err = redact_telegram_token(str(exc), token)
+            logger.warning("Failed to call sendChatAction: %s", safe_err)
+            return {"ok": False, "description": safe_err}
 
     def answer_callback_query(
         self,
@@ -149,10 +169,11 @@ class TelegramClient:
 
         try:
             resp = self.session.post(url, json=payload, timeout=timeout)
-            return self._parse_response(resp, "answerCallbackQuery")
+            return self._parse_response(resp, "answerCallbackQuery", token=token)
         except Exception as exc:
-            logger.warning("Failed to call answerCallbackQuery: %s", exc)
-            return {"ok": False, "description": str(exc)}
+            safe_err = redact_telegram_token(str(exc), token)
+            logger.warning("Failed to call answerCallbackQuery: %s", safe_err)
+            return {"ok": False, "description": safe_err}
 
     def edit_message_reply_markup(
         self,
@@ -171,7 +192,8 @@ class TelegramClient:
         }
         try:
             resp = self.session.post(url, json=payload, timeout=timeout)
-            return self._parse_response(resp, "editMessageReplyMarkup")
+            return self._parse_response(resp, "editMessageReplyMarkup", token=token)
         except Exception as exc:
-            logger.warning("Failed to call editMessageReplyMarkup: %s", exc)
-            return {"ok": False, "description": str(exc)}
+            safe_err = redact_telegram_token(str(exc), token)
+            logger.warning("Failed to call editMessageReplyMarkup: %s", safe_err)
+            return {"ok": False, "description": safe_err}

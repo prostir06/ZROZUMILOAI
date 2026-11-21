@@ -1,6 +1,7 @@
 """Tests for Telegram API client."""
 from unittest.mock import MagicMock, patch
 
+import requests
 from django.test import TestCase
 
 from workspaces.telegram.client import TelegramClient
@@ -189,3 +190,18 @@ class TelegramClientTests(TestCase):
             },
             timeout=5,
         )
+
+    @patch("requests.Session.get")
+    def test_network_error_redacts_bot_token_from_description_and_logs(self, mock_get):
+        mock_get.side_effect = requests.ConnectionError(
+            f"HTTPSConnectionPool: Failed URL https://api.telegram.org/bot{self.token}/getUpdates",
+        )
+
+        with self.assertLogs("workspaces.telegram.client", level="WARNING") as logs:
+            res = self.client.get_updates(self.token)
+
+        self.assertFalse(res.get("ok"))
+        self.assertNotIn(self.token, res.get("description", ""))
+        self.assertIn("/bot<REDACTED>/", res.get("description", ""))
+        for log_line in logs.output:
+            self.assertNotIn(self.token, log_line)

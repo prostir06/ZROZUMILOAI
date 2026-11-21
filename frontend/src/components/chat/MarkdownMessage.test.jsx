@@ -128,4 +128,21 @@ describe('MarkdownMessage', () => {
       globalThis.navigator.clipboard = origClipboard;
     }
   });
+
+  it('escapes raw HTML tags instead of rendering dangerous DOM elements', () => {
+    const xssPayload = [
+      '<img src="x" onerror="alert(1)">',
+      '<script>alert(1)</script>',
+      '<form action="https://evil.test"><input /></form>',
+      '<style>body{display:none}</style>',
+    ].join('\n');
+
+    const html = renderToString(<MarkdownMessage content={xssPayload} />);
+
+    expect(html).not.toContain('<img');
+    expect(html).not.toContain('<script');
+    expect(html).not.toContain('<form');
+    expect(html).not.toContain('<style');
+    expect(html).toContain('&lt;script&gt;');
+  });
 });

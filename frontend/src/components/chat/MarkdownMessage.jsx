@@ -108,6 +108,7 @@ function CodeBlock({ children, ...props }) {
 
 const markdownOptions = {
   wrapper: React.Fragment,
+  disableParsingRawHTML: true,
   overrides: {
     a: {
       component: SafeLink,

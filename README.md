@@ -99,7 +99,7 @@ python manage.py migrate
 ..\scripts\ensure_admin.ps1
 python manage.py runserver
 # Опційно (локальний Telegram Long Polling демон):
-python manage.py run_telegram_poller
+python manage.py run_telegram_bots
 ```
 
 Локально без Redis ingest виконується синхронно (`CELERY_TASK_ALWAYS_EAGER=True` за замовчуванням, якщо `REDIS_URL` порожній).

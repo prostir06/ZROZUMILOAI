@@ -33,10 +33,11 @@ if not DEBUG:
             'FIELD_ENCRYPTION_KEY обовʼязковий у продакшені (DEBUG=False).',
         )
 
-ALLOWED_HOSTS = os.getenv(
-    'DJANGO_ALLOWED_HOSTS',
-    'localhost,127.0.0.1,backend',
-).split(',')
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.getenv('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1,backend').split(',')
+    if h.strip()
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -171,10 +172,14 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
 }
 
-CORS_ALLOWED_ORIGINS = os.getenv(
-    'CORS_ALLOWED_ORIGINS',
-    'http://localhost:5173,http://localhost:3000,http://localhost',
-).split(',')
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        'CORS_ALLOWED_ORIGINS',
+        'http://localhost,http://localhost:3000,http://localhost:5173',
+    ).split(',')
+    if origin.strip()
+]
 
 # Origin: null лише за явним opt-in (рідкісний sandbox iframe без allow-same-origin).
 # За замовчуванням вимкнено: widget.js уже використовує allow-same-origin.

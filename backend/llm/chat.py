@@ -250,7 +250,7 @@ def run_chat(
                     meta = {'needs_handoff': needs_handoff}
                     if log:
                         meta['log_id'] = log.pk
-                        yield f'data: {json.dumps(meta)}\n\n'
+                    yield f'data: {json.dumps(meta)}\n\n'
             finally:
                 release_ollama_slot(slot_token)
                 if response is not None and hasattr(response, 'close'):
