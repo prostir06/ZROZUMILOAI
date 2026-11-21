@@ -403,6 +403,72 @@ class WorkspaceAnalyticsServiceTests(APITestCase):
         self.assertEqual(gap['channel'], 'telegram')
         self.assertEqual(gap['sent_by'], '@tg_student (@help_bot)')
 
+    def test_timeline_channel_breakdown(self):
+        """Кожен елемент timeline містить розбивку за каналами web/telegram/widget."""
+        day1_logs = [
+            WorkspaceChatLog.objects.create(
+                workspace=self.workspace,
+                sent_by='w1',
+                channel=WorkspaceChatLog.Channel.WEB,
+                prompt='Web 1',
+            ),
+            WorkspaceChatLog.objects.create(
+                workspace=self.workspace,
+                sent_by='tg1',
+                channel=WorkspaceChatLog.Channel.TELEGRAM,
+                prompt='TG 1',
+                needs_handoff=True,
+            ),
+            WorkspaceChatLog.objects.create(
+                workspace=self.workspace,
+                sent_by='tg2',
+                channel=WorkspaceChatLog.Channel.TELEGRAM,
+                prompt='TG 2',
+            ),
+        ]
+        day1 = self.now - timedelta(days=2)
+        WorkspaceChatLog.objects.filter(
+            pk__in=[log.pk for log in day1_logs],
+        ).update(created_at=day1)
+
+        day2_logs = [
+            WorkspaceChatLog.objects.create(
+                workspace=self.workspace,
+                sent_by='wd1',
+                channel=WorkspaceChatLog.Channel.WIDGET,
+                prompt='Widget 1',
+            ),
+            WorkspaceChatLog.objects.create(
+                workspace=self.workspace,
+                sent_by='w2',
+                channel=WorkspaceChatLog.Channel.WEB,
+                prompt='Web 2',
+            ),
+        ]
+        day2 = self.now - timedelta(days=1)
+        WorkspaceChatLog.objects.filter(
+            pk__in=[log.pk for log in day2_logs],
+        ).update(created_at=day2)
+
+        with self.assertNumQueries(3):
+            analytics = get_workspace_analytics(self.workspace, date_range='7d')
+
+        timeline = analytics['timeline']
+        self.assertEqual(len(timeline), 2)
+        self.assertEqual(timeline[0]['date'], timezone.localtime(day1).strftime('%Y-%m-%d'))
+        self.assertEqual(timeline[0]['total_queries'], 3)
+        self.assertEqual(timeline[0]['handoffs'], 1)
+        self.assertEqual(timeline[0]['web'], 1)
+        self.assertEqual(timeline[0]['telegram'], 2)
+        self.assertEqual(timeline[0]['widget'], 0)
+
+        self.assertEqual(timeline[1]['date'], timezone.localtime(day2).strftime('%Y-%m-%d'))
+        self.assertEqual(timeline[1]['total_queries'], 2)
+        self.assertEqual(timeline[1]['handoffs'], 0)
+        self.assertEqual(timeline[1]['web'], 1)
+        self.assertEqual(timeline[1]['telegram'], 0)
+        self.assertEqual(timeline[1]['widget'], 1)
+
 
 class WorkspaceAnalyticsApiTests(APITestCase):
     """Тести HTTP API endpoint аналітики робочого простору."""
@@ -445,6 +511,7 @@ class WorkspaceAnalyticsApiTests(APITestCase):
         WorkspaceChatLog.objects.create(
             workspace=self.workspace,
             sent_by='student_1',
+            channel=WorkspaceChatLog.Channel.TELEGRAM,
             prompt='Тестовий запит',
             response='Відповідь',
         )
@@ -453,6 +520,10 @@ class WorkspaceAnalyticsApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['total_queries'], 1)
         self.assertIn('timeline', response.data)
+        self.assertEqual(len(response.data['timeline']), 1)
+        self.assertEqual(response.data['timeline'][0]['web'], 0)
+        self.assertEqual(response.data['timeline'][0]['telegram'], 1)
+        self.assertEqual(response.data['timeline'][0]['widget'], 0)
         self.assertIn('knowledge_gaps', response.data)
         self.assertIn('csat_score', response.data)
 

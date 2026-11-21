@@ -54,6 +54,16 @@ describe('AnalyticsSection component', () => {
           reason: 'low_confidence',
         },
       ],
+      timeline: [
+        {
+          date: '2026-11-06',
+          total_queries: 12,
+          handoffs: 2,
+          web: 7,
+          telegram: 3,
+          widget: 2,
+        },
+      ],
     };
 
     const html = renderToString(
@@ -63,6 +73,11 @@ describe('AnalyticsSection component', () => {
     expect(html).toContain('50');
     expect(html).toContain('12');
     expect(html).toContain('80%');
+    expect(html).toContain('Динаміка запитів за каналами');
+    expect(html).toContain('06.11');
+    expect(html).toContain('data-channel="web"');
+    expect(html).toContain('data-channel="telegram"');
+    expect(html).toContain('data-channel="widget"');
     expect(html).toContain('Як подати апеляцію?');
     expect(html).toContain('Низька впевненість RAG');
     expect(html).toContain('Статус');

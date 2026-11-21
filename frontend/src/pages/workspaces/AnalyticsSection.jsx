@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client';
 import KpiCards from '../../components/analytics/KpiCards';
 import KnowledgeGapsTable from '../../components/analytics/KnowledgeGapsTable';
+import TimelineChart from '../../components/analytics/TimelineChart';
 
 const RANGE_OPTIONS = [
   { id: 'today', label: 'Сьогодні' },
@@ -163,6 +164,8 @@ export default function AnalyticsSection({
       ) : (
         <>
           <KpiCards analytics={analytics} isLoading={loading} />
+
+          <TimelineChart timeline={analytics?.timeline} isLoading={loading} />
 
           <div className="knowledge-gaps-section" style={{ marginTop: '1.75rem' }}>
             <div className="section__subheading" style={{ marginBottom: '0.75rem' }}>

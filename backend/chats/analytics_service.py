@@ -122,6 +122,9 @@ def get_workspace_analytics(
         .annotate(
             total_queries=Count('id'),
             handoffs=Count('id', filter=Q(needs_handoff=True)),
+            web=Count('id', filter=Q(channel=WorkspaceChatLog.Channel.WEB)),
+            telegram=Count('id', filter=Q(channel=WorkspaceChatLog.Channel.TELEGRAM)),
+            widget=Count('id', filter=Q(channel=WorkspaceChatLog.Channel.WIDGET)),
         )
         .order_by('date')
     )
@@ -131,6 +134,9 @@ def get_workspace_analytics(
             'date': item['date'].strftime('%Y-%m-%d') if item['date'] else '',
             'total_queries': item['total_queries'],
             'handoffs': item['handoffs'],
+            'web': item['web'] or 0,
+            'telegram': item['telegram'] or 0,
+            'widget': item['widget'] or 0,
         }
         for item in timeline_qs
     ]

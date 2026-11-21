@@ -418,3 +418,204 @@
 .chat-analysis__list li + li {
   margin-top: 0.35rem;
 }
+
+/* Per-Channel Timeline Chart */
+.timeline-chart {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  border-radius: var(--radius-lg, 16px);
+  border: 1px solid var(--color-border-subtle, rgba(13, 158, 150, 0.14));
+  background: var(--color-surface, rgba(255, 255, 255, 0.55));
+  backdrop-filter: var(--glass-blur, blur(18px));
+  -webkit-backdrop-filter: var(--glass-blur, blur(18px));
+  box-shadow: var(--shadow-soft, 0 2px 16px rgba(20, 80, 75, 0.06));
+  transition: opacity var(--transition, 0.2s ease);
+}
+
+.timeline-chart--loading {
+  opacity: 0.7;
+}
+
+.timeline-chart__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.timeline-chart__title {
+  margin: 0;
+  font-size: 1.05rem;
+  color: var(--color-text, #1c3d3a);
+}
+
+.timeline-chart__subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #5e7a78);
+}
+
+.timeline-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.timeline-chart__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-border-subtle, rgba(13, 158, 150, 0.2));
+  background: var(--color-surface, rgba(255, 255, 255, 0.75));
+  color: var(--color-text, #1c3d3a);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--transition, 0.2s ease), border-color var(--transition, 0.2s ease);
+}
+
+.timeline-chart__toggle:hover {
+  border-color: var(--color-primary, #0d9e96);
+}
+
+.timeline-chart__toggle--muted {
+  opacity: 0.48;
+}
+
+.timeline-chart__toggle-count {
+  font-weight: 700;
+}
+
+.timeline-chart__swatch {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.timeline-chart__swatch--web {
+  background: var(--color-primary, #0d9e96);
+}
+
+.timeline-chart__swatch--telegram {
+  background: #0284c7;
+}
+
+.timeline-chart__swatch--widget {
+  background: #d97706;
+}
+
+.timeline-chart__swatch--handoff {
+  background: var(--color-danger, #ef4444);
+}
+
+.timeline-chart__handoff-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #5e7a78);
+}
+
+.timeline-chart__canvas-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.timeline-chart__svg {
+  display: block;
+  width: 100%;
+  min-width: 360px;
+  height: auto;
+}
+
+.timeline-chart__gridline {
+  stroke: var(--color-border-subtle, rgba(13, 158, 150, 0.14));
+  stroke-dasharray: 3 3;
+}
+
+.timeline-chart__axis {
+  stroke: var(--color-border-subtle, rgba(13, 158, 150, 0.35));
+}
+
+.timeline-chart__axis-label {
+  fill: var(--color-text-muted, #5e7a78);
+  font-size: 11px;
+}
+
+.timeline-chart__day {
+  cursor: pointer;
+  outline: none;
+}
+
+.timeline-chart__day:focus-visible .timeline-chart__bar,
+.timeline-chart__day--active .timeline-chart__bar {
+  opacity: 1;
+  filter: brightness(1.06);
+}
+
+.timeline-chart__bar {
+  opacity: 0.9;
+  transition: opacity var(--transition, 0.15s ease);
+}
+
+.timeline-chart__bar--web {
+  fill: var(--color-primary, #0d9e96);
+}
+
+.timeline-chart__bar--telegram {
+  fill: #0284c7;
+}
+
+.timeline-chart__bar--widget {
+  fill: #d97706;
+}
+
+.timeline-chart__handoff-dot {
+  fill: var(--color-danger, #ef4444);
+  stroke: #ffffff;
+  stroke-width: 1.5;
+}
+
+.timeline-chart__detail {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--color-border-subtle, rgba(13, 158, 150, 0.12));
+  min-height: 2rem;
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.timeline-chart__detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.timeline-chart__detail-date {
+  color: var(--color-text, #1c3d3a);
+}
+
+.timeline-chart__detail-total,
+.timeline-chart__detail-hint {
+  color: var(--color-text-muted, #5e7a78);
+}
+
+.timeline-chart__detail-handoff {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-danger, #ef4444);
+}
+
+.timeline-chart__empty {
+  margin: 1rem 0 0.25rem;
+  text-align: center;
+}
