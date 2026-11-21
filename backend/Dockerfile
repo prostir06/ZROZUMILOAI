@@ -1,5 +1,5 @@
 # Build stage: компіляція залежностей без залишку gcc у runtime-образі.
-FROM python:3.12-slim AS builder
+FROM python:3.15-slim AS builder
 
 WORKDIR /app
 
@@ -20,7 +20,7 @@ RUN if [ -f requirements.lock ]; then \
     fi
 
 # Runtime stage
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
