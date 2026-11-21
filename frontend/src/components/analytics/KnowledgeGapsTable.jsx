@@ -80,8 +80,10 @@ function renderStatusBadge(isResolved) {
  * @param {Function} [props.onUploadClick] - Callback fired when 'Додати матеріал' is clicked.
  * @param {Function} [props.onResolveClick] - Callback fired when 'Вирішено'/'Відкрити' is clicked: (gap, nextResolved) => void.
  * @param {number|string|null} [props.resolvingId] - ID of the gap currently being resolved/reopened.
- * @param {string|null} [props.filter] - Optional controlled filter ('all' | 'open' | 'resolved').
- * @param {Function|null} [props.onFilterChange] - Optional callback when active filter changes.
+ * @param {string|null} [props.filter] - Optional controlled status filter ('all' | 'open' | 'resolved').
+ * @param {Function|null} [props.onFilterChange] - Optional callback when status filter changes.
+ * @param {string|null} [props.channelFilter] - Optional controlled channel filter ('all' | 'web' | 'telegram' | 'widget').
+ * @param {Function|null} [props.onChannelFilterChange] - Optional callback when channel filter changes.
  */
 export default function KnowledgeGapsTable({
   gaps = [],
@@ -90,10 +92,15 @@ export default function KnowledgeGapsTable({
   resolvingId = null,
   filter: controlledFilter = null,
   onFilterChange = null,
+  channelFilter: controlledChannelFilter = null,
+  onChannelFilterChange = null,
 }) {
   const [internalFilter, setInternalFilter] = useState('all');
+  const [internalChannelFilter, setInternalChannelFilter] = useState('all');
   const activeFilter = controlledFilter ?? internalFilter;
   const setFilter = onFilterChange ?? setInternalFilter;
+  const activeChannelFilter = controlledChannelFilter ?? internalChannelFilter;
+  const setChannelFilter = onChannelFilterChange ?? setInternalChannelFilter;
 
   const items = Array.isArray(gaps) ? gaps : [];
 
@@ -109,6 +116,16 @@ export default function KnowledgeGapsTable({
 
   const openCount = items.filter((gap) => !gap.is_resolved).length;
   const resolvedCount = items.filter((gap) => Boolean(gap.is_resolved)).length;
+  const channelCounts = items.reduce(
+    (acc, gap) => {
+      const channel = gap.channel || 'web';
+      if (channel === 'telegram') acc.telegram += 1;
+      else if (channel === 'widget') acc.widget += 1;
+      else acc.web += 1;
+      return acc;
+    },
+    { web: 0, telegram: 0, widget: 0 },
+  );
 
   const filterOptions = [
     { id: 'all', label: `Всі (${items.length})` },
@@ -116,33 +133,63 @@ export default function KnowledgeGapsTable({
     { id: 'resolved', label: `Вирішені (${resolvedCount})` },
   ];
 
+  const channelOptions = [
+    { id: 'all', label: `Усі канали (${items.length})` },
+    { id: 'web', label: `Web (${channelCounts.web})` },
+    { id: 'telegram', label: `Telegram (${channelCounts.telegram})` },
+    { id: 'widget', label: `Widget (${channelCounts.widget})` },
+  ];
+
   const filteredItems = items.filter((gap) => {
-    if (activeFilter === 'open') return !gap.is_resolved;
-    if (activeFilter === 'resolved') return Boolean(gap.is_resolved);
+    if (activeFilter === 'open' && gap.is_resolved) return false;
+    if (activeFilter === 'resolved' && !gap.is_resolved) return false;
+    if (activeChannelFilter !== 'all') {
+      const gapChannel = gap.channel || 'web';
+      if (gapChannel !== activeChannelFilter) return false;
+    }
     return true;
   });
 
   return (
     <div className="knowledge-gaps-container">
-      <div className="knowledge-gaps-filters" role="group" aria-label="Фільтр прогалин знань">
-        {filterOptions.map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            className={`btn btn--sm gap-filter-btn ${
-              activeFilter === opt.id ? 'btn--primary gap-filter-btn--active' : 'btn--ghost'
-            }`}
-            onClick={() => setFilter(opt.id)}
-          >
-            {opt.label}
-          </button>
-        ))}
+      <div className="knowledge-gaps-toolbar">
+        <div className="knowledge-gaps-filters" role="group" aria-label="Фільтр прогалин знань">
+          {filterOptions.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              className={`btn btn--sm gap-filter-btn ${
+                activeFilter === opt.id ? 'btn--primary gap-filter-btn--active' : 'btn--ghost'
+              }`}
+              aria-pressed={activeFilter === opt.id}
+              onClick={() => setFilter(opt.id)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="knowledge-gaps-channel-filters" role="group" aria-label="Фільтр прогалин за каналом">
+          {channelOptions.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              className={`btn btn--sm gap-filter-btn ${
+                activeChannelFilter === opt.id ? 'btn--primary gap-filter-btn--active' : 'btn--ghost'
+              }`}
+              aria-pressed={activeChannelFilter === opt.id}
+              onClick={() => setChannelFilter(opt.id)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="table-wrapper knowledge-gaps-wrapper">
         {filteredItems.length === 0 ? (
           <div className="knowledge-gaps-empty">
-            <p className="empty-state">Немає прогалин у цій категорії.</p>
+            <p className="empty-state">Немає прогалин за обраними фільтрами.</p>
           </div>
         ) : (
           <table className="table knowledge-gaps-table" aria-label="Таблиця виявлених прогалин знань">

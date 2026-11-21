@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from chats.analytics_service import (
+    ALLOWED_EXPORT_CHANNELS,
     build_analytics_csv,
     get_workspace_analytics,
 )
@@ -77,14 +78,17 @@ class WorkspaceAnalyticsExportView(APIView):
         range_param = request.query_params.get('range', '30d')
         if range_param not in ('today', '7d', '30d', 'all'):
             range_param = '30d'
-        csv_text = build_analytics_csv(workspace, date_range=range_param)
+        channel_param = (request.query_params.get('channel') or '').strip().lower()
+        channel = channel_param if channel_param in ALLOWED_EXPORT_CHANNELS else None
+        csv_text = build_analytics_csv(workspace, date_range=range_param, channel=channel)
 
         slug = (
             getattr(workspace, 'slug', None)
             or slugify(workspace.name)
             or str(workspace.id)
         )
-        filename = f'analytics_{slug}_{range_param}.csv'
+        suffix = f'{range_param}_{channel}' if channel else range_param
+        filename = f'analytics_{slug}_{suffix}.csv'
 
         response = HttpResponse(
             csv_text,

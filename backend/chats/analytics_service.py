@@ -156,7 +156,19 @@ def get_workspace_analytics(
     }
 
 
-def build_analytics_csv(workspace, date_range: str = '30d') -> str:
+CHANNEL_LABELS = {
+    'web': 'Web',
+    'telegram': 'Telegram',
+    'widget': 'Widget',
+}
+ALLOWED_EXPORT_CHANNELS = tuple(CHANNEL_LABELS.keys())
+
+
+def build_analytics_csv(
+    workspace,
+    date_range: str = '30d',
+    channel: str | None = None,
+) -> str:
     """
     Generate Cyrillic-compatible CSV text for workspace analytics audit.
 
@@ -165,12 +177,16 @@ def build_analytics_csv(workspace, date_range: str = '30d') -> str:
     Args:
         workspace: Workspace instance.
         date_range: 'today', '7d', '30d', or 'all'. Defaults to '30d'.
+        channel: Optional channel filter ('web', 'telegram', or 'widget').
 
     Returns:
         CSV content string starting with UTF-8 BOM.
     """
     qs = WorkspaceChatLog.objects.filter(workspace=workspace)
-    qs = _filter_logs_by_date_range(qs, date_range).order_by('-created_at')
+    qs = _filter_logs_by_date_range(qs, date_range)
+    if channel in ALLOWED_EXPORT_CHANNELS:
+        qs = qs.filter(channel=channel)
+    qs = qs.order_by('-created_at')
 
     output = io.StringIO()
     output.write('\ufeff')
@@ -184,6 +200,8 @@ def build_analytics_csv(workspace, date_range: str = '30d') -> str:
         'Скорочена відповідь',
         'Handoff',
         'Оцінка',
+        'Канал',
+        'Вирішено',
     ])
 
     for log in qs.iterator(chunk_size=500):
@@ -200,6 +218,8 @@ def build_analytics_csv(workspace, date_range: str = '30d') -> str:
         else:
             feedback_str = '—'
 
+        channel_str = CHANNEL_LABELS.get(log.channel or 'web', 'Web')
+        resolved_str = 'Так' if log.is_resolved else 'Ні'
         response_snippet = (log.response or '')[:200]
 
         writer.writerow([
@@ -210,6 +230,8 @@ def build_analytics_csv(workspace, date_range: str = '30d') -> str:
             response_snippet,
             handoff_str,
             feedback_str,
+            channel_str,
+            resolved_str,
         ])
 
     return output.getvalue()

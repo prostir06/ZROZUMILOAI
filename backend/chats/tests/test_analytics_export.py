@@ -43,6 +43,8 @@ class AnalyticsCsvExportServiceTests(APITestCase):
             'Скорочена відповідь',
             'Handoff',
             'Оцінка',
+            'Канал',
+            'Вирішено',
         ]
         self.assertEqual(header, expected)
 
@@ -58,14 +60,17 @@ class AnalyticsCsvExportServiceTests(APITestCase):
         WorkspaceChatLog.objects.create(
             workspace=self.workspace,
             sent_by='student_1',
+            channel=WorkspaceChatLog.Channel.TELEGRAM,
             prompt='Що таке фотон?',
             response=long_response,
             needs_handoff=True,
             feedback='up',
+            is_resolved=True,
         )
         WorkspaceChatLog.objects.create(
             workspace=self.workspace,
             sent_by='student_2',
+            channel=WorkspaceChatLog.Channel.WIDGET,
             prompt='Чому трава зелена?',
             response='Хлорофіл...',
             needs_handoff=False,
@@ -92,14 +97,20 @@ class AnalyticsCsvExportServiceTests(APITestCase):
         self.assertEqual(row_student3[4], 'Зверніться до методички.')
         self.assertEqual(row_student3[5], 'Ні')
         self.assertEqual(row_student3[6], '—')
+        self.assertEqual(row_student3[7], 'Web')
+        self.assertEqual(row_student3[8], 'Ні')
 
         row_student2 = next(r for r in rows if r[2] == 'student_2')
         self.assertEqual(row_student2[5], 'Ні')
         self.assertEqual(row_student2[6], '👎')
+        self.assertEqual(row_student2[7], 'Widget')
+        self.assertEqual(row_student2[8], 'Ні')
 
         row_student1 = next(r for r in rows if r[2] == 'student_1')
         self.assertEqual(row_student1[5], 'Так')
         self.assertEqual(row_student1[6], '👍')
+        self.assertEqual(row_student1[7], 'Telegram')
+        self.assertEqual(row_student1[8], 'Так')
         # Скорочена відповідь обрізана до 200 символів
         self.assertLessEqual(len(row_student1[4]), 200)
 
@@ -138,6 +149,38 @@ class AnalyticsCsvExportServiceTests(APITestCase):
         csv_30d = build_analytics_csv(self.workspace, date_range='30d')
         rows_30d = list(csv.reader(io.StringIO(csv_30d.lstrip('\ufeff'))))[1:]
         self.assertEqual(len(rows_30d), 3)
+
+    def test_channel_filtering_csv(self):
+        """Фільтрація CSV за параметром channel (web / telegram / widget)."""
+        WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='w1',
+            channel=WorkspaceChatLog.Channel.WEB,
+            prompt='Web питання',
+        )
+        WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='tg1',
+            channel=WorkspaceChatLog.Channel.TELEGRAM,
+            prompt='Telegram питання',
+        )
+        WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='wd1',
+            channel=WorkspaceChatLog.Channel.WIDGET,
+            prompt='Widget питання',
+        )
+
+        csv_tg = build_analytics_csv(self.workspace, date_range='all', channel='telegram')
+        rows_tg = list(csv.reader(io.StringIO(csv_tg.lstrip('\ufeff'))))[1:]
+        self.assertEqual(len(rows_tg), 1)
+        self.assertEqual(rows_tg[0][3], 'Telegram питання')
+        self.assertEqual(rows_tg[0][7], 'Telegram')
+
+        # Невідомий channel ігнорується та повертає всі канали.
+        csv_unknown = build_analytics_csv(self.workspace, date_range='all', channel='invalid')
+        rows_all = list(csv.reader(io.StringIO(csv_unknown.lstrip('\ufeff'))))[1:]
+        self.assertEqual(len(rows_all), 3)
 
 
 class AnalyticsCsvExportApiTests(APITestCase):
@@ -225,3 +268,32 @@ class AnalyticsCsvExportApiTests(APITestCase):
         )
         response = self.client.get(invalid_url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_export_csv_with_channel_filter(self):
+        """Query-параметр ?channel=telegram фільтрує рядки та оновлює назву файлу."""
+        WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='web_user',
+            channel=WorkspaceChatLog.Channel.WEB,
+            prompt='Web log',
+        )
+        WorkspaceChatLog.objects.create(
+            workspace=self.workspace,
+            sent_by='tg_user',
+            channel=WorkspaceChatLog.Channel.TELEGRAM,
+            prompt='TG log',
+        )
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.get(f'{self.url}?range=30d&channel=telegram')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(
+            'analytics_physics-101_30d_telegram.csv',
+            response['Content-Disposition'],
+        )
+        rows = list(
+            csv.reader(io.StringIO(response.content.decode('utf-8').lstrip('\ufeff'))),
+        )[1:]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0][3], 'TG log')
+        self.assertEqual(rows[0][7], 'Telegram')

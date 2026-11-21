@@ -177,9 +177,13 @@ export const workspaceApiMethods = {
     return response.json();
   },
 
-  async exportWorkspaceAnalyticsCsv(workspaceId, { range = '30d' } = {}) {
+  async exportWorkspaceAnalyticsCsv(workspaceId, { range = '30d', channel } = {}) {
+    const params = new URLSearchParams({ range });
+    if (channel && channel !== 'all') {
+      params.set('channel', channel);
+    }
     const response = await this.request(
-      `/workspaces/${workspaceId}/analytics/export/?range=${encodeURIComponent(range)}`,
+      `/workspaces/${workspaceId}/analytics/export/?${params.toString()}`,
     );
     if (!response.ok) {
       const error = await safeJson(response, {});
@@ -189,7 +193,8 @@ export const workspaceApiMethods = {
     const blob = await response.blob();
     const disposition = response.headers.get('Content-Disposition') || '';
     const match = disposition.match(/filename="([^"]+)"/);
-    const filename = match?.[1] || `workspace_${workspaceId}_analytics_${range}.csv`;
+    const suffix = channel && channel !== 'all' ? `${range}_${channel}` : range;
+    const filename = match?.[1] || `workspace_${workspaceId}_analytics_${suffix}.csv`;
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
