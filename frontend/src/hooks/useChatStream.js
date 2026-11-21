@@ -227,7 +227,7 @@ export function useChatStream(initialCallbacks = {}) {
       try {
         streamAbortRef.current?.abort();
       } catch (_err) {
-        /* ignore */
+        // AbortController.abort() може кидати під час розмонтування у нестандартних polyfill.
       }
       if (streamRafRef.current) {
         if (typeof cancelAnimationFrame === 'function') {

@@ -12,7 +12,7 @@ export const ollamaApiMethods = {
   async getModels() {
     const response = await this.request('/ollama/models/');
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(error.error || 'Не вдалося отримати моделі');
     }
     return response.json();
@@ -73,14 +73,8 @@ export const ollamaApiMethods = {
       signal: controller.signal,
     }).then(async (response) => {
       if (!response.ok) {
-        let message = 'Не вдалося завантажити модель';
-        try {
-          const error = await response.json();
-          message = error.error || message;
-        } catch {
-          /* ignore */
-        }
-        onProgress({ error: message });
+        const error = await safeJson(response, {});
+        onProgress({ error: error.error || 'Не вдалося завантажити модель' });
         return;
       }
       await this._consumeSSE(response, onProgress);

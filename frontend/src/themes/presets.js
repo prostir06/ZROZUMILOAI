@@ -457,7 +457,8 @@ export function loadThemeState() {
       presetId: parsed.presetId || DEFAULT_PRESET_ID,
       custom: parsed.custom || {},
     };
-  } catch {
+  } catch (err) {
+    console.warn('Failed to load theme state from localStorage:', err);
     return { type: 'preset', presetId: DEFAULT_PRESET_ID, custom: {} };
   }
 }

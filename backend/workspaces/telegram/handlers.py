@@ -148,7 +148,8 @@ def handle_telegram_update(
                     prompt = faq_list[idx]
                 else:
                     return
-            except (ValueError, IndexError):
+            except (ValueError, IndexError) as exc:
+                logger.warning('Invalid Telegram FAQ callback data %r: %s', data, exc)
                 return
         else:
             client.answer_callback_query(token, cq_id)

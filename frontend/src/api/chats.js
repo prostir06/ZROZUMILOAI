@@ -66,7 +66,7 @@ export const chatApiMethods = {
       body: JSON.stringify(data),
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(error.detail || 'Не вдалося створити чат');
     }
     return response.json();
@@ -78,7 +78,7 @@ export const chatApiMethods = {
       body: JSON.stringify(data),
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(error.detail || 'Не вдалося оновити чат');
     }
     return response.json();

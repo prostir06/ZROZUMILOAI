@@ -82,3 +82,61 @@ describe('ApiClient resolveKnowledgeGap', () => {
     );
   });
 });
+
+describe('ApiClient non-JSON error resilience', () => {
+  let client;
+  let originalFetch;
+  let originalLocalStorage;
+
+  beforeEach(() => {
+    client = new ApiClient();
+    originalFetch = globalThis.fetch;
+    originalLocalStorage = globalThis.localStorage;
+    globalThis.localStorage = {
+      getItem: vi.fn().mockReturnValue('mock-token'),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    };
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.localStorage = originalLocalStorage;
+    vi.restoreAllMocks();
+  });
+
+  function mockBadGateway() {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected token < in JSON')),
+    });
+  }
+
+  it('throws fallback errors instead of SyntaxError on non-JSON 502 error responses', async () => {
+    mockBadGateway();
+
+    await expect(client.createWorkspace({ name: 'WS' })).rejects.toThrow('Не вдалося створити workspace');
+    await expect(client.updateWorkspace(1, { name: 'WS' })).rejects.toThrow('Не вдалося оновити workspace');
+    await expect(client.createWidgetToken(1, 'lbl')).rejects.toThrow('Не вдалося створити widget token');
+    await expect(client.createChat({ title: 'Chat' })).rejects.toThrow('Не вдалося створити чат');
+    await expect(client.updateChat(1, { title: 'Chat' })).rejects.toThrow('Не вдалося оновити чат');
+    await expect(client.getModels()).rejects.toThrow('Не вдалося отримати моделі');
+    await expect(client.getBackups()).rejects.toThrow('Не вдалося отримати резервні копії');
+    await expect(client.createBackup()).rejects.toThrow('Не вдалося створити резервну копію');
+    await expect(client.deleteBackup('test.tar.gz')).rejects.toThrow('Не вдалося видалити резервну копію');
+  });
+
+  it('reports fallback error in pullModelStream when error response is not JSON', async () => {
+    mockBadGateway();
+
+    const onProgress = vi.fn();
+    client.pullModelStream('llama3', onProgress);
+
+    await vi.waitFor(() => {
+      expect(onProgress).toHaveBeenCalledWith({
+        error: 'Не вдалося завантажити модель',
+      });
+    });
+  });
+});

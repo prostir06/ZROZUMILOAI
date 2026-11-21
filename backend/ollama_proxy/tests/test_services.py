@@ -33,10 +33,12 @@ class OllamaServiceTests(SimpleTestCase):
 
     @patch.object(requests.Session, 'request')
     def test_health_returns_false_on_network_error(self, mock_request):
-        """health() повертає False при мережевій помилці."""
+        """health() повертає False та логує попередження при мережевій помилці."""
         mock_request.side_effect = requests.ConnectionError('down')
         service = OllamaService()
-        self.assertFalse(service.health())
+        with self.assertLogs('ollama_proxy.services', level='WARNING') as captured:
+            self.assertFalse(service.health())
+        self.assertTrue(any('Ollama health check failed' in msg for msg in captured.output))
 
     @patch.object(requests.Session, 'request')
     def test_parse_json_raises_on_invalid_body(self, mock_request):

@@ -1,4 +1,5 @@
 """Django settings for ZROZUMILOAI personal assistant panel."""
+import logging
 import os
 from datetime import timedelta
 from pathlib import Path
@@ -380,6 +381,10 @@ if not DEBUG:
     try:
         SECURE_HSTS_SECONDS = int(_hsts)
     except ValueError:
+        logging.getLogger(__name__).warning(
+            'Invalid SECURE_HSTS_SECONDS=%r, falling back to 0',
+            _hsts,
+        )
         SECURE_HSTS_SECONDS = 0
     if SECURE_HSTS_SECONDS > 0:
         SECURE_HSTS_INCLUDE_SUBDOMAINS = True

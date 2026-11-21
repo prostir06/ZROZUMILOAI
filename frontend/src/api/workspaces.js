@@ -20,7 +20,7 @@ export const workspaceApiMethods = {
       body: JSON.stringify(data),
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(extractWorkspaceError(error, 'Не вдалося створити workspace'));
     }
     return response.json();
@@ -32,7 +32,7 @@ export const workspaceApiMethods = {
       body: JSON.stringify(data),
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(extractWorkspaceError(error, 'Не вдалося оновити workspace'));
     }
     return response.json();
@@ -67,7 +67,7 @@ export const workspaceApiMethods = {
       }),
     });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(error.detail || error.error || 'Не вдалося створити widget token');
     }
     return response.json();

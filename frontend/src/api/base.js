@@ -143,7 +143,10 @@ export class BaseApiClient {
       throw new Error(error.detail || 'Помилка входу');
     }
 
-    const data = await safeJson(response);
+    const data = await safeJson(response, null);
+    if (!data?.access || !data?.refresh) {
+      throw new Error('Некоректна відповідь сервера при вході');
+    }
     this.setTokens(data.access, data.refresh);
     if (data.user) {
       localStorage.setItem('user', JSON.stringify(data.user));

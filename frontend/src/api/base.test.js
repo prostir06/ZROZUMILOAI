@@ -93,4 +93,36 @@ describe('ApiBase error resilience', () => {
     await expect(api.deleteUser(5)).rejects.toThrow('Не вдалося видалити користувача');
     await expect(api.updateUser(5, { is_staff: false })).rejects.toThrow('Не вдалося оновити користувача');
   });
+
+  it('login throws descriptive error when 200 response returns invalid JSON or missing tokens', async () => {
+    const setItem = vi.fn();
+    globalThis.localStorage = {
+      getItem: () => null,
+      setItem,
+      removeItem: () => {},
+    };
+
+    const api = new BaseApiClient();
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new SyntaxError('Unexpected end of JSON input');
+      },
+    });
+    await expect(api.login('admin', 'secret')).rejects.toThrow(
+      'Некоректна відповідь сервера при вході',
+    );
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ access: 'only-access' }),
+    });
+    await expect(api.login('admin', 'secret')).rejects.toThrow(
+      'Некоректна відповідь сервера при вході',
+    );
+    expect(setItem).not.toHaveBeenCalled();
+  });
 });

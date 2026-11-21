@@ -9,21 +9,18 @@ import { useAuth } from '../context/AuthContext';
 
 /** Людинозрозумілий розмір файлу моделі. */
 function formatBytes(bytes) {
-  try {
-    if (!bytes || Number.isNaN(Number(bytes))) {
-      return '—';
-    }
-    const units = ['B', 'KB', 'MB', 'GB'];
-    let i = 0;
-    let size = Number(bytes);
-    while (size >= 1024 && i < units.length - 1) {
-      size /= 1024;
-      i += 1;
-    }
-    return `${size.toFixed(1)} ${units[i]}`;
-  } catch {
+  const numericBytes = Number(bytes);
+  if (!bytes || !Number.isFinite(numericBytes) || numericBytes < 0) {
     return '—';
   }
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  let size = numericBytes;
+  while (size >= 1024 && i < units.length - 1) {
+    size /= 1024;
+    i += 1;
+  }
+  return `${size.toFixed(1)} ${units[i]}`;
 }
 
 /** Безпечний JSON з fetch (не кидає при порожньому тілі). */

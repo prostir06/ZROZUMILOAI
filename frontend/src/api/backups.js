@@ -1,8 +1,10 @@
+import { safeJson } from '../utils/safeJson.js';
+
 export const backupApiMethods = {
   async getBackups() {
     const response = await this.request('/backups/');
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(error.error || 'Не вдалося отримати резервні копії');
     }
     return response.json();
@@ -11,7 +13,7 @@ export const backupApiMethods = {
   async createBackup() {
     const response = await this.request('/backups/', { method: 'POST' });
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(error.error || 'Не вдалося створити резервну копію');
     }
     return response.json();
@@ -23,7 +25,7 @@ export const backupApiMethods = {
       { method: 'DELETE' },
     );
     if (!response.ok) {
-      const error = await response.json();
+      const error = await safeJson(response, {});
       throw new Error(error.error || 'Не вдалося видалити резервну копію');
     }
     return response.json();

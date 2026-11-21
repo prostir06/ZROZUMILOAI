@@ -111,7 +111,8 @@ class OllamaService:
         try:
             response = self._request('GET', '/api/tags', timeout=5)
             return response.status_code == 200
-        except requests.RequestException:
+        except requests.RequestException as exc:
+            logger.warning('Ollama health check failed: %s', exc)
             return False
 
     def _embed_single_legacy(self, model, text):

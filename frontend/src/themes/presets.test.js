@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DEFAULT_PRESET_ID,
   hexToRgba,
+  loadThemeState,
   resolveThemeVars,
   THEME_PRESETS,
 } from '../themes/presets.js';
@@ -34,5 +35,62 @@ describe('resolveThemeVars', () => {
     expect(fromOpenAI['--color-primary']).toBe(THEME_PRESETS.blue.vars['--color-primary']);
     expect(fromGemini['--color-primary']).toBe(THEME_PRESETS.blue.vars['--color-primary']);
     expect(THEME_PRESETS.blue.name).not.toMatch(/gemini/i);
+  });
+});
+
+describe('loadThemeState', () => {
+  const originalLocalStorage = globalThis.localStorage;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    if (originalLocalStorage === undefined) {
+      delete globalThis.localStorage;
+    } else {
+      globalThis.localStorage = originalLocalStorage;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it('logs warning and returns default state on corrupted JSON', () => {
+    globalThis.localStorage = {
+      getItem: vi.fn().mockReturnValue('{bad json'),
+    };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const state = loadThemeState();
+
+    expect(state).toEqual({
+      type: 'preset',
+      presetId: DEFAULT_PRESET_ID,
+      custom: {},
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Failed to load theme state from localStorage:',
+      expect.any(Error),
+    );
+  });
+
+  it('logs warning and returns default state when localStorage throws', () => {
+    globalThis.localStorage = {
+      getItem: vi.fn(() => {
+        throw new Error('SecurityError');
+      }),
+    };
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const state = loadThemeState();
+
+    expect(state).toEqual({
+      type: 'preset',
+      presetId: DEFAULT_PRESET_ID,
+      custom: {},
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Failed to load theme state from localStorage:',
+      expect.any(Error),
+    );
   });
 });

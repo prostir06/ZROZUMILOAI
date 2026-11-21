@@ -27,7 +27,11 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     applyState(themeState);
-    localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(themeState));
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, JSON.stringify(themeState));
+    } catch (err) {
+      console.warn('Failed to persist theme state:', err);
+    }
   }, [themeState, applyState]);
 
   const setPreset = useCallback((presetId) => {

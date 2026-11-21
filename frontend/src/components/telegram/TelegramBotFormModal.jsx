@@ -35,7 +35,9 @@ export default function TelegramBotFormModal({
         </div>
         <form
           onSubmit={(e) => {
-            onSubmit(e).catch(() => {});
+            onSubmit(e).catch((err) => {
+              console.error('Failed to submit telegram bot form:', err);
+            });
           }}
           className="form"
         >

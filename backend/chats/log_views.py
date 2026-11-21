@@ -52,8 +52,8 @@ def filtered_chat_logs(params):
     if workspace_id:
         try:
             logs = logs.filter(workspace_id=int(workspace_id))
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as exc:
+            logger.debug('Ignoring invalid workspace_id filter %r: %s', workspace_id, exc)
 
     is_resolved = params.get('is_resolved')
     if is_resolved in (True, '1', 'true', 'yes'):
@@ -84,7 +84,8 @@ class WorkspaceChatLogListView(APIView):
             try:
                 limit = min(max(int(request.query_params.get('limit', 50)), 1), 200)
                 offset = max(int(request.query_params.get('offset', 0)), 0)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as exc:
+                logger.debug('Invalid pagination params, using defaults: %s', exc)
                 limit, offset = 50, 0
 
             total = logs.count()

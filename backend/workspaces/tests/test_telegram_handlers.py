@@ -347,3 +347,27 @@ class TelegramHandlerTests(TestCase):
             "cq_err_1",
             text="Дякуємо за відгук!",
         )
+
+    @patch("workspaces.telegram.handlers.run_chat")
+    def test_malformed_faq_callback_logs_warning(self, mock_run_chat):
+        update = {
+            "update_id": 11,
+            "callback_query": {
+                "id": "cq_faq_bad",
+                "from": {"id": 12345, "username": "student"},
+                "message": {"message_id": 104, "chat": {"id": 12345}},
+                "data": "faq:not_a_number",
+            },
+        }
+
+        with self.assertLogs("workspaces.telegram.handlers", level="WARNING") as captured:
+            handle_telegram_update(self.bot, update, client=self.client_mock)
+
+        self.client_mock.answer_callback_query.assert_called_once_with(
+            "123456:SECRET",
+            "cq_faq_bad",
+        )
+        mock_run_chat.assert_not_called()
+        self.assertTrue(
+            any("Invalid Telegram FAQ callback data" in msg for msg in captured.output),
+        )

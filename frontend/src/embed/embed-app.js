@@ -233,7 +233,8 @@ function normalizeEmbedConfig(nextConfig) {
       if (parsed.origin === currentOrigin) {
         safeApiUrl = parsed.toString().replace(/\/$/, '');
       }
-    } catch {
+    } catch (err) {
+      console.warn('[ZrozumiloAI Embed] Invalid apiUrl, using default:', err);
       safeApiUrl = defaultApiUrl;
     }
   }

@@ -63,6 +63,7 @@ class ModelListView(APIView):
                 ]
             return Response(data)
         except requests.RequestException as exc:
+            logger.warning('Failed to fetch Ollama model list: %s', exc)
             return Response(
                 {'error': f'Не вдалося підключитися до Ollama: {exc}'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -98,6 +99,7 @@ class ModelPullView(APIView):
                         yield f'data: {line.decode("utf-8")}\n\n'
                 yield 'data: {"status":"done"}\n\n'
             except requests.RequestException as exc:
+                logger.warning('Ollama model pull stream failed for %s: %s', name, exc)
                 payload = json.dumps({'error': str(exc)})
                 yield f'data: {payload}\n\n'
             finally:
@@ -137,6 +139,7 @@ class ModelDeleteView(APIView):
             data = service.delete_model(name)
             return Response(data)
         except requests.RequestException as exc:
+            logger.warning('Failed to delete Ollama model %s: %s', name, exc)
             return Response(
                 {'error': str(exc)},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
